@@ -15,3 +15,5 @@
 ○ Compiling /seller ...
  GET /seller 200 in 5.7s (next.js: 5.5s, application-code: 237ms)
  GET /seller/list 200 in 2.3s (next.js: 2.2s, application-code: 124ms)
+ GET /seller 200 in 52ms (next.js: 7ms, application-code: 45ms)
+ GET /seller 200 in 33ms (next.js: 2ms, application-code: 31ms)
