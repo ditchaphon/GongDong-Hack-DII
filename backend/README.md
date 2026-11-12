@@ -1,28 +1,87 @@
-# Backend · กองดอง
+# Backend · กองดอง (GongDong API)
 
-**ผู้รับผิดชอบ:** Biw
+**ผู้รับผิดชอบ:** Biw  
+**เทคโนโลยีหลัก:** Node.js (v24+) + Express + TypeScript + Prisma ORM + PostgreSQL (Supabase)
 
-API, ฐานข้อมูล, ยืนยันตัวตนด้วย LINE และบอท LINE OA · โครงสร้างโค้ดในโฟลเดอร์นี้ Biw ออกแบบเอง
+API, ฐานข้อมูล, ยืนยันตัวตนด้วย LINE และบอท LINE OA 
 
-## ต้องมีถึงศุกร์ 13 พ.ย.
-- ยืนยันตัวตน: verify LIFF ID token กับ LINE → สร้าง/ดึงผู้ใช้ (ผู้ใช้ใหม่ได้ 1 เครดิต) · บันทึกเบอร์โทร
-- ดึงข้อมูลหนังสือจาก ISBN (เช่น Google Books / Open Library)
-- ลงขาย + อัปโหลดรูป · **คำนวณเกรดจากคำตอบ 5 จุดที่ server**
-- ค้นหา / รายละเอียดหนังสือ
-- ขอซื้อ (1 ออเดอร์ = 1 ร้าน) → Push การ์ดแจ้งผู้ขายใน LINE
-- รับออเดอร์: หัก 1 เครดิต + จองหนังสือ + เปิดเบอร์ **ในครั้งเดียว (transaction)** → Push แจ้งผู้ซื้อ
-- ปฏิเสธออเดอร์ (ไม่เสียเครดิต) → แจ้งผู้ซื้อ
-- Webhook บอท: ตรวจ `x-line-signature` ทุกครั้ง
+---
 
-## ความปลอดภัยขั้นต่ำ
-- เบอร์โทรห้ามส่งออกไปก่อนออเดอร์ถูกรับ
-- key ทั้งหมดอยู่ใน env ไม่อยู่ในโค้ด
-- ผู้ขายรับ/ปฏิเสธได้เฉพาะออเดอร์ของตัวเอง · ซื้อของตัวเองไม่ได้
+## 🚀 เริ่มต้นใช้งาน (Getting Started)
 
-## ข้อตกลงกับ Frontend
-- API contract: `../docs/API.md` (เขียนร่วมกับ Farm)
-
-## เริ่มต้น
+### 1. ติดตั้ง Dependencies
 ```bash
-# Biw เติมคำสั่งติดตั้ง/รัน/migrate ที่นี่
+cd backend
+npm install
 ```
+
+### 2. ตั้งค่า Environment Variables
+คัดลอกไฟล์ `.env.example` เป็น `.env` แล้วกรอกค่าคอนฟิกจริง:
+```bash
+cp .env.example .env
+```
+
+### 3. จัดการฐานข้อมูล (Prisma)
+สร้าง Prisma Client จากสคีมา:
+```bash
+npm run prisma:generate
+```
+
+ซิงค์โครงสร้างตารางไปยัง Supabase PostgreSQL:
+```bash
+npm run prisma:push
+```
+
+เปิดดูและจัดการข้อมูลผ่านเบราว์เซอร์:
+```bash
+npm run prisma:studio
+```
+
+### 4. รันเซิร์ฟเวอร์ในโหมดพัฒนา (Hot Reload)
+```bash
+npm run dev
+```
+เซิร์ฟเวอร์จะเริ่มทำงานที่ `http://localhost:8000`  
+ตรวจสอบสถานะได้ที่: `http://localhost:8000/api/health`
+
+### 5. ตรวจสอบ Type & Build สำหรับ Production
+```bash
+# ตรวจสอบ TypeScript Types
+npm run lint
+
+# Build เป็น JavaScript (dist/)
+npm run build
+
+# Start Production Server
+npm start
+```
+
+---
+
+## 📁 โครงสร้างโปรเจกต์ (Folder Structure)
+
+```
+backend/
+├── prisma/
+│   └── schema.prisma         # สคีมา 10 โมเดล (PostgreSQL) ตาม docs/DATABASE_ERD.md
+├── src/
+│   ├── config/               # ค่าคอนฟิก (env.ts, prisma.ts)
+│   ├── controllers/          # Request Handlers
+│   ├── middlewares/          # Middlewares (errorHandler.ts, auth, ฯลฯ)
+│   ├── routes/               # Express Route Definitions (health.ts ฯลฯ)
+│   ├── services/             # Core Business Logic (grading, slipok, googleBooks)
+│   ├── types/                # Shared TypeScript Type Definitions
+│   └── index.ts              # Express App Entry Point & Server Bootstrap
+├── .env.example
+├── .gitignore
+├── package.json
+└── tsconfig.json
+```
+
+---
+
+## 📋 เอกสารอ้างอิง
+* สัญญา API Contract: `../docs/API.md`
+* สถาปัตยกรรมฐานข้อมูล: `../docs/DATABASE_ERD.md`
+* สรุป Tech Stack: `../Backend-doc/TECH_STACK.md`
+* User Flow v4: `../Backend-doc/กองดอง · User Flow v4 (ผู้ขาย + ผู้ซื้อ).md`

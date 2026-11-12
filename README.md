@@ -88,13 +88,13 @@ gongdong/
 
 ## 🛠 Stack ที่ตกลงในทีม
 
-> Biw + Farm เติมให้ครบ (framework, ฐานข้อมูล, ที่ deploy) — LIFF ต้องเปิดผ่าน **HTTPS** จึงต้องมี URL deploy ตั้งแต่วันแรก
+> ดูรายละเอียดเชิงลึกและเครื่องมือทั้งหมดได้ที่ [Backend-doc/TECH_STACK.md](Backend-doc/TECH_STACK.md)
 
-- Frontend: `…`
-- Backend / API: `…`
-- Database / Storage: `…`
-- Deploy: `…`
-- LINE: LINE OA + Messaging API (บอท) + LINE Login (LIFF)
+- Frontend: Next.js (App Router) + TypeScript + Tailwind CSS + Leaflet (OpenStreetMap) (Farm)
+- Backend / API: Node.js + TypeScript (Express.js) + Prisma ORM (Biw)
+- Database / Storage: PostgreSQL (Supabase) + pg_cron + Supabase Storage (Private Slips / Public Images)
+- Deploy: Vercel (Frontend) + Render / Railway (Backend)
+- LINE: LINE OA + Messaging API (`@line/bot-sdk`) + LINE Login (`@line/liff`)
 
 ## 🔑 ค่าที่ต้องตั้ง (ห้าม commit ค่าจริง)
 

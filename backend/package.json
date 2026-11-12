@@ -1,0 +1,36 @@
+{
+  "name": "gongdong-backend",
+  "version": "1.0.0",
+  "description": "GongDong C2C Book Marketplace Backend API & LINE Bot",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "prisma:generate": "prisma generate",
+    "prisma:push": "prisma db push",
+    "prisma:studio": "prisma studio",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@line/bot-sdk": "^9.4.0",
+    "@prisma/client": "^5.22.0",
+    "@supabase/supabase-js": "^2.46.1",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.1",
+    "helmet": "^8.0.0",
+    "promptpay-qr": "^0.5.0",
+    "qrcode": "^1.5.4",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.9.0",
+    "@types/qrcode": "^1.5.5",
+    "prisma": "^5.22.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3"
+  }
+}
