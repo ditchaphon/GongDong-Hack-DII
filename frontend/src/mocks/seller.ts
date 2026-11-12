@@ -71,7 +71,6 @@ export const MOCK_SELLER_ORDERS: SellerOrder[] = [
     buyerId: 'usr_iq',
     buyerName: 'ไอคิว มือใหม่',
     buyerAvatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100',
-    buyerPhone: '086-555-1234',
     sellerId: 'seller-01',
     books: [MOCK_BOOKS[3]],
     totalAmount: 130,
@@ -90,7 +89,6 @@ export const MOCK_SELLER_ORDERS: SellerOrder[] = [
     buyerId: 'usr_bank',
     buyerName: 'แบงก์ นักล่าหนังสือ',
     buyerAvatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=100',
-    buyerPhone: '089-111-2233',
     sellerId: 'seller-01',
     books: [MOCK_BOOKS[2]],
     totalAmount: 215,
@@ -165,7 +163,7 @@ export const GRADE_CRITERIA = [
   {
     grade: 'A',
     title: 'เหมือนใหม่',
-    percent: 70,
+    percent: 75,
     detail: 'ไม่มีตำหนิเลยทั้ง 5 จุด',
   },
   {

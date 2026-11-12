@@ -15,7 +15,7 @@ export interface PriceSuggestProps {
 }
 
 const GRADE_PERCENTAGES: Record<BookGrade, number> = {
-  A: 0.70, // 70%
+  A: 0.75, // 75%
   B: 0.60, // 60%
   C: 0.45, // 45%
   D: 0.30, // 30%

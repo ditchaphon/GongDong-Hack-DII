@@ -21,48 +21,42 @@ export const Countdown: React.FC<CountdownProps> = ({
   variant = 'standard',
   className,
 }) => {
-  const calculateRemaining = (): number => {
-    if (targetDate) {
-      const diff = Math.floor((new Date(targetDate).getTime() - Date.now()) / 1000);
-      return Math.max(0, diff);
-    }
-    return initialSeconds;
-  };
-
-  const [timeLeft, setTimeLeft] = useState<number>(calculateRemaining);
+  // Start empty so server and client agree; the real value is set after mount.
+  const [timeLeft, setTimeLeft] = useState<number | null>(null);
 
   useEffect(() => {
-    if (timeLeft <= 0) {
-      onExpire?.();
-      return;
-    }
-    const timer = setInterval(() => {
-      setTimeLeft((prev) => {
-        if (prev <= 1) {
-          clearInterval(timer);
-          onExpire?.();
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
+    const end = targetDate
+      ? new Date(targetDate).getTime()
+      : Date.now() + initialSeconds * 1000;
+    const tick = () =>
+      setTimeLeft(Math.max(0, Math.floor((end - Date.now()) / 1000)));
+    tick();
+    const timer = setInterval(tick, 1000);
     return () => clearInterval(timer);
+  }, [targetDate, initialSeconds]);
+
+  useEffect(() => {
+    if (timeLeft === 0) onExpire?.();
   }, [timeLeft, onExpire]);
 
-  const hours = Math.floor(timeLeft / 3600);
-  const minutes = Math.floor((timeLeft % 3600) / 60);
-  const seconds = timeLeft % 60;
+  const remaining = timeLeft ?? 0;
+  const hours = Math.floor(remaining / 3600);
+  const minutes = Math.floor((remaining % 3600) / 60);
+  const seconds = remaining % 60;
 
-  const formattedTime = `${hours.toString().padStart(2, '0')}:${minutes
-    .toString()
-    .padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+  const formattedTime =
+    timeLeft === null
+      ? '--:--:--'
+      : `${hours.toString().padStart(2, '0')}:${minutes
+          .toString()
+          .padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
 
   if (variant === 'badge') {
     return (
       <span
         className={clsx(
           'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold',
-          timeLeft < 3600
+          remaining < 3600
             ? 'bg-rose-50 text-rose-600 border border-rose-200'
             : 'bg-amber-50 text-amber-700 border border-amber-200',
           className
@@ -78,14 +72,19 @@ export const Countdown: React.FC<CountdownProps> = ({
     <div
       className={clsx(
         'flex items-center justify-between p-3 rounded-2xl border select-none',
-        timeLeft < 3600
+        remaining < 3600
           ? 'bg-rose-50 border-rose-200 text-rose-900'
           : 'bg-amber-50/80 border-amber-200 text-amber-900',
         className
       )}
     >
       <div className="flex items-center gap-2">
-        <Clock className={clsx('w-4 h-4', timeLeft < 3600 ? 'text-rose-500' : 'text-amber-600')} />
+        <Clock
+          className={clsx(
+            'w-4 h-4',
+            remaining < 3600 ? 'text-rose-500' : 'text-amber-600'
+          )}
+        />
         <span className="text-xs font-medium">{label}</span>
       </div>
       <div className="font-mono text-sm font-bold tracking-wider">
@@ -94,4 +93,3 @@ export const Countdown: React.FC<CountdownProps> = ({
     </div>
   );
 };
-

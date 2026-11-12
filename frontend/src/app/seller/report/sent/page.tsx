@@ -85,7 +85,7 @@ export default function SellerReportSentPage() {
           <Button
             fullWidth
             size="lg"
-            onClick={() => router.push('/seller/orders')}
+            onClick={() => router.push('/orders')}
           >
             กลับไปที่ออเดอร์ของฉัน
           </Button>

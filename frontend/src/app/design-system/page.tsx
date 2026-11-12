@@ -27,6 +27,7 @@ import {
 import { TopBar } from '@/components/layout/TopBar';
 import { BottomTab } from '@/components/layout/BottomTab';
 import { MOCK_BOOKS } from '@/mocks/books';
+import { V4Showcase } from '@/components/v4/V4Showcase';
 import { Order, ConditionChecklist as ConditionChecklistType, BookGrade } from '@/types';
 import { Sparkles, Mail, Lock, ShoppingBag, HelpCircle } from 'lucide-react';
 
@@ -34,7 +35,7 @@ export default function DesignSystemPage() {
   // Interactive state demos
   const [selectedChip, setSelectedChip] = useState('all');
   const [searchValue, setSearchValue] = useState('');
-  const [inputVal, setInputVal] = useState('081-234-5678');
+  const [inputVal, setInputVal] = useState('');
   const [currentStep, setCurrentStep] = useState(2);
 
   // Overlay states
@@ -200,19 +201,22 @@ export default function DesignSystemPage() {
               onSearch={(q) => setToastMessage(`กำลังค้นหา: ${q}`)}
             />
             <Input
-              label="เบอร์โทรศัพท์สำหรับติดต่อ"
+              label="ชื่อร้าน"
+              placeholder="เช่น ป้าหนอนหนังสือ"
               value={inputVal}
               onChange={(e) => setInputVal(e.target.value)}
-              helperText="จะแสดงให้ผู้ซื้อเห็นหลังจากคุณกดรับออเดอร์เท่านั้น"
+              helperText="ชื่อร้านจะแสดงให้ผู้ซื้อเห็น · ห้ามใส่เบอร์โทรหรือไลน์"
             />
             <Input
               label="ข้อมูลผิดพลาด (Error State)"
               value="invalid_isbn"
+              readOnly
               error="ไม่พบข้อมูลหนังสือจากเลข ISBN นี้ กรุณากรอกเอง"
             />
             <Input
               label="ช่องที่ปิดใช้งาน (Disabled)"
               value="ข้อมูลถูกล็อค"
+              readOnly
               disabled
             />
           </div>
@@ -224,10 +228,10 @@ export default function DesignSystemPage() {
             5. Trust & Status Badges
           </h3>
           <div className="flex flex-wrap gap-2">
-            <TrustBadge type="promptpay" />
-            <TrustBadge type="blacklist" />
+            <TrustBadge type="payee" />
             <TrustBadge type="nametag" />
             <TrustBadge type="meetup" />
+            <TrustBadge type="parcel" />
           </div>
           <div className="flex flex-wrap gap-2 pt-2">
             <StatusBadge status="PENDING_ACCEPT" />
@@ -418,7 +422,7 @@ export default function DesignSystemPage() {
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         title="ยืนยันใช้ 1 เครดิตรับออเดอร์?"
-        description="เมื่อกดยืนยัน ระบบจะหัก 1 เครดิตจากบัญชีของคุณ และเปิดเผยเบอร์โทรศัพท์ของผู้ซื้อเพื่อติดต่อกัน"
+        description="เมื่อกดยืนยัน ระบบจะหัก 1 เครดิตจากบัญชีของคุณ และเปิดแชทในออเดอร์ให้ทั้งสองฝ่าย"
         confirmText="ใช้ 1 เครดิต"
         onConfirm={() => {
           setIsModalOpen(false);
@@ -432,6 +436,11 @@ export default function DesignSystemPage() {
         onClose={() => setToastMessage(null)}
         message={toastMessage || ''}
       />
+
+      {/* v4 building blocks (Phase 1) */}
+      <div className="px-4 pb-24">
+        <V4Showcase />
+      </div>
 
       {/* Bottom Navigation Preview */}
       <BottomTab orderBadge={1} />

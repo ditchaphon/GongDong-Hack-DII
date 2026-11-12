@@ -3,8 +3,9 @@
 เว็บแอป LIFF ของกองดอง · **Next.js (App Router) + TypeScript + Tailwind CSS v4**
 ออกแบบ mobile-first สำหรับเปิดใน LINE (กว้าง 390 × 844, max 430px)
 
-สถานะ: **Phase 0–3 เสร็จ** — design system, buyer flow, seller flow ใช้งานได้ด้วย mock data
-(Phase 4 chatbot/Flex, Phase 5 admin, Phase 6 QA ยังไม่ทำ)
+สถานะ: **Phase 0–4 + 6–7 เสร็จ** — design system, buyer flow, seller flow, order engine,
+LINE assets (spec only), QA pass ใช้งานได้ด้วย mock data
+(Phase 5 admin ยังไม่ทำ — ข้ามตามคำขอ; Phase 8 go-live docs ยังไม่ทำ)
 
 ---
 

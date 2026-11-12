@@ -4,11 +4,13 @@ import { LiffProvider } from '@/hooks/useLiff';
 import { CartProvider } from '@/hooks/useCart';
 import { SellerProvider } from '@/hooks/useSeller';
 import { ListingProvider } from '@/hooks/useListing';
+import { ProfileProvider } from '@/hooks/useProfile';
+import { V4OrdersProvider } from '@/hooks/useV4Orders';
 import { AppShell } from '@/components/layout/AppShell';
 
 export const metadata: Metadata = {
   title: 'GongDong (กองดอง) — ตลาดหนังสือมือสองบน LINE',
-  description: 'ซื้อขายหนังสือมือสอง มั่นใจ ปลอดภัย นัดรับได้ ไม่มีโกง',
+  description: 'ตลาดหนังสือมือสองสำหรับนักศึกษา · นัดรับใน มช. หรือส่งพัสดุ',
 };
 
 export default function RootLayout({
@@ -36,13 +38,17 @@ export default function RootLayout({
       </head>
       <body className="min-h-screen bg-slate-100 text-slate-900 antialiased flex flex-col items-center">
         <LiffProvider>
-          <CartProvider>
-            <SellerProvider>
-              <ListingProvider>
-                <AppShell>{children}</AppShell>
-              </ListingProvider>
-            </SellerProvider>
-          </CartProvider>
+          <ProfileProvider>
+            <CartProvider>
+              <SellerProvider>
+                <V4OrdersProvider>
+                  <ListingProvider>
+                    <AppShell>{children}</AppShell>
+                  </ListingProvider>
+                </V4OrdersProvider>
+              </SellerProvider>
+            </CartProvider>
+          </ProfileProvider>
         </LiffProvider>
       </body>
     </html>

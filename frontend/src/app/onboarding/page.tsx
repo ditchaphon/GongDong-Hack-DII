@@ -9,14 +9,13 @@ import { BookOpen, ShieldCheck, MapPin, Gift, ChevronRight } from 'lucide-react'
 export default function OnboardingPage() {
   const router = useRouter();
 
+  // v4: both paths start with nickname + avatar + PDPA consent.
   const handleStartBuying = () => {
-    localStorage.setItem('has_seen_onboarding', 'true');
-    router.push('/');
+    router.push('/setup?next=buy');
   };
 
   const handleStartSelling = () => {
-    localStorage.setItem('has_seen_onboarding', 'true');
-    router.push('/seller');
+    router.push('/setup?next=sell');
   };
 
   return (
@@ -58,7 +57,7 @@ export default function OnboardingPage() {
             <div>
               <h3 className="font-bold text-slate-900 text-sm">ซื้ออย่างมั่นใจ</h3>
               <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
-                รูปคู่ป้ายชื่อจริงทุกเล่ม ตรวจสอบประวัติผู้ขาย ไม่มีโกง
+                รูปจริง 4 ด้าน + ป้ายชื่อร้าน · เกรดสภาพจากเช็ก 5 จุด
               </p>
             </div>
           </div>
@@ -71,7 +70,7 @@ export default function OnboardingPage() {
             <div>
               <h3 className="font-bold text-slate-900 text-sm">นัดรับ ฿0</h3>
               <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
-                เจอกันในรั้ว มช. และจุดนัดรับยอดนิยม ดูของจริงก่อนจ่าย
+                ปักหมุดจุดนัดเองได้ ดูของจริงก่อนจ่าย หรือเลือกส่งพัสดุ
               </p>
             </div>
           </div>

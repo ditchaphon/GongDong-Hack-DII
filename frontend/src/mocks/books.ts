@@ -7,6 +7,7 @@ export const MOCK_BOOKS: Book[] = [
     author: 'James Clear',
     publisher: 'บิงโก',
     isbn: '9786160838257',
+    course: 'GEN241 จิตวิทยาทั่วไป',
     isSet: false,
     price: 190,
     originalPrice: 295,
@@ -130,6 +131,12 @@ export const MOCK_BOOKS: Book[] = [
     isPromptPayVerified: true,
     deliveryMethods: ['MEETUP'],
     meetupZones: ['หอพักนักศึกษา ชาย/หญิง', 'คณะมนุษยศาสตร์ มช.'],
+    defects: [
+      {
+        label: 'รอยปากกาที่หน้า 12 ยาวประมาณ 2 ซม.',
+        photo: 'https://images.unsplash.com/photo-1519682337058-a94d519337bc?w=600',
+      },
+    ],
     createdAt: '2026-11-10',
   },
 ];
@@ -138,7 +145,6 @@ export const MOCK_ADDRESSES: Address[] = [
   {
     id: 'addr-01',
     fullName: 'สกาย ระมัดระวัง',
-    phone: '081-234-5678',
     province: 'เชียงใหม่',
     district: 'เมืองเชียงใหม่',
     subdistrict: 'สุเทพ',
@@ -149,7 +155,6 @@ export const MOCK_ADDRESSES: Address[] = [
   {
     id: 'addr-02',
     fullName: 'สกาย ระมัดระวัง (บ้าน)',
-    phone: '081-234-5678',
     province: 'กรุงเทพมหานคร',
     district: 'ปทุมวัน',
     subdistrict: 'วังใหม่',

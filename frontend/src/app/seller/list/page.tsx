@@ -36,7 +36,7 @@ const MOCK_LOOKUP = {
 export default function SellerListStep1Page() {
   const router = useRouter();
   const { scanCode, isMock } = useLiff();
-  const { isVerified } = useSeller();
+  const { isShopSetup } = useSeller();
   const { draft, update, toggleMissingVolume, resetDraft } = useListing();
 
   const [isManualIsbnOpen, setIsManualIsbnOpen] = useState(false);
@@ -88,8 +88,8 @@ export default function SellerListStep1Page() {
   };
 
   const handleNext = () => {
-    if (!isVerified) {
-      setError('ต้องยืนยันตัวตนผู้ขายก่อนลงขายหนังสือ');
+    if (!isShopSetup) {
+      setError('ตั้งชื่อร้านก่อนลงขายหนังสือ');
       return;
     }
     if (!draft.title.trim()) {
@@ -99,7 +99,7 @@ export default function SellerListStep1Page() {
     router.push('/seller/list/step-2');
   };
 
-  if (!isVerified) {
+  if (!isShopSetup) {
     return (
       <div className="flex flex-col min-h-screen bg-slate-50 select-none">
         <TopBar title="ลงขายหนังสือ" />
@@ -107,10 +107,10 @@ export default function SellerListStep1Page() {
           <div className="bg-white rounded-2xl border border-slate-200 mt-6">
             <EmptyState
               icon={<ShieldAlert className="w-8 h-8 text-amber-500" />}
-              title="ยืนยันตัวตนก่อนลงขาย"
-              description="เพื่อความปลอดภัยของผู้ซื้อ ผู้ขายต้องยืนยันเบอร์โทรและบัญชีพร้อมเพย์ก่อนลงขายครั้งแรก"
-              actionText="ไปยืนยันตัวตน (S1)"
-              onAction={() => router.push('/seller/verify')}
+              title="ตั้งร้านก่อนลงขาย"
+              description="ตั้งชื่อร้านและจุดนัดรับ ใช้เวลาประมาณ 1 นาที · ไม่ต้องใช้ชื่อจริง เบอร์โทร หรือบัญชีธนาคาร"
+              actionText="ไปตั้งร้าน"
+              onAction={() => router.push('/seller/setup')}
             />
           </div>
         </div>
@@ -123,6 +123,16 @@ export default function SellerListStep1Page() {
       <TopBar title="ลงขายหนังสือ" onBack={() => router.push('/seller')} />
 
       <Stepper currentStep={1} />
+
+      <div className="px-4 pt-3">
+        <div className="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-slate-100 border border-slate-200 text-[11px] text-slate-600">
+          <span className="inline-flex items-center gap-1.5">
+            <Info className="w-3.5 h-3.5 text-slate-400" />
+            วันนี้ลงขายแล้ว 2 / 10 รายการ
+          </span>
+          <span className="text-slate-400">ลงขายฟรี · จำกัดวันละ 10</span>
+        </div>
+      </div>
 
       <div className="p-4 space-y-4">
         {/* Single / Set mode toggle (S2 / S2B) */}

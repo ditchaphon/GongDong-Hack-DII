@@ -52,7 +52,7 @@ export const PhotoUploader: React.FC<PhotoUploaderProps> = ({
         </span>
         {isNameTag && (
           <span className="text-[10px] font-bold text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded">
-            ต้องมีป้ายชื่อจริง
+            ต้องมีป้ายชื่อร้าน + วันที่
           </span>
         )}
       </div>

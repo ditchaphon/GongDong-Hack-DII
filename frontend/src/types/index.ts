@@ -38,6 +38,10 @@ export interface Book {
   parcelShippingFee?: number;
   meetupZones?: string[];
   createdAt: string;
+  /** v4 discovery fields (optional so existing mock data keeps working). */
+  course?: string;
+  defects?: { label: string; photo: string }[];
+  shopPayeeVerified?: boolean;
 }
 
 export type OrderStatus =
@@ -72,10 +76,11 @@ export interface Order {
   expiresAt?: string;
 }
 
+// Delivery-only receiver data. v4 forbids storing or showing a contact phone
+// on shared objects, so the receiver is identified by name + address only.
 export interface Address {
   id: string;
   fullName: string;
-  phone: string;
   province: string;
   district: string;
   subdistrict: string;
@@ -84,7 +89,31 @@ export interface Address {
   isDefault: boolean;
 }
 
-export type ListingStatus = 'ACTIVE' | 'WAITING_PAYMENT' | 'CLOSED';
+export type ListingStatus = 'ACTIVE' | 'WAITING_PAYMENT' | 'HIDDEN' | 'CLOSED';
+
+export interface Review {
+  id: string;
+  author: string;
+  avatar?: string;
+  rating: number;
+  comment: string;
+  gradeMatched: boolean;
+  createdAt: string;
+}
+
+/** Public shop profile — shop name only, never the owner's real name or contact. */
+export interface ShopProfile {
+  id: string;
+  shopName: string;
+  avatar?: string;
+  rating: number;
+  completedSales: number;
+  payeeVerified: boolean;
+  memberSince: string;
+  meetupZones: string[];
+  supportsParcel: boolean;
+  reviews: Review[];
+}
 
 export interface SellerListing extends Book {
   status: ListingStatus;
@@ -95,7 +124,6 @@ export interface SellerListing extends Book {
 export interface SellerOrder extends Order {
   buyerName: string;
   buyerAvatar?: string;
-  buyerPhone?: string; // unlocked only after the seller accepts (spends 1 credit)
   buyerNote?: string;
   acceptedAt?: string;
 }

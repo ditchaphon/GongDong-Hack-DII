@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { TopBar } from '@/components/layout/TopBar';
 import {
@@ -11,7 +11,6 @@ import {
   Toast,
 } from '@/components/ui';
 import { useListing } from '@/hooks/useListing';
-import { useLiff } from '@/hooks/useLiff';
 import {
   Camera,
   Image as ImageIcon,
@@ -19,15 +18,7 @@ import {
   Trash2,
   AlertTriangle,
   ChevronRight,
-  Sparkles,
 } from 'lucide-react';
-
-const SAMPLE_PHOTOS = [
-  'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=600',
-  'https://images.unsplash.com/photo-1544947950-fa07a98d237f?w=600',
-  'https://images.unsplash.com/photo-1512820790803-83ca734da794?w=600',
-  'https://images.unsplash.com/photo-1589829085413-56de8ae18c73?w=600',
-];
 
 const DEFECT_AREAS = [
   'สันหนังสือ',
@@ -40,10 +31,10 @@ const DEFECT_AREAS = [
 export default function SellerListStep2Page() {
   const router = useRouter();
   const { draft, update, setPhoto, addDefect, removeDefect } = useListing();
-  const { isMock } = useLiff();
 
   const isSet = draft.mode === 'SET';
 
+  const photoInputRef = useRef<HTMLInputElement>(null);
   const [isDefectOpen, setIsDefectOpen] = useState(false);
   const [isPhotoOpen, setIsPhotoOpen] = useState(false);
   const [defectArea, setDefectArea] = useState(DEFECT_AREAS[0]);
@@ -61,17 +52,9 @@ export default function SellerListStep2Page() {
 
   const missing = requiredPhotos.some((p) => !draft.photos[p.key]);
 
-  const fillSamplePhotos = () => {
-    setPhoto('cover', SAMPLE_PHOTOS[0]);
-    setPhoto('back', SAMPLE_PHOTOS[1]);
-    setPhoto('spine', SAMPLE_PHOTOS[2]);
-    setPhoto('nameTag', SAMPLE_PHOTOS[3]);
-    setToastMessage('เติมรูปตัวอย่างครบ 4 รูปแล้ว');
-  };
-
   const handleNext = () => {
     if (missing) {
-      setError('ต้องมีรูปครบทั้ง 4 รูป รวมรูปป้ายชื่อจริงก่อนไปขั้นตอนต่อไป');
+      setError('ต้องมีรูปครบทั้ง 4 รูป รวมรูปป้ายชื่อร้านก่อนไปขั้นตอนต่อไป');
       return;
     }
     setError(null);
@@ -100,17 +83,6 @@ export default function SellerListStep2Page() {
             </span>
           </div>
 
-          {isMock && (
-            <button
-              type="button"
-              onClick={fillSamplePhotos}
-              className="w-full flex items-center justify-center gap-1.5 p-2 rounded-xl border border-dashed border-slate-300 text-[11px] font-semibold text-slate-500 hover:bg-slate-50"
-            >
-              <Sparkles className="w-3.5 h-3.5" />
-              เติมรูปตัวอย่าง 4 รูป (โหมดจำลอง)
-            </button>
-          )}
-
           <div className="grid grid-cols-2 gap-3">
             {requiredPhotos.map((p) => (
               <PhotoUploader
@@ -123,7 +95,7 @@ export default function SellerListStep2Page() {
                 onRemove={() => setPhoto(p.key, '')}
                 description={
                   p.key === 'nameTag'
-                    ? 'เขียนชื่อ LINE + วันที่ วางคู่กับหนังสือ'
+                    ? 'เขียนชื่อร้าน + วันที่ วางคู่กับหนังสือ · ระบบเติมลายน้ำให้'
                     : p.key === 'spine'
                     ? 'ถ่ายตรง เห็นสันและความหนา'
                     : 'ถ่ายตรง เห็นขอบทั้ง 4 ด้าน'
@@ -318,13 +290,23 @@ export default function SellerListStep2Page() {
         title="เพิ่มรูปภาพ (PHOTO)"
       >
         <div className="space-y-2 py-1">
+          <input
+            ref={photoInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            className="hidden"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (!file) return;
+              setDefectPhoto(URL.createObjectURL(file));
+              setIsPhotoOpen(false);
+              setToastMessage('แนบรูปตำหนิแล้ว');
+            }}
+          />
           <button
             type="button"
-            onClick={() => {
-              setDefectPhoto(SAMPLE_PHOTOS[1]);
-              setIsPhotoOpen(false);
-              setToastMessage('แนบรูปตำหนิแล้ว (TPHOTO)');
-            }}
+            onClick={() => photoInputRef.current?.click()}
             className="w-full flex items-center gap-3 p-3.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-sm font-medium text-slate-800"
           >
             <Camera className="w-5 h-5 text-[#06C755]" />
@@ -332,11 +314,7 @@ export default function SellerListStep2Page() {
           </button>
           <button
             type="button"
-            onClick={() => {
-              setDefectPhoto(SAMPLE_PHOTOS[2]);
-              setIsPhotoOpen(false);
-              setToastMessage('แนบรูปตำหนิแล้ว (TPHOTO)');
-            }}
+            onClick={() => photoInputRef.current?.click()}
             className="w-full flex items-center gap-3 p-3.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-sm font-medium text-slate-800"
           >
             <ImageIcon className="w-5 h-5 text-sky-600" />

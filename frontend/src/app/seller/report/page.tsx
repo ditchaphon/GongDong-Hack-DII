@@ -41,7 +41,7 @@ export default function SellerReportPage() {
 
   return (
     <div className="flex flex-col min-h-screen bg-slate-50 select-none pb-32">
-      <TopBar title="รายงานปัญหา (S6R)" onBack={() => router.push('/seller/orders')} />
+      <TopBar title="รายงานปัญหา (S6R)" onBack={() => router.push('/orders')} />
 
       <div className="p-4 space-y-4">
         <div className="bg-white rounded-2xl border border-slate-200 p-4 space-y-3">

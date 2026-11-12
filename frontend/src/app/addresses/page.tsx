@@ -58,7 +58,6 @@ export default function AddressesPage() {
                     </span>
                   )}
                 </div>
-                <span className="font-mono text-xs text-slate-500">{addr.phone}</span>
               </div>
 
               <div className="flex items-center gap-1">

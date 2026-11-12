@@ -17,18 +17,19 @@ import {
   Truck,
   Check,
   ChevronRight,
-  Wallet,
   Layers,
+  Info,
 } from 'lucide-react';
 
 export default function SellerListStep4Page() {
   const router = useRouter();
   const { draft, grade, update, toggleDelivery } = useListing();
-  const { publishListing } = useSeller();
+  const { publishListing, shop } = useSeller();
 
   const isSet = draft.mode === 'SET';
+  const canParcel = shop?.payeeVerified ?? false;
   const hasMeetup = draft.deliveryMethods.includes('MEETUP');
-  const hasParcel = draft.deliveryMethods.includes('PARCEL');
+  const hasParcel = draft.deliveryMethods.includes('PARCEL') && canParcel;
 
   const [priceInput, setPriceInput] = useState(draft.price ? String(draft.price) : '');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -154,12 +155,13 @@ export default function SellerListStep4Page() {
 
           <button
             type="button"
+            disabled={!canParcel}
             onClick={() => toggleDelivery('PARCEL')}
             className={`w-full flex items-start gap-3 p-3.5 rounded-2xl border text-left transition ${
               hasParcel
                 ? 'border-[#06C755] bg-emerald-50/50'
                 : 'border-slate-200 bg-white hover:bg-slate-50'
-            }`}
+            } ${!canParcel ? 'opacity-50' : ''}`}
           >
             <span
               className={`mt-0.5 w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 ${
@@ -176,13 +178,23 @@ export default function SellerListStep4Page() {
                 ส่งพัสดุ
               </span>
               <span className="block text-[11px] text-slate-500 mt-0.5">
-                ผู้ซื้อโอนพร้อมเพย์ + แนบสลิป · ส่งภายใน 48 ชม. หลังได้รับเงิน
+                {canParcel
+                  ? 'ผู้ซื้อจ่ายผ่านคิวอาร์ + แนบสลิป · ส่งภายใน 48 ชม. หลังตรวจสลิป'
+                  : 'ต้องยืนยันบัญชีรับเงินก่อนเปิดส่งพัสดุ'}
               </span>
             </span>
             <span className="text-sm font-black text-slate-800">
               ฿{draft.parcelShippingFee}
             </span>
           </button>
+
+          {!canParcel && (
+            <div className="flex items-start gap-2 p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-[11px] text-amber-900 leading-relaxed">
+              <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+              ร้านที่ยังไม่ยืนยันบัญชีรับเงินรับได้เฉพาะนัดรับและจ่ายเงินสด
+              · ยืนยันได้ตอนเติมเครดิตครั้งแรก
+            </div>
+          )}
 
           {hasParcel && (
             <div className="pl-8 space-y-3">
@@ -208,32 +220,6 @@ export default function SellerListStep4Page() {
                 เล่มถัดไปในร้านเดียวกัน +฿10 ต่อเล่ม
               </p>
 
-              <button
-                type="button"
-                onClick={() => {
-                  update({ codEnabled: !draft.codEnabled });
-                  setToastMessage(
-                    draft.codEnabled ? 'ปิดเก็บเงินปลายทางแล้ว' : 'เปิดเก็บเงินปลายทางแล้ว (TCOD)'
-                  );
-                }}
-                className="w-full flex items-center justify-between p-3 rounded-xl border border-slate-200 hover:bg-slate-50"
-              >
-                <span className="flex items-center gap-2 text-xs font-semibold text-slate-700">
-                  <Wallet className="w-4 h-4 text-amber-600" />
-                  รับเก็บเงินปลายทาง (COD)
-                </span>
-                <span
-                  className={`w-10 h-6 rounded-full p-0.5 transition ${
-                    draft.codEnabled ? 'bg-[#06C755]' : 'bg-slate-300'
-                  }`}
-                >
-                  <span
-                    className={`block w-5 h-5 bg-white rounded-full shadow transition ${
-                      draft.codEnabled ? 'translate-x-4' : 'translate-x-0'
-                    }`}
-                  />
-                </span>
-              </button>
             </div>
           )}
         </div>

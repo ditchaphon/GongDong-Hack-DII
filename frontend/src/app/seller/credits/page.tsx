@@ -6,6 +6,7 @@ import { TopBar } from '@/components/layout/TopBar';
 import { Button } from '@/components/ui';
 import { useSeller } from '@/hooks/useSeller';
 import { MOCK_CREDIT_PACKAGES } from '@/mocks/seller';
+import { CREDIT_REASON_LABEL, sortLedger } from '@/lib/creditLedger';
 import {
   CreditCard,
   Check,
@@ -13,11 +14,16 @@ import {
   Info,
   ChevronRight,
   ShieldCheck,
+  History,
+  ShieldAlert,
 } from 'lucide-react';
 
 export default function SellerCreditsPage() {
   const router = useRouter();
-  const { credits, selectedPackageId, setSelectedPackageId } = useSeller();
+  const { credits, selectedPackageId, setSelectedPackageId, shop, ledger } =
+    useSeller();
+  const payeeVerified = shop?.payeeVerified ?? false;
+  const history = sortLedger(ledger).slice(0, 5);
 
   const selected =
     MOCK_CREDIT_PACKAGES.find((p) => p.id === selectedPackageId) ||
@@ -42,6 +48,21 @@ export default function SellerCreditsPage() {
             1 เครดิต = รับได้ 1 ออเดอร์ · ลงขายฟรีเสมอ
           </p>
         </div>
+
+        {!payeeVerified && (
+          <button
+            type="button"
+            onClick={() => router.push('/seller/credits/verify')}
+            className="w-full flex items-start gap-2.5 p-3.5 rounded-2xl bg-amber-50 border border-amber-200 text-left"
+          >
+            <ShieldAlert className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+            <span className="flex-1 text-[11px] text-amber-900 leading-relaxed">
+              เติมเครดิตครั้งแรกต้องยืนยันบัญชีรับเงินก่อน · ใช้ตรวจสลิปเท่านั้น
+              ผู้ซื้อไม่เห็นข้อมูลนี้
+            </span>
+            <ChevronRight className="w-4 h-4 text-amber-600 shrink-0" />
+          </button>
+        )}
 
         {/* Packages (S5) */}
         <div className="space-y-2.5">
@@ -102,6 +123,49 @@ export default function SellerCreditsPage() {
           })}
         </div>
 
+        {/* Ledger */}
+        <div className="bg-white rounded-2xl border border-slate-200 p-4 space-y-2.5">
+          <div className="flex items-center gap-1.5 text-xs font-bold text-slate-700">
+            <History className="w-4 h-4 text-slate-400" />
+            ประวัติเครดิต
+          </div>
+          {history.length === 0 ? (
+            <p className="text-[11px] text-slate-400">ยังไม่มีรายการเคลื่อนไหว</p>
+          ) : (
+            <div className="divide-y divide-slate-100">
+              {history.map((entry) => (
+                <div key={entry.id} className="py-2 flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="text-[11px] font-semibold text-slate-700 truncate">
+                      {CREDIT_REASON_LABEL[entry.reason]}
+                      {entry.orderId ? ` · #${entry.orderId}` : ''}
+                    </div>
+                    <div className="text-[10px] text-slate-400">
+                      {new Date(entry.atISO).toLocaleDateString('th-TH', {
+                        day: 'numeric',
+                        month: 'short',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                      {entry.note ? ` · ${entry.note}` : ''}
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <div
+                      className={`text-xs font-bold ${
+                        entry.delta > 0 ? 'text-emerald-600' : 'text-rose-500'
+                      }`}
+                    >
+                      {entry.delta > 0 ? `+${entry.delta}` : entry.delta}
+                    </div>
+                    <div className="text-[10px] text-slate-400">คงเหลือ {entry.balanceAfter}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
         <div className="flex items-start gap-2 p-3 rounded-xl bg-sky-50 border border-sky-200 text-[11px] text-sky-800">
           <Info className="w-4 h-4 shrink-0 mt-0.5" />
           <span className="leading-relaxed">
@@ -124,10 +188,16 @@ export default function SellerCreditsPage() {
           <Button
             fullWidth
             size="lg"
-            onClick={() => router.push('/seller/credits/pay')}
+            onClick={() =>
+              router.push(
+                payeeVerified ? '/seller/credits/pay' : '/seller/credits/verify'
+              )
+            }
             rightIcon={<ChevronRight className="w-4 h-4" />}
           >
-            ชำระเงิน ฿{selected.price} · {selected.credits} เครดิต
+            {payeeVerified
+              ? `ชำระเงิน ฿${selected.price} · ${selected.credits} เครดิต`
+              : 'ยืนยันบัญชีก่อนเติมเครดิต'}
           </Button>
         </div>
       </div>

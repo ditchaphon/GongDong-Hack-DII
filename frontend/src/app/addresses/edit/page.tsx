@@ -10,7 +10,6 @@ export default function AddressEditPage() {
   const router = useRouter();
 
   const [fullName, setFullName] = useState('สกาย ระมัดระวัง');
-  const [phone, setPhone] = useState('081-234-5678');
   const [province, setProvince] = useState('เชียงใหม่');
   const [district, setDistrict] = useState('เมืองเชียงใหม่');
   const [subdistrict, setSubdistrict] = useState('สุเทพ');
@@ -37,7 +36,7 @@ export default function AddressEditPage() {
   };
 
   const handleSave = () => {
-    if (!fullName || !phone || !detail) {
+    if (!fullName || !detail) {
       setToastMessage('กรุณากรอกข้อมูลให้ครบถ้วน');
       return;
     }
@@ -50,18 +49,14 @@ export default function AddressEditPage() {
       <TopBar title="เพิ่ม / แก้ไขที่อยู่ (B7E)" />
 
       <div className="p-4 space-y-4 flex-1">
+        <p className="text-[11px] text-slate-500 leading-relaxed">
+          ใช้สำหรับจัดส่งเท่านั้น · ระบบไม่ขอและไม่แสดงเบอร์โทรให้ผู้ขายเห็น
+        </p>
         <div className="bg-white rounded-2xl border border-slate-200 p-4 space-y-3.5">
           <Input
             label="ชื่อ-นามสกุล ผู้รับ *"
             value={fullName}
             onChange={(e) => setFullName(e.target.value)}
-          />
-
-          <Input
-            label="เบอร์โทรศัพท์ *"
-            type="tel"
-            value={phone}
-            onChange={(e) => setPhone(e.target.value)}
           />
 
           {/* Province / District Picker Trigger (PROV in Figma 28:2276) */}

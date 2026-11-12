@@ -2,9 +2,13 @@
 
 import React from 'react';
 import clsx from 'clsx';
-import { ShieldCheck, CheckCircle2, Tag, MapPin } from 'lucide-react';
+import { CheckCircle2, Tag, MapPin, Truck } from 'lucide-react';
 
-export type TrustType = 'promptpay' | 'blacklist' | 'nametag' | 'meetup';
+/**
+ * v4 trust badges. These describe what was verified, never a real name, payee
+ * name or contact channel — buyers see the shop name only.
+ */
+export type TrustType = 'payee' | 'nametag' | 'meetup' | 'parcel';
 
 export interface TrustBadgeProps {
   type: TrustType;
@@ -20,18 +24,13 @@ export const TrustBadge: React.FC<TrustBadgeProps> = ({
   className,
 }) => {
   const configs = {
-    promptpay: {
-      defaultLabel: 'พร้อมเพย์ตรงชื่อ ✓',
+    payee: {
+      defaultLabel: 'ยืนยันบัญชีรับเงินแล้ว',
       icon: <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />,
       styles: 'bg-emerald-50 text-emerald-700 border-emerald-200',
     },
-    blacklist: {
-      defaultLabel: 'ตรวจ Blacklist ผ่าน ✓',
-      icon: <ShieldCheck className="w-3 h-3 text-blue-600 shrink-0" />,
-      styles: 'bg-blue-50 text-blue-700 border-blue-200',
-    },
     nametag: {
-      defaultLabel: 'มีป้ายชื่อจริง 🏷️',
+      defaultLabel: 'ป้ายชื่อร้าน + วันที่',
       icon: <Tag className="w-3 h-3 text-amber-600 shrink-0" />,
       styles: 'bg-amber-50 text-amber-800 border-amber-200',
     },
@@ -39,6 +38,11 @@ export const TrustBadge: React.FC<TrustBadgeProps> = ({
       defaultLabel: 'นัดรับ ฿0',
       icon: <MapPin className="w-3 h-3 text-teal-600 shrink-0" />,
       styles: 'bg-teal-50 text-teal-700 border-teal-200',
+    },
+    parcel: {
+      defaultLabel: 'ส่งพัสดุได้',
+      icon: <Truck className="w-3 h-3 text-slate-500 shrink-0" />,
+      styles: 'bg-slate-50 text-slate-700 border-slate-200',
     },
   };
 
@@ -58,4 +62,3 @@ export const TrustBadge: React.FC<TrustBadgeProps> = ({
     </span>
   );
 };
-

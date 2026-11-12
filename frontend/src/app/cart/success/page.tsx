@@ -28,7 +28,8 @@ export default function CartSuccessPage() {
         </div>
 
         <p className="text-xs text-slate-500 max-w-xs leading-relaxed">
-          ระบบได้ส่งแจ้งเตือนไปยัง <span className="font-bold text-slate-800">ร้าน{sellerName || 'ผู้ขาย'}</span> แล้ว เมื่อผู้ขายกดรับออเดอร์ ระบบจะเปิดเผยเบอร์โทรศัพท์และจุดนัดพบให้คุณทันที
+          ระบบส่งคำขอไปยัง <span className="font-bold text-slate-800">ร้าน{sellerName || 'ผู้ขาย'}</span> แล้ว
+          · คำขอยังไม่ล็อกหนังสือ รอผู้ขายกดรับเพื่อเปิดแชทออเดอร์และนัดรับในแอป
         </p>
 
         {/* Order Info Card */}
@@ -47,7 +48,7 @@ export default function CartSuccessPage() {
           </div>
           <div className="flex justify-between text-slate-500 pt-1 border-t border-slate-100">
             <span>สถานะ:</span>
-            <span className="font-bold text-amber-600">รอผู้ขายกดยืนยัน</span>
+            <span className="font-bold text-amber-600">รอผู้ขายกดรับ</span>
           </div>
         </div>
       </div>

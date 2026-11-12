@@ -12,6 +12,8 @@ import {
 } from '@/components/ui';
 import { useCart } from '@/hooks/useCart';
 import { MOCK_ADDRESSES } from '@/mocks/books';
+import { getShopById } from '@/mocks/shops';
+import { DeliveryMethod } from '@/types';
 import {
   Trash2,
   MapPin,
@@ -27,6 +29,7 @@ export default function CartPage() {
   const router = useRouter();
   const {
     items,
+    sellerId,
     sellerName,
     deliveryMethod,
     setDeliveryMethod,
@@ -41,8 +44,6 @@ export default function CartPage() {
     removeFromCart,
     clearCart,
     bookTotal,
-    shippingFee,
-    grandTotal,
   } = useCart();
 
   const [isZoneSheetOpen, setIsZoneSheetOpen] = useState(false);
@@ -50,6 +51,18 @@ export default function CartPage() {
   const [isAddressSheetOpen, setIsAddressSheetOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const shop = sellerId ? getShopById(sellerId) : undefined;
+  const parcelBlocked = !!shop && !shop.supportsParcel;
+  const bookAllowsParcel = items[0]?.deliveryMethods.includes('PARCEL') ?? false;
+
+  // v4: unverified shops are meetup + cash only. Derive the method instead of
+  // forcing it in an effect, so the user's choice is never overwritten.
+  const effectiveDelivery: DeliveryMethod =
+    parcelBlocked || !bookAllowsParcel ? 'MEETUP' : deliveryMethod;
+  const parcelFee = 40 + Math.max(0, items.length - 1) * 10;
+  const effectiveShippingFee = effectiveDelivery === 'MEETUP' ? 0 : parcelFee;
+  const effectiveGrandTotal = bookTotal + effectiveShippingFee;
 
   const zones = [
     'หน้าหอสมุดกลาง มช.',
@@ -67,6 +80,8 @@ export default function CartPage() {
   ];
 
   const handleSubmitOrder = () => {
+    // Keep the shared cart state in sync for the success screen.
+    if (deliveryMethod !== effectiveDelivery) setDeliveryMethod(effectiveDelivery);
     setIsSubmitting(true);
     setTimeout(() => {
       setIsSubmitting(false);
@@ -149,12 +164,18 @@ export default function CartPage() {
             เลือกวิธีรับหนังสือ
           </h3>
 
+          {parcelBlocked && (
+            <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-[11px] text-amber-900 leading-relaxed">
+              ร้านนี้ยังไม่ยืนยันบัญชีรับเงิน · รับได้เฉพาะนัดรับและจ่ายเงินสด
+            </div>
+          )}
+
           <div className="grid grid-cols-2 gap-2">
             <button
               type="button"
               onClick={() => setDeliveryMethod('MEETUP')}
               className={`p-3 rounded-2xl border flex flex-col items-start gap-1 text-left transition ${
-                deliveryMethod === 'MEETUP'
+                effectiveDelivery === 'MEETUP'
                   ? 'border-[#06C755] bg-emerald-50/50 text-[#059669] ring-2 ring-[#06C755]/20 font-bold'
                   : 'border-slate-200 text-slate-600 hover:bg-slate-50'
               }`}
@@ -168,25 +189,26 @@ export default function CartPage() {
 
             <button
               type="button"
+              disabled={parcelBlocked || !bookAllowsParcel}
               onClick={() => setDeliveryMethod('PARCEL')}
               className={`p-3 rounded-2xl border flex flex-col items-start gap-1 text-left transition ${
-                deliveryMethod === 'PARCEL'
+                effectiveDelivery === 'PARCEL'
                   ? 'border-[#06C755] bg-emerald-50/50 text-[#059669] ring-2 ring-[#06C755]/20 font-bold'
                   : 'border-slate-200 text-slate-600 hover:bg-slate-50'
-              }`}
+              } ${parcelBlocked || !bookAllowsParcel ? 'opacity-40 pointer-events-none' : ''}`}
             >
               <div className="flex items-center gap-1.5 text-xs">
                 <Truck className="w-4 h-4 text-slate-500" />
                 <span>ส่งพัสดุ</span>
               </div>
               <span className="text-sm font-black text-slate-800">
-                ฿{shippingFee}
+                ฿{parcelFee}
               </span>
             </button>
           </div>
 
           {/* If Meetup: Zone + Time Pickers */}
-          {deliveryMethod === 'MEETUP' ? (
+          {effectiveDelivery === 'MEETUP' ? (
             <div className="pt-2 space-y-2 border-t border-slate-100">
               <div
                 role="button"
@@ -247,7 +269,6 @@ export default function CartPage() {
                   {selectedAddress.detail} {selectedAddress.subdistrict} {selectedAddress.district}{' '}
                   {selectedAddress.province} {selectedAddress.postalCode}
                 </p>
-                <p className="text-slate-400 font-mono">โทร: {selectedAddress.phone}</p>
               </div>
             </div>
           )}
@@ -260,15 +281,15 @@ export default function CartPage() {
             <span className="font-semibold text-slate-800">฿{bookTotal.toLocaleString()}</span>
           </div>
           <div className="flex justify-between text-slate-500">
-            <span>ค่าจัดส่ง ({deliveryMethod === 'MEETUP' ? 'นัดรับ มช.' : 'พัสดุ'})</span>
+            <span>ค่าจัดส่ง ({effectiveDelivery === 'MEETUP' ? 'นัดรับ มช.' : 'พัสดุ'})</span>
             <span className="font-semibold text-slate-800">
-              {shippingFee === 0 ? '฿0 ฟรี' : `฿${shippingFee}`}
+              {effectiveShippingFee === 0 ? '฿0 ฟรี' : `฿${effectiveShippingFee}`}
             </span>
           </div>
           <div className="pt-2 border-t border-slate-100 flex justify-between items-baseline text-sm">
             <span className="font-bold text-slate-900">ยอดรวมทั้งสิ้น</span>
             <span className="text-xl font-black text-[#06C755]">
-              ฿{grandTotal.toLocaleString()}
+              ฿{effectiveGrandTotal.toLocaleString()}
             </span>
           </div>
         </div>
@@ -374,14 +395,18 @@ export default function CartPage() {
 
       {/* Fixed Submit Order Button */}
       <div className="fixed bottom-0 left-0 right-0 z-30 flex justify-center pointer-events-none">
-        <div className="w-full max-w-[430px] bg-white border-t border-slate-200 p-3 pointer-events-auto safe-area-bottom shadow-lg">
+        <div className="w-full max-w-[430px] bg-white border-t border-slate-200 p-3 pointer-events-auto safe-area-bottom shadow-lg space-y-2">
+          <p className="text-[10px] text-slate-400 text-center leading-relaxed">
+            คำขอซื้อไม่ล็อกหนังสือ · ขอค้างได้สูงสุด 3 รายการ
+            · ผู้ขายเป็นคนกดรับและเปิดแชทออเดอร์
+          </p>
           <Button
             fullWidth
             size="lg"
             isLoading={isSubmitting}
             onClick={handleSubmitOrder}
           >
-            ส่งคำขอซื้อ (฿{grandTotal.toLocaleString()})
+            ส่งคำขอซื้อ (฿{effectiveGrandTotal.toLocaleString()})
           </Button>
         </div>
       </div>

@@ -12,6 +12,9 @@ export default function SearchPage() {
   const [query, setQuery] = useState('');
   const [selectedZone, setSelectedZone] = useState<string>('all');
   const [maxPrice, setMaxPrice] = useState<number>(3000);
+  const [gradeFilter, setGradeFilter] = useState<'ALL' | 'A' | 'B' | 'C' | 'D'>('ALL');
+  const [typeFilter, setTypeFilter] = useState<'ALL' | 'SINGLE' | 'SET'>('ALL');
+  const [deliveryFilter, setDeliveryFilter] = useState<'ALL' | 'MEETUP' | 'PARCEL'>('ALL');
   const [isZoneSheetOpen, setIsZoneSheetOpen] = useState(false);
   const [isPriceSheetOpen, setIsPriceSheetOpen] = useState(false);
 
@@ -23,13 +26,20 @@ export default function SearchPage() {
   ];
 
   const filteredBooks = MOCK_BOOKS.filter((b) => {
+    const q = query.toLowerCase();
     const matchesQuery =
       !query ||
-      b.title.toLowerCase().includes(query.toLowerCase()) ||
-      b.author.toLowerCase().includes(query.toLowerCase()) ||
-      b.isbn?.includes(query);
+      b.title.toLowerCase().includes(q) ||
+      b.author.toLowerCase().includes(q) ||
+      b.isbn?.includes(query) ||
+      b.course?.toLowerCase().includes(q);
 
     const matchesPrice = b.price <= maxPrice;
+    const matchesGrade = gradeFilter === 'ALL' || b.grade === gradeFilter;
+    const matchesType =
+      typeFilter === 'ALL' || (typeFilter === 'SET' ? b.isSet : !b.isSet);
+    const matchesDelivery =
+      deliveryFilter === 'ALL' || b.deliveryMethods.includes(deliveryFilter);
 
     const matchesZone =
       selectedZone === 'all' ||
@@ -41,7 +51,14 @@ export default function SearchPage() {
           return true;
         }));
 
-    return matchesQuery && matchesPrice && matchesZone;
+    return (
+      matchesQuery &&
+      matchesPrice &&
+      matchesGrade &&
+      matchesType &&
+      matchesDelivery &&
+      matchesZone
+    );
   });
 
   return (
@@ -53,7 +70,7 @@ export default function SearchPage() {
         <SearchBar
           value={query}
           onChange={setQuery}
-          placeholder="ค้นชื่อหนังสือ ผู้แต่ง หรือ ISBN..."
+          placeholder="ค้นชื่อหนังสือ ผู้แต่ง ISBN หรือรายวิชา..."
           autoFocus
         />
 
@@ -89,13 +106,67 @@ export default function SearchPage() {
             <span>{maxPrice < 3000 ? `ไม่เกิน ฿${maxPrice}` : 'ราคา'}</span>
           </button>
 
-          {(selectedZone !== 'all' || maxPrice < 3000 || query) && (
+          <select
+            aria-label="กรองเกรดสภาพ"
+            value={gradeFilter}
+            onChange={(event) =>
+              setGradeFilter(event.target.value as 'ALL' | 'A' | 'B' | 'C' | 'D')
+            }
+            className="shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold border border-slate-200 bg-white text-slate-700"
+          >
+            <option value="ALL">เกรดทั้งหมด</option>
+            <option value="A">เกรด A</option>
+            <option value="B">เกรด B</option>
+            <option value="C">เกรด C</option>
+            <option value="D">เกรด D</option>
+          </select>
+
+          <Chip
+            label="เล่มเดียว"
+            size="sm"
+            selected={typeFilter === 'SINGLE'}
+            onClick={() =>
+              setTypeFilter((prev) => (prev === 'SINGLE' ? 'ALL' : 'SINGLE'))
+            }
+          />
+          <Chip
+            label="ยกชุด"
+            size="sm"
+            selected={typeFilter === 'SET'}
+            onClick={() => setTypeFilter((prev) => (prev === 'SET' ? 'ALL' : 'SET'))}
+          />
+          <Chip
+            label="นัดรับได้"
+            size="sm"
+            selected={deliveryFilter === 'MEETUP'}
+            onClick={() =>
+              setDeliveryFilter((prev) => (prev === 'MEETUP' ? 'ALL' : 'MEETUP'))
+            }
+          />
+          <Chip
+            label="ส่งพัสดุ"
+            size="sm"
+            selected={deliveryFilter === 'PARCEL'}
+            onClick={() =>
+              setDeliveryFilter((prev) => (prev === 'PARCEL' ? 'ALL' : 'PARCEL'))
+            }
+          />
+
+          {(selectedZone !== 'all' ||
+            maxPrice < 3000 ||
+            query ||
+            gradeFilter !== 'ALL' ||
+            typeFilter !== 'ALL' ||
+            deliveryFilter !== 'ALL') && (
             <button
               type="button"
               onClick={() => {
                 setQuery('');
                 setSelectedZone('all');
                 setMaxPrice(3000);
+                setGradeFilter('ALL');
+                setTypeFilter('ALL');
+                setDeliveryFilter('ALL');
               }}
               className="text-xs text-rose-500 font-semibold px-2 py-1"
             >

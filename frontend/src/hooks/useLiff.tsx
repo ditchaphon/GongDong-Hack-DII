@@ -40,8 +40,6 @@ const MOCK_USER: UserProfile = {
   isSeller: true,
   credits: 5,
   isVerifiedSeller: true,
-  promptPayName: 'นาย สกาย ระมัดระวัง',
-  phone: '081-234-5678',
 };
 
 const LiffContext = createContext<LiffContextValue | null>(null);
