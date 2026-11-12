@@ -50,3 +50,32 @@ To deliver a production-ready UX, the following states are prepared across all s
 9. **Admin Slip Approval**: When an admin approves a top-up slip in desktop admin, should the seller's credit balance update immediately in mock storage?
 10. **Book Cover Aspect Ratio**: Is the standard book card thumbnail ratio 3:4 or 1:1 in the feed?
 
+
+---
+
+## 4. Phase 3 — Seller flow (implemented)
+
+| Figma | Route | Notes / states |
+|---|---|---|
+| S1 | `/seller/verify` | Identity form, validation errors, already-verified state, success toast |
+| S2 / S2B | `/seller/list` | Single vs set mode, scan via `liff.scanCodeV2` with manual fallback, verification gate (empty state), step-1 validation |
+| S2M / S2N | sheets on `/seller/list` | Manual ISBN lookup, manual book info (no ISBN) |
+| S3P / S3PB | `/seller/list/step-2` | 4 mandatory photos + defect photos, PHOTO source sheet, DEFECT sheet, missing-photo validation, mock "fill sample photos" helper |
+| S3C / S3CB | `/seller/list/step-3` | 5-point checklist, live auto-grade, GRADE criteria sheet, TGRADE toast |
+| S3 / S3B | `/seller/list/step-4` | Price + PriceSuggest (TPRICE), meetup/parcel toggles, parcel fee, COD (TCOD), price/delivery validation |
+| S3S | `/seller/list/success` | Listing summary, share (LINE share target picker → copy-link fallback) |
+| S4 | `/seller/orders` | Tabs (new / active / done), empty state, accept + reject sheets, insufficient-credit modal |
+| S4A | sheet on `/seller/orders` | Credit confirmation, balance shown, blocked when 0 credits |
+| S4B | `/seller/orders/[id]/accepted` | Buyer phone unlocked, call modal, next steps, credits remaining |
+| S4L / S4W / S4C | `/seller` | Shop hub tabs: listings, waiting for payment, closed sales; empty states, verify banner, credit balance |
+| S5 | `/seller/credits` | 3 packages, selection, balance |
+| S5Q | `/seller/credits/pay` | Mock PromptPay QR, copy id, 30-min countdown, slip upload required |
+| S5OK | `/seller/credits/success` | New balance, mock auto-approval note |
+| S6 | `/seller/meetup/[id]` | Meetup details, share (TSHARE), call modal, parcel slip + tracking, close-sale confirm |
+| S7 | `/seller/meetup/[id]/closed` | Earnings summary, next actions |
+| S6R | `/seller/report` | Order selector, reason list, 10-char detail validation, evidence photo |
+| S6RS | `/seller/report/sent` | Case number, next-step timeline |
+
+**Shared state:** `useSeller()` (verification, credits, seller orders, listings) and `useListing()` (wizard draft shared across S2 → S3S). Credits use the existing `useLiff()` mock user.
+
+**Mock-only behaviour:** auto-approval of top-up slips, sample photo filler, and the QR image are demo stand-ins; marked in the UI where they appear.

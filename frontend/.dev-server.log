@@ -1,0 +1,17 @@
+
+> gongdong@1.0.0 dev
+> next dev --webpack
+
+▲ Next.js 16.3.8 (webpack)
+- Local:         http://localhost:13138
+- Network:       http://10.195.114.92:13138
+- Environments: .env.local
+✓ Ready in 571ms
+⚠ Warning: Next.js ignored package-lock.json in C:\Users\Vivobook because it is outside the current Git repository (C:\Users\Vivobook\Desktop\Work type sht\GongDong-Hack-DII).
+ To use this directory, set `outputFileTracingRoot` in your Next.js config.
+
+✓ Running next.config.ts took 39ms
+
+○ Compiling /seller ...
+ GET /seller 200 in 5.7s (next.js: 5.5s, application-code: 237ms)
+ GET /seller/list 200 in 2.3s (next.js: 2.2s, application-code: 124ms)
