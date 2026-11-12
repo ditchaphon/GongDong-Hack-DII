@@ -31,6 +31,7 @@ import {
   KeyRound,
   CheckCircle2,
   AlertTriangle,
+  ExternalLink,
 } from 'lucide-react';
 
 const GRADE_LABEL: Record<string, string> = {
@@ -179,6 +180,43 @@ export default function V4OrderDetailPage({
       />
 
       <div className="p-4 space-y-4">
+        {/* แบนเนอร์แจ้งเตือนสถานะ DISPUTED ชัดเจน */}
+        {order.status === 'DISPUTED' && (
+          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 space-y-1.5 text-[11px] text-amber-900 shadow-sm">
+            <div className="flex items-center gap-1.5 font-bold text-amber-800 text-xs">
+              <ShieldCheck className="w-4 h-4 text-amber-600 shrink-0" />
+              <span>อยู่ระหว่างการตรวจสอบข้อพิพาทโดยแอดมิน</span>
+            </div>
+            <p className="leading-relaxed">
+              {order.dispute ? `เหตุผลที่แจ้ง: "${order.dispute.reason}"` : 'มีรายงานข้อพิพาทในออเดอร์นี้'} · ตัวนับเวลาทั้งหมดหยุดชั่วคราว สามารถส่งหลักฐานหรือชี้แจงเพิ่มเติมในแชทออเดอร์ด้านล่างได้
+            </p>
+          </div>
+        )}
+
+        {/* การ์ดเชิญชวนรีวิวเมื่อออเดอร์สำเร็จ */}
+        {order.status === 'COMPLETED' && (
+          <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 flex items-center justify-between gap-3 shadow-sm">
+            <div className="space-y-0.5">
+              <div className="flex items-center gap-1 text-xs font-bold text-emerald-900">
+                <Star className="w-3.5 h-3.5 fill-amber-400 stroke-amber-400" />
+                <span>{order.review ? `บันทึกรีวิวแล้ว (${order.review.rating} ดาว)` : 'ให้คะแนนและรีวิวออเดอร์นี้'}</span>
+              </div>
+              <p className="text-[10px] text-emerald-700">
+                {order.review
+                  ? `สภาพหนังสือ: ${order.review.isGradeMatched ? 'ตรงตามเกรด ✓' : 'ไม่ตรงตามเกรด ⚠️'}`
+                  : 'ช่วยประเมินว่าสภาพหนังสือตรงตามเกรดที่แจ้งไว้หรือไม่'}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => router.push(`/orders/${order.id}/review`)}
+              className="shrink-0 px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-sm transition active:scale-95"
+            >
+              {order.review ? 'แก้ไขรีวิว' : 'เขียนรีวิว'}
+            </button>
+          </div>
+        )}
+
         {/* Status + who acts + time left */}
         <div className="bg-white rounded-2xl border border-slate-200 p-4 space-y-3">
           <div className="flex items-start justify-between gap-2">
@@ -331,6 +369,19 @@ export default function V4OrderDetailPage({
                   ? 'ผู้ซื้อยืนยันนัดแล้ว · ตรวจหนังสือและจ่ายเงินหน้างาน'
                   : 'รอผู้ซื้อยืนยันนัด · ใช้แชทออเดอร์คุยรายละเอียด'}
               </p>
+              {order.schedule.lat && order.schedule.lng && (
+                <div className="pt-1">
+                  <a
+                    href={`https://www.google.com/maps/dir/?api=1&destination=${order.schedule.lat},${order.schedule.lng}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-[11px] font-semibold transition active:scale-95 shadow-sm"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    เปิดนำทางใน Google Maps
+                  </a>
+                </div>
+              )}
             </div>
           ) : order.delivery === 'PARCEL' ? (
             <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-[11px] text-slate-700 space-y-1.5">
@@ -420,14 +471,19 @@ export default function V4OrderDetailPage({
         />
 
         {showDisputeEntry && (
-          <button
-            type="button"
-            onClick={() => setDisputeOpen(true)}
-            className="w-full inline-flex items-center justify-center gap-1.5 text-[11px] font-semibold text-rose-500 hover:underline"
-          >
-            <Flag className="w-3.5 h-3.5" />
-            แจ้งปัญหาออเดอร์นี้
-          </button>
+          <div className="p-3.5 bg-white rounded-2xl border border-slate-200 flex items-center justify-between gap-2 shadow-xs">
+            <div className="flex items-center gap-2 text-xs text-slate-700">
+              <Flag className="w-4 h-4 text-rose-500 shrink-0" />
+              <span>พบปัญหาหรือข้อพิพาทในออเดอร์นี้?</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setDisputeOpen(true)}
+              className="px-3 py-1.5 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 text-[11px] font-semibold transition active:scale-95 shrink-0"
+            >
+              แจ้งปัญหาออเดอร์
+            </button>
+          </div>
         )}
 
         {role === 'BUYER' && order.status === 'REQUESTED' && (

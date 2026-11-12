@@ -126,6 +126,13 @@ export interface V4Order {
   cancelReason?: string;
   /** 1 credit was spent on this order (refundable only via no-show flow). */
   creditSpent: boolean;
+  review?: {
+    rating: number;
+    isGradeMatched: boolean;
+    tags: string[];
+    comment: string;
+    reviewedAtISO: string;
+  };
 }
 
 export interface CreditEntry {

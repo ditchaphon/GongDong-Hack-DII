@@ -16,14 +16,16 @@ export default function OrderReviewPage({
 }) {
   const resolvedParams = use(params);
   const router = useRouter();
-  const { getOrder } = useV4Orders();
+  const { getOrder, submitReview } = useV4Orders();
 
   const order = getOrder(resolvedParams.id);
 
-  const [rating, setRating] = useState(5);
-  const [gradeMatched, setGradeMatched] = useState<boolean | null>(null);
-  const [tags, setTags] = useState<string[]>([]);
-  const [comment, setComment] = useState('');
+  const [rating, setRating] = useState(order?.review?.rating || 5);
+  const [gradeMatched, setGradeMatched] = useState<boolean | null>(
+    order?.review?.isGradeMatched ?? null
+  );
+  const [tags, setTags] = useState<string[]>(order?.review?.tags || []);
+  const [comment, setComment] = useState(order?.review?.comment || '');
   const [error, setError] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -43,12 +45,18 @@ export default function OrderReviewPage({
 
   const handleSubmit = () => {
     if (gradeMatched === null) {
-      setError('ตอบว่าสภาพหนังสือตรงเกรดหรือไม่');
+      setError('กรุณาตอบว่าสภาพหนังสือตรงเกรดที่ร้านแจ้งไว้หรือไม่');
       return;
     }
     setError(null);
-    setToastMessage('ส่งคะแนนแล้ว · ขอบคุณที่ช่วยให้ชุมชนน่าเชื่อถือขึ้น');
-    setTimeout(() => router.push('/orders'), 1200);
+    submitReview(order.id, {
+      rating,
+      isGradeMatched: gradeMatched,
+      tags,
+      comment: comment.trim(),
+    });
+    setToastMessage('ส่งคะแนนรีวิวแล้ว · ขอบคุณที่ช่วยให้ชุมชนน่าเชื่อถือขึ้น');
+    setTimeout(() => router.push(`/orders/${order.id}`), 1000);
   };
 
   return (

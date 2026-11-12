@@ -27,6 +27,10 @@ export interface V4OrdersContextValue {
   markShipped: (id: string, shipping: V4Shipping) => void;
   complete: (id: string) => void;
   openDispute: (id: string, reason: string, by: ViewRole) => void;
+  submitReview: (
+    id: string,
+    review: { rating: number; isGradeMatched: boolean; tags: string[]; comment: string }
+  ) => void;
   verifyHandover: (id: string, code: string) => boolean;
   isMineAsBuyer: (order: V4Order) => boolean;
 }
@@ -164,6 +168,18 @@ export const V4OrdersProvider: React.FC<{ children: ReactNode }> = ({
     );
   };
 
+  const submitReview = (
+    id: string,
+    reviewData: { rating: number; isGradeMatched: boolean; tags: string[]; comment: string }
+  ) => {
+    patchOrder(id, {
+      review: {
+        ...reviewData,
+        reviewedAtISO: new Date().toISOString(),
+      },
+    });
+  };
+
   const verifyHandover = (id: string, code: string) => {
     const order = getOrder(id);
     if (!order?.handoverCode) return false;
@@ -212,6 +228,7 @@ export const V4OrdersProvider: React.FC<{ children: ReactNode }> = ({
         markShipped,
         complete,
         openDispute,
+        submitReview,
         verifyHandover,
         isMineAsBuyer,
       }}

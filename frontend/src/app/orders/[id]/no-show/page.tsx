@@ -7,7 +7,7 @@ import { Button, Toast } from '@/components/ui';
 import { ConfirmSheet } from '@/components/v4';
 import { useV4Orders } from '@/hooks/useV4Orders';
 import { ViewRole } from '@/types/v4';
-import { MapPin, Clock, AlertTriangle, ShieldCheck, MessageCircle } from 'lucide-react';
+import { MapPin, Clock, AlertTriangle, ShieldCheck, MessageCircle, Lock } from 'lucide-react';
 
 export default function NoShowPage({
   params,
@@ -23,6 +23,7 @@ export default function NoShowPage({
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [rebuttal, setRebuttal] = useState('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [devBypass, setDevBypass] = useState(false);
 
   useEffect(() => {
     const search = new URLSearchParams(window.location.search);
@@ -39,6 +40,33 @@ export default function NoShowPage({
   }
 
   const alreadyDisputed = order.status === 'DISPUTED';
+
+  // ตรวจสอบเงื่อนไขว่าเลยเวลานัดหมายมาแล้วอย่างน้อย 15 นาทีหรือไม่
+  const checkCanReport = () => {
+    if (devBypass) return { canReport: true, reportTimeStr: '' };
+    if (!order.schedule) return { canReport: true, reportTimeStr: '' };
+
+    try {
+      const datePart = order.schedule.dateISO; // e.g. "2026-11-13"
+      const timeMatch = order.schedule.timeLabel.match(/(\d{1,2}):(\d{2})/);
+      if (!timeMatch) return { canReport: true, reportTimeStr: '' };
+
+      const hours = parseInt(timeMatch[1], 10);
+      const minutes = parseInt(timeMatch[2], 10);
+      const scheduledDate = new Date(`${datePart}T${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:00`);
+
+      // ต้องเลยเวลานัดมาแล้วอย่างน้อย 15 นาที (15 * 60 * 1000 ms)
+      const allowedTime = new Date(scheduledDate.getTime() + 15 * 60 * 1000);
+      const isAllowed = Date.now() >= allowedTime.getTime();
+
+      const timeStr = `${allowedTime.getHours().toString().padStart(2, '0')}:${allowedTime.getMinutes().toString().padStart(2, '0')} น.`;
+      return { canReport: isAllowed, reportTimeStr: timeStr };
+    } catch {
+      return { canReport: true, reportTimeStr: '' };
+    }
+  };
+
+  const { canReport, reportTimeStr } = checkCanReport();
 
   const handleReport = () => {
     openDispute(order.id, 'ผู้ซื้อไม่มาตามนัด', 'SELLER');
@@ -87,17 +115,38 @@ export default function NoShowPage({
           ) : (
             <>
               <div className="bg-white rounded-2xl border border-slate-200 p-4 space-y-2 text-[11px] text-slate-600 leading-relaxed">
-                <h2 className="text-xs font-bold text-slate-800">เงื่อนไขการแจ้ง</h2>
-                <p>• แจ้งได้หลังเวลานัดผ่านไป 15 นาที</p>
-                <p>• ต้องรออย่างน้อย 15 นาทีที่จุดนัดก่อนแจ้ง</p>
-                <p>• แนบหลักฐานในแชทออเดอร์ได้ เช่น รูปที่จุดนัดหรือข้อความ</p>
-                <p>• แอดมินจะเปิดให้ผู้ซื้อชี้แจงภายใน 24 ชั่วโมง</p>
+                <h2 className="text-xs font-bold text-slate-800">เงื่อนไขการแจ้งผู้ซื้อเทนัด (v4 Rule)</h2>
+                <p>• สามารถกดแจ้งได้เมื่อ **เลยเวลานัดหมายไปแล้วอย่างน้อย 15 นาที**</p>
+                <p>• ต้องรอที่จุดนัดพบอย่างน้อย 15 นาที เพื่อให้โอกาสผู้ซื้อเดินทางมาถึง</p>
+                <p>• แนบหลักฐานในแชทออเดอร์ได้ เช่น รูปถ่ายที่จุดนัดหรือข้อความเรียก</p>
+                <p>• แอดมินจะส่งแจ้งเตือนให้ผู้ซื้อมีสิทธิ์ชี้แจง/โต้แย้งภายใน 24 ชั่วโมง</p>
               </div>
 
-              <div className="flex items-start gap-2 p-3 rounded-xl bg-amber-50 border border-amber-200 text-[11px] text-amber-900 leading-relaxed">
-                <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-                การแจ้งไม่มาตามนัดจะหยุดเวลาออเดอร์ และเข้าสู่การตรวจสอบของแอดมิน
-              </div>
+              {!canReport ? (
+                <div className="p-3.5 rounded-xl bg-slate-100 border border-slate-200 text-[11px] text-slate-700 space-y-2">
+                  <div className="flex items-center gap-1.5 font-bold text-slate-800">
+                    <Lock className="w-4 h-4 text-amber-600" />
+                    <span>ยังไม่ถึงเวลาที่สามารถแจ้งเรื่องได้</span>
+                  </div>
+                  <p className="leading-relaxed">
+                    ระบบล็อกปุ่มแจ้งไม่มาตามนัดไว้จนกว่าจะเลยเวลานัด 15 นาที (จะสามารถกดแจ้งได้เวลา <strong>{reportTimeStr}</strong> เป็นต้นไป)
+                  </p>
+                  <div className="pt-1 border-t border-slate-200">
+                    <button
+                      type="button"
+                      onClick={() => setDevBypass(true)}
+                      className="text-[10px] text-indigo-600 font-semibold hover:underline"
+                    >
+                      ⚡ ข้ามเวลา 15 นาทีทันที (สำหรับทดสอบในโหมดเดโม)
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-start gap-2 p-3 rounded-xl bg-amber-50 border border-amber-200 text-[11px] text-amber-900 leading-relaxed">
+                  <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                  การแจ้งไม่มาตามนัดจะหยุดเวลาออเดอร์ และเข้าสู่การตรวจสอบของแอดมิน
+                </div>
+              )}
 
               <Button
                 fullWidth
@@ -108,7 +157,13 @@ export default function NoShowPage({
               >
                 กลับไปคุยในแชทก่อน
               </Button>
-              <Button fullWidth size="lg" onClick={() => setConfirmOpen(true)}>
+
+              <Button
+                fullWidth
+                size="lg"
+                disabled={!canReport}
+                onClick={() => setConfirmOpen(true)}
+              >
                 แจ้งผู้ซื้อไม่มาตามนัด
               </Button>
             </>
@@ -132,7 +187,7 @@ export default function NoShowPage({
                   rows={4}
                   value={rebuttal}
                   onChange={(event) => setRebuttal(event.target.value)}
-                  placeholder="อธิบายสถานการณ์ เช่น ไปถึงจุดนัดแล้วแต่หาไม่เจอ"
+                  placeholder="อธิบายสถานการณ์ เช่น ไปถึงจุดนัดแล้วแต่หาไม่เจอ หรือติดธุระด่วน"
                   className="w-full text-xs p-3 rounded-xl border border-slate-200 focus:outline-none focus:border-[var(--color-primary)]"
                 />
                 <Button fullWidth onClick={handleRebuttal}>
@@ -148,7 +203,7 @@ export default function NoShowPage({
         isOpen={confirmOpen}
         onClose={() => setConfirmOpen(false)}
         title="ยืนยันแจ้งไม่มาตามนัด?"
-        description="ออเดอร์จะหยุดเวลาและเข้าสู่การตรวจสอบ · ผู้ซื้อจะได้รับโอกาสชี้แจง"
+        description="ออเดอร์จะหยุดเวลาและเข้าสู่การตรวจสอบ · ผู้ซื้อจะได้รับโอกาสชี้แจงภายใน 24 ชม."
         confirmLabel="ยืนยันแจ้งเรื่อง"
         tone="danger"
         onConfirm={handleReport}

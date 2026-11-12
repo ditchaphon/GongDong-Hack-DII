@@ -1,8 +1,9 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import dynamic from 'next/dynamic';
 import clsx from 'clsx';
-import { MapPin, Crosshair, Info } from 'lucide-react';
+import { MapPin, Crosshair, ExternalLink, Copy, Check, Loader2 } from 'lucide-react';
 
 export interface MapPoint {
   lat: number;
@@ -18,10 +19,18 @@ export interface MapPinPickerProps {
   className?: string;
 }
 
-/** Mock campus map bounds (Chiang Mai University area). */
-const BOUNDS = { minLat: 18.788, maxLat: 18.812, minLng: 98.94, maxLng: 98.968 };
+// โหลด Leaflet แบบ Dynamic Client-Side เพื่อป้องกันปัญหา SSR ReferenceError: window is not defined
+const LeafletMapInner = dynamic(() => import('./LeafletMapInner'), {
+  ssr: false,
+  loading: () => (
+    <div className="w-full aspect-[4/3] rounded-2xl bg-slate-100 border border-slate-200 flex flex-col items-center justify-center gap-2 text-slate-400">
+      <Loader2 className="w-6 h-6 animate-spin text-[var(--color-primary-dark,#10b981)]" />
+      <span className="text-xs font-medium">กำลังโหลด OpenStreetMap...</span>
+    </div>
+  ),
+});
 
-const clamp = (n: number, min: number, max: number) => Math.min(max, Math.max(min, n));
+const CMU_FALLBACK: MapPoint = { lat: 18.8023, lng: 98.9524 }; // มหาวิทยาลัยเชียงใหม่ (หอสมุดกลาง)
 
 export const MapPinPicker: React.FC<MapPinPickerProps> = ({
   value,
@@ -33,21 +42,37 @@ export const MapPinPicker: React.FC<MapPinPickerProps> = ({
 }) => {
   const [isLocating, setIsLocating] = useState(false);
   const [locateError, setLocateError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
-  const place = (event: React.MouseEvent<HTMLDivElement>) => {
-    const rect = event.currentTarget.getBoundingClientRect();
-    const x = clamp((event.clientX - rect.left) / rect.width, 0, 1);
-    const y = clamp((event.clientY - rect.top) / rect.height, 0, 1);
-    onChange({
-      lat: Number((BOUNDS.maxLat - y * (BOUNDS.maxLat - BOUNDS.minLat)).toFixed(6)),
-      lng: Number((BOUNDS.minLng + x * (BOUNDS.maxLng - BOUNDS.minLng)).toFixed(6)),
-    });
-    setLocateError(null);
-  };
+  // ดึงตำแหน่ง GPS อัตโนมัติเมื่อเปิดหน้าจอครั้งแรก (หากยังไม่มีการเลือกพิกัดไว้)
+  useEffect(() => {
+    if (!value) {
+      if (typeof navigator !== 'undefined' && navigator.geolocation) {
+        setIsLocating(true);
+        navigator.geolocation.getCurrentPosition(
+          (position) => {
+            onChange({
+              lat: Number(position.coords.latitude.toFixed(6)),
+              lng: Number(position.coords.longitude.toFixed(6)),
+            });
+            setIsLocating(false);
+          },
+          () => {
+            // หากผู้ใช้ไม่อนุญาต หรือขอตำแหน่งไม่สำเร็จ ให้ Fallback ไปที่ มหาวิทยาลัยเชียงใหม่
+            onChange(CMU_FALLBACK);
+            setIsLocating(false);
+          },
+          { timeout: 7000, enableHighAccuracy: true }
+        );
+      } else {
+        onChange(CMU_FALLBACK);
+      }
+    }
+  }, []);
 
   const useCurrentLocation = () => {
     if (typeof navigator === 'undefined' || !navigator.geolocation) {
-      setLocateError('เบราว์เซอร์นี้ใช้ตำแหน่งอัตโนมัติไม่ได้ · แตะบนแผนที่แทน');
+      setLocateError('เบราว์เซอร์นี้ไม่รองรับการขอตำแหน่ง · กรุณาแตะบนแผนที่แทน');
       return;
     }
     setIsLocating(true);
@@ -61,117 +86,129 @@ export const MapPinPicker: React.FC<MapPinPickerProps> = ({
         setIsLocating(false);
       },
       () => {
-        setLocateError('ขอตำแหน่งไม่สำเร็จ · แตะบนแผนที่เพื่อปักหมุดเอง');
+        setLocateError('ขอตำแหน่งไม่สำเร็จ · กรุณาเลื่อนแตะบนแผนที่เพื่อปักหมุดเอง');
         setIsLocating(false);
       },
-      { timeout: 8000 }
+      { timeout: 8000, enableHighAccuracy: true }
     );
   };
 
-  const pinPosition =
-    value &&
-    ({
-      left: `${((value.lng - BOUNDS.minLng) / (BOUNDS.maxLng - BOUNDS.minLng)) * 100}%`,
-      top: `${((BOUNDS.maxLat - value.lat) / (BOUNDS.maxLat - BOUNDS.minLat)) * 100}%`,
-    } as React.CSSProperties);
+  const handleOpenGoogleMaps = () => {
+    if (!value) return;
+    const url = `https://www.google.com/maps/dir/?api=1&destination=${value.lat},${value.lng}`;
+    window.open(url, '_blank', 'noopener,noreferrer');
+  };
+
+  const handleCopyCoordinates = () => {
+    if (!value) return;
+    const text = `${value.lat.toFixed(6)}, ${value.lng.toFixed(6)}`;
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   return (
-    <div className={clsx('space-y-2.5', className)}>
+    <div className={clsx('space-y-3', className)}>
+      {/* Header แถบด้านบน */}
       <div className="flex items-center justify-between">
-        <span className="text-xs font-semibold text-slate-700">จุดนัดรับ</span>
+        <div className="flex items-center gap-1.5">
+          <MapPin className="w-4 h-4 text-rose-500" />
+          <span className="text-xs font-bold text-slate-800">จุดนัดรับ (OpenStreetMap)</span>
+        </div>
         <button
           type="button"
           onClick={useCurrentLocation}
-          className="inline-flex items-center gap-1 text-[11px] font-semibold text-[var(--color-primary-dark)]"
+          disabled={isLocating}
+          className="inline-flex items-center gap-1 text-[11px] font-semibold text-[var(--color-primary-dark,#10b981)] hover:opacity-80 transition active:scale-95 disabled:opacity-50"
         >
-          <Crosshair className="w-3.5 h-3.5" />
-          {isLocating ? 'กำลังหาตำแหน่ง...' : 'ใช้ตำแหน่งปัจจุบัน'}
+          {isLocating ? (
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+          ) : (
+            <Crosshair className="w-3.5 h-3.5" />
+          )}
+          <span>{isLocating ? 'กำลังหาตำแหน่ง...' : 'ใช้ตำแหน่งปัจจุบัน'}</span>
         </button>
       </div>
 
+      {/* กรอบแผนที่จริง Leaflet + OpenStreetMap */}
       <div
-        role="button"
-        tabIndex={0}
-        aria-label="แตะเพื่อปักหมุดจุดนัดรับ"
-        onClick={place}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter' || event.key === ' ') {
-            event.preventDefault();
-            onChange({ lat: 18.8023, lng: 98.9524 });
-          }
-        }}
         className={clsx(
-          'relative w-full aspect-[4/3] rounded-2xl overflow-hidden border select-none cursor-crosshair',
-          'bg-[linear-gradient(180deg,#eef7f0_0%,#e6f2ea_100%)]',
-          error ? 'border-rose-300' : 'border-slate-200'
+          'relative w-full aspect-[4/3] rounded-2xl overflow-hidden border shadow-inner',
+          error ? 'border-rose-400 ring-2 ring-rose-100' : 'border-slate-200'
         )}
       >
-        {/* Mock map texture */}
-        <div
-          className="absolute inset-0 opacity-70"
-          style={{
-            backgroundImage:
-              'linear-gradient(to right, rgba(148,163,184,0.25) 1px, transparent 1px), linear-gradient(to bottom, rgba(148,163,184,0.25) 1px, transparent 1px)',
-            backgroundSize: '32px 32px',
+        <LeafletMapInner
+          value={value}
+          onChange={(newPoint) => {
+            onChange(newPoint);
+            setLocateError(null);
           }}
+          error={error}
         />
-        <div className="absolute left-[12%] top-[18%] w-[26%] h-[18%] rounded-md bg-emerald-200/60" />
-        <div className="absolute right-[18%] top-[34%] w-[22%] h-[24%] rounded-md bg-sky-200/50" />
-        <div className="absolute left-[34%] bottom-[14%] w-[30%] h-[16%] rounded-md bg-amber-100/70" />
-        <div className="absolute left-0 right-0 top-[52%] h-1.5 bg-white/80" />
-        <div className="absolute top-0 bottom-0 left-[46%] w-1.5 bg-white/80" />
 
-        <span className="absolute left-2 top-2 text-[9px] font-semibold text-slate-500 bg-white/85 px-1.5 py-0.5 rounded">
-          แผนที่จำลอง
-        </span>
-
-        {value && pinPosition && (
-          <span
-            className="absolute -translate-x-1/2 -translate-y-full drop-shadow"
-            style={pinPosition}
-          >
-            <MapPin className="w-8 h-8 text-rose-500 fill-rose-200" />
-          </span>
-        )}
-
-        {!value && (
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <span className="text-[11px] text-slate-500 bg-white/90 border border-slate-200 px-2.5 py-1 rounded-full">
-              แตะบนแผนที่เพื่อปักหมุด
-            </span>
+        {/* แบดจ์แสดงพิกัดที่มุมล่างซ้าย */}
+        {value && (
+          <div className="absolute left-2.5 bottom-2.5 z-10 bg-white/90 backdrop-blur-md border border-slate-200 px-2.5 py-1 rounded-full text-[10px] font-mono text-slate-600 shadow-sm pointer-events-none">
+            {value.lat.toFixed(6)}, {value.lng.toFixed(6)}
           </div>
         )}
       </div>
 
-      <div className="flex flex-col gap-1.5">
-        <label htmlFor="landmark" className="text-xs font-semibold text-slate-700">
-          จุดสังเกต
+      {locateError && (
+        <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 p-2 rounded-xl">
+          {locateError}
+        </p>
+      )}
+
+      {/* แถบปุ่ม Action ลัด: เปิด Google Maps & คัดลอกพิกัด */}
+      {value && (
+        <div className="flex items-center gap-2 pt-0.5">
+          <button
+            type="button"
+            onClick={handleOpenGoogleMaps}
+            className="flex-1 inline-flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-semibold transition active:scale-95 border border-slate-200 shadow-sm"
+          >
+            <ExternalLink className="w-3.5 h-3.5 text-blue-600" />
+            <span>เปิดใน Google Maps</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleCopyCoordinates}
+            className="inline-flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-semibold transition active:scale-95 border border-slate-200 shadow-sm"
+          >
+            {copied ? (
+              <Check className="w-3.5 h-3.5 text-emerald-600" />
+            ) : (
+              <Copy className="w-3.5 h-3.5 text-slate-500" />
+            )}
+            <span>{copied ? 'คัดลอกแล้ว!' : 'คัดลอกพิกัด'}</span>
+          </button>
+        </div>
+      )}
+
+      {/* ช่องกรอกจุดสังเกต */}
+      <div className="flex flex-col gap-1.5 pt-1">
+        <label htmlFor="landmark" className="text-xs font-semibold text-slate-700 flex items-center justify-between">
+          <span>จุดสังเกตเพิ่มเติม</span>
+          <span className="text-[10px] font-normal text-slate-400">เช่น ม้านั่งใต้ต้นไม้, หน้าร้านกาแฟ</span>
         </label>
         <input
           id="landmark"
+          type="text"
           value={landmark}
           onChange={(event) => onLandmarkChange(event.target.value)}
-          placeholder="เช่น หน้าหอสมุดกลาง มช. ใต้ต้นไม้ใหญ่"
-          className="w-full min-h-[44px] px-3.5 text-sm rounded-xl border border-slate-200 focus:outline-none focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
+          placeholder="เช่น หน้าร้านกาแฟ หอสมุดกลาง มช."
+          maxLength={80}
+          className={clsx(
+            'w-full px-3.5 py-2.5 rounded-xl border text-xs bg-white focus:outline-none focus:ring-2 transition',
+            error
+              ? 'border-rose-300 focus:ring-rose-200 text-rose-900'
+              : 'border-slate-200 focus:border-emerald-500 focus:ring-emerald-100 text-slate-900'
+          )}
         />
+        {error && <span className="text-[11px] text-rose-500">{error}</span>}
       </div>
-
-      {value && (
-        <p className="text-[10px] text-slate-400 font-mono">
-          {value.lat.toFixed(5)}, {value.lng.toFixed(5)}
-        </p>
-      )}
-
-      {(error || locateError) && (
-        <p className="text-[11px] text-rose-600 font-medium">
-          {locateError || error}
-        </p>
-      )}
-
-      <p className="flex items-start gap-1.5 text-[10px] text-slate-400 leading-relaxed">
-        <Info className="w-3 h-3 shrink-0 mt-0.5" />
-        ผู้ซื้อจะเห็นหมุดนี้หลังยืนยันนัด · อย่าใส่บ้านเลขที่หรือเบอร์โทรในจุดสังเกต
-      </p>
     </div>
   );
 };
