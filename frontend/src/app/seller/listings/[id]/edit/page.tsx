@@ -1,0 +1,244 @@
+'use client';
+
+import React, { useState, use } from 'react';
+import { useRouter } from 'next/navigation';
+import { TopBar } from '@/components/layout/TopBar';
+import { Button, GradeBadge, Toast } from '@/components/ui';
+import { useSeller } from '@/hooks/useSeller';
+import {
+  MapPin,
+  Truck,
+  Check,
+  EyeOff,
+  Eye,
+  Info,
+} from 'lucide-react';
+
+export default function EditListingPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const resolvedParams = use(params);
+  const router = useRouter();
+  const { listings, updateListing, setListingStatus } = useSeller();
+
+  const listing = listings.find((item) => item.id === resolvedParams.id);
+
+  const [price, setPrice] = useState(listing ? String(listing.price) : '');
+  const [meetup, setMeetup] = useState(listing?.deliveryMethods.includes('MEETUP') ?? true);
+  const [parcel, setParcel] = useState(listing?.deliveryMethods.includes('PARCEL') ?? false);
+  const [parcelFee, setParcelFee] = useState(listing?.parcelShippingFee || 40);
+  const [error, setError] = useState<string | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  if (!listing) {
+    return (
+      <div className="flex flex-col min-h-screen bg-slate-50">
+        <TopBar title="แก้ไขประกาศ" onBack={() => router.push('/seller')} />
+        <p className="p-6 text-center text-xs text-slate-500">ไม่พบประกาศนี้</p>
+      </div>
+    );
+  }
+
+  const locked = listing.status === 'WAITING_PAYMENT';
+
+  const handleSave = () => {
+    const nextPrice = Number(price) || 0;
+    if (nextPrice < 1) {
+      setError('กรุณาตั้งราคาอย่างน้อย ฿1');
+      return;
+    }
+    if (!meetup && !parcel) {
+      setError('เลือกวิธีรับอย่างน้อย 1 วิธี');
+      return;
+    }
+    setError(null);
+    updateListing(listing.id, {
+      price: nextPrice,
+      deliveryMethods: [
+        ...(meetup ? (['MEETUP'] as const) : []),
+        ...(parcel ? (['PARCEL'] as const) : []),
+      ],
+      parcelShippingFee: parcel ? Number(parcelFee) || 40 : undefined,
+    });
+    setToastMessage('บันทึกการแก้ไขแล้ว');
+    setTimeout(() => router.push('/seller'), 500);
+  };
+
+  return (
+    <div className="flex flex-col min-h-screen bg-slate-50 select-none pb-32">
+      <TopBar title="แก้ไขประกาศ" onBack={() => router.push('/seller')} />
+
+      <div className="p-4 space-y-4">
+        <div className="bg-white rounded-2xl border border-slate-200 p-3.5 flex gap-3">
+          <img
+            src={listing.photos.cover}
+            alt={listing.title}
+            className="w-14 h-20 rounded-xl object-cover bg-slate-100 shrink-0"
+          />
+          <div className="min-w-0 space-y-1">
+            <h1 className="text-sm font-bold text-slate-900 line-clamp-2 leading-snug">
+              {listing.title}
+            </h1>
+            <p className="text-[11px] text-slate-500">
+              {listing.isSet ? `ยกชุด ${listing.totalVolumes} เล่ม` : 'เล่มเดียว'} ·{' '}
+              {listing.views} วิว · {listing.savedCount} คนบันทึก
+            </p>
+            <GradeBadge grade={listing.grade} size="sm" />
+          </div>
+        </div>
+
+        {locked && (
+          <div className="flex items-start gap-2 p-3 rounded-xl bg-amber-50 border border-amber-200 text-[11px] text-amber-900 leading-relaxed">
+            <Info className="w-4 h-4 shrink-0 mt-0.5" />
+            มีผู้ซื้อขอหนังสือเล่มนี้อยู่ · แก้ราคาและวิธีรับได้
+            แต่ยังซ่อนประกาศไม่ได้จนกว่าจะปิดคำขอ
+          </div>
+        )}
+
+        <div className="bg-white rounded-2xl border border-slate-200 p-4 space-y-3">
+          <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+            ราคาขาย
+          </h2>
+          <div className="flex items-center gap-2">
+            <span className="text-2xl font-black text-slate-300">฿</span>
+            <input
+              type="number"
+              inputMode="numeric"
+              min={1}
+              value={price}
+              onChange={(event) => {
+                setPrice(event.target.value);
+                setError(null);
+              }}
+              aria-label="ราคาขาย"
+              className="flex-1 min-h-[52px] px-3 text-2xl font-black text-slate-900 bg-slate-50 rounded-xl border border-slate-200 focus:outline-none focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
+            />
+          </div>
+          <p className="text-[11px] text-slate-400">
+            เปลี่ยนราคาแล้ว ผู้ซื้อที่กำลังขออยู่จะเห็นราคาใหม่ในออเดอร์
+          </p>
+        </div>
+
+        <div className="bg-white rounded-2xl border border-slate-200 p-4 space-y-2.5">
+          <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+            วิธีรับหนังสือ
+          </h2>
+
+          <button
+            type="button"
+            onClick={() => setMeetup((prev) => !prev)}
+            className={`w-full flex items-center gap-2.5 p-3 rounded-xl border text-left ${
+              meetup
+                ? 'border-[var(--color-primary)] bg-emerald-50/50'
+                : 'border-slate-200'
+            }`}
+          >
+            <span
+              className={`w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 ${
+                meetup
+                  ? 'bg-[var(--color-primary)] border-[var(--color-primary)] text-white'
+                  : 'border-slate-300'
+              }`}
+            >
+              {meetup && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+            </span>
+            <MapPin className="w-4 h-4 text-teal-600" />
+            <span className="text-xs font-bold text-slate-800 flex-1">นัดรับใน มช. · ฿0</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setParcel((prev) => !prev)}
+            className={`w-full flex items-center gap-2.5 p-3 rounded-xl border text-left ${
+              parcel
+                ? 'border-[var(--color-primary)] bg-emerald-50/50'
+                : 'border-slate-200'
+            }`}
+          >
+            <span
+              className={`w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 ${
+                parcel
+                  ? 'bg-[var(--color-primary)] border-[var(--color-primary)] text-white'
+                  : 'border-slate-300'
+              }`}
+            >
+              {parcel && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+            </span>
+            <Truck className="w-4 h-4 text-slate-500" />
+            <span className="text-xs font-bold text-slate-800 flex-1">ส่งพัสดุ</span>
+          </button>
+
+          {parcel && (
+            <div className="flex items-center gap-2 pl-8">
+              <label htmlFor="edit-parcel-fee" className="text-xs text-slate-600">
+                ค่าส่งเล่มแรก
+              </label>
+              <div className="flex items-center gap-1 ml-auto">
+                <span className="text-xs text-slate-400">฿</span>
+                <input
+                  id="edit-parcel-fee"
+                  type="number"
+                  min={0}
+                  value={parcelFee}
+                  onChange={(event) => setParcelFee(Number(event.target.value) || 0)}
+                  className="w-20 min-h-[38px] px-2 text-sm text-right bg-white rounded-lg border border-slate-200 focus:outline-none focus:border-[var(--color-primary)]"
+                />
+              </div>
+            </div>
+          )}
+        </div>
+
+        {error && (
+          <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-700">
+            {error}
+          </div>
+        )}
+
+        {listing.status === 'HIDDEN' ? (
+          <Button
+            variant="outline"
+            fullWidth
+            leftIcon={<Eye className="w-4 h-4" />}
+            onClick={() => {
+              setListingStatus(listing.id, 'ACTIVE');
+              setToastMessage('แสดงประกาศอีกครั้งแล้ว');
+              setTimeout(() => router.push('/seller'), 500);
+            }}
+          >
+            แสดงประกาศอีกครั้ง
+          </Button>
+        ) : (
+          <Button
+            variant="outline"
+            fullWidth
+            disabled={locked}
+            leftIcon={<EyeOff className="w-4 h-4" />}
+            onClick={() => {
+              setListingStatus(listing.id, 'HIDDEN');
+              setToastMessage('ซ่อนประกาศแล้ว · ผู้ซื้อจะไม่เห็น');
+              setTimeout(() => router.push('/seller'), 500);
+            }}
+          >
+            ซ่อนประกาศชั่วคราว
+          </Button>
+        )}
+      </div>
+
+      <div className="fixed bottom-0 left-0 right-0 z-30 flex justify-center pointer-events-none">
+        <div className="w-full max-w-[430px] bg-white border-t border-slate-200 p-3 pointer-events-auto safe-area-bottom shadow-lg">
+          <Button fullWidth size="lg" onClick={handleSave}>
+            บันทึกการแก้ไข
+          </Button>
+        </div>
+      </div>
+
+      <Toast
+        isOpen={!!toastMessage}
+        onClose={() => setToastMessage(null)}
+        message={toastMessage || ''}
+      />
+    </div>
+  );
+}

@@ -22,15 +22,15 @@ LINE OA + LIFF · C2C Book Marketplace · Design Pitching & Hackathon 2569 (พ�
 |---|---|---|
 | Ditchaphon | PM | LINE OA / LIFF / Messaging API channel · การ์ด Flex · Rich Menu · test case · UAT · คุมขอบเขต |
 | Biw | Backend | ฐานข้อมูล · API · ยืนยันตัวตนด้วย LINE · ส่งแจ้งเตือน LINE (Push) · deploy |
-| Farm | Frontend | หน้าจอทั้งหมดใน LIFF ตาม Figma · เชื่อม API · ทดสอบบนมือถือ |
+| Frame | Frontend | หน้าจอทั้งหมดใน LIFF ตาม Figma · เชื่อม API · ทดสอบบนมือถือ |
 
-**Biw + Farm ออกแบบโครงสร้างโค้ดและ API contract กันเอง** แล้วเขียนลงใน repo นี้ (เช่น `docs/API.md`) ก่อนเริ่มเขียนฟีเจอร์
+**Biw + Frame ออกแบบโครงสร้างโค้ดและ API contract กันเอง** แล้วเขียนลงใน repo นี้ (เช่น `docs/API.md`) ก่อนเริ่มเขียนฟีเจอร์
 
 ## 📁 โครงสร้าง repo
 
 ```
 gongdong/
-├── frontend/   ← Farm · หน้าจอ LIFF (ดู frontend/README.md)
+├── frontend/   ← Frame · หน้าจอ LIFF (ดู frontend/README.md)
 ├── backend/    ← Biw  · API + ฐานข้อมูล + บอท (ดู backend/README.md)
 ├── docs/       ← API contract ที่ตกลงร่วมกัน (สร้างเมื่อเขียน)
 └── README.md   ← ไฟล์นี้
@@ -88,9 +88,10 @@ gongdong/
 
 ## 🛠 Stack ที่ตกลงในทีม
 
-> ดูรายละเอียดเชิงลึกและเครื่องมือทั้งหมดได้ที่ [Backend-doc/TECH_STACK.md](Backend-doc/TECH_STACK.md)
+> ดูรายละเอียดเชิงลึกและเครื่องมือทั้งหมดได้ที่ [Backend-doc/TECH_STACK.md](Backend-doc/TECH_STACK.md)  
+> *หมายเหตุ: LIFF ต้องเปิดผ่าน **HTTPS** จึงต้องมี URL deploy ตั้งแต่วันแรก*
 
-- Frontend: Next.js (App Router) + TypeScript + Tailwind CSS + Leaflet (OpenStreetMap) (Farm)
+- Frontend: Next.js (App Router) + TypeScript + Tailwind CSS + Leaflet (OpenStreetMap) (Frame)
 - Backend / API: Node.js + TypeScript (Express.js) + Prisma ORM (Biw)
 - Database / Storage: PostgreSQL (Supabase) + pg_cron + Supabase Storage (Private Slips / Public Images)
 - Deploy: Vercel (Frontend) + Render / Railway (Backend)
@@ -109,10 +110,10 @@ gongdong/
 
 ## 🗓 แผน 3 วัน
 
-| วัน | PM | Backend (Biw) | Frontend (Farm) |
+| วัน | PM | Backend (Biw) | Frontend (Frame) |
 |---|---|---|---|
 | **พุธ 11** | สร้าง LINE OA / channel / LIFF · เพิ่มทีมเป็น admin | ตั้งโปรเจกต์ + ฐานข้อมูล + deploy ให้ได้ URL | ตั้งโปรเจกต์ + LIFF init + หน้าแรก/รายละเอียด (ข้อมูลจำลอง) |
-| | **คืนนี้: Biw + Farm ตกลง API contract ให้เสร็จ** | | |
+| | **คืนนี้: Biw + Frame ตกลง API contract ให้เสร็จ** | | |
 | **พฤหัส 12** | การ์ด Flex (Flex Simulator) · Rich Menu · test case · ลองบน iOS + Android | API ลงขาย / ค้นหา / ISBN / อัปรูป / ขอซื้อ / รับ-ปฏิเสธ · Push LINE | ลงขาย 4 ขั้น · ตะกร้า + ขอซื้อ · ร้านของฉัน + รับออเดอร์ |
 | **ศุกร์ 13** | UAT เพื่อน 3–5 คน · คัดบั๊ก · อัดวิดีโอเดโมสำรอง | SIT · แก้บั๊ก · เช็กว่าเบอร์โทรไม่หลุด | SIT · หน้าสถานะออเดอร์ · ปรับบนมือถือ |
 | | **เย็น: deploy production** | | |
