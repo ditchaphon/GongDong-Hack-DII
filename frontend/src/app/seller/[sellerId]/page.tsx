@@ -1,0 +1,222 @@
+'use client';
+
+import React, { useState, use } from 'react';
+import { useRouter } from 'next/navigation';
+import { TopBar } from '@/components/layout/TopBar';
+import { BookCard, Button, Toast } from '@/components/ui';
+import { ConfirmSheet } from '@/components/v4';
+import { MOCK_BOOKS } from '@/mocks/books';
+import { getShopById } from '@/mocks/shops';
+import {
+  Star,
+  MapPin,
+  ShieldCheck,
+  CheckCircle2,
+  Sparkles,
+  Flag,
+  MessageCircle,
+  Truck,
+} from 'lucide-react';
+
+export default function SellerShopPage({
+  params,
+}: {
+  params: Promise<{ sellerId: string }>;
+}) {
+  const resolvedParams = use(params);
+  const router = useRouter();
+
+  const shop = getShopById(resolvedParams.sellerId);
+  const sellerBooks = MOCK_BOOKS.filter((b) => b.sellerId === resolvedParams.sellerId);
+  const sellerInfo = sellerBooks[0] || MOCK_BOOKS[0];
+
+  const [isReportOpen, setIsReportOpen] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  return (
+    <div className="flex flex-col min-h-screen bg-slate-50 select-none pb-12">
+      <TopBar
+        title="ร้านค้า"
+        rightAction={
+          <button
+            type="button"
+            onClick={() => setIsReportOpen(true)}
+            aria-label="รายงานร้าน"
+            className="p-2 text-slate-500 hover:text-rose-500 rounded-full hover:bg-slate-100"
+          >
+            <Flag className="w-5 h-5" />
+          </button>
+        }
+      />
+
+      {/* Shop header */}
+      <div className="p-4 bg-white border-b border-slate-100 space-y-4">
+        <div className="flex items-center gap-4">
+          <img
+            src={shop?.avatar || sellerInfo.sellerAvatar || sellerInfo.photos.cover}
+            alt={shop?.shopName || sellerInfo.sellerName}
+            className="w-16 h-16 rounded-full object-cover border-2 border-emerald-400 shadow-xs shrink-0"
+          />
+          <div className="space-y-1 min-w-0">
+            <h1 className="text-lg font-bold text-slate-900 leading-snug truncate">
+              {shop?.shopName || sellerInfo.sellerName}
+            </h1>
+            <div className="flex items-center gap-1.5 text-[11px] text-slate-500 flex-wrap">
+              <span className="flex items-center text-amber-500 font-bold">
+                <Star className="w-3.5 h-3.5 fill-amber-400 stroke-amber-400 mr-1" />
+                {shop?.rating ?? sellerInfo.sellerRating} / 5.0
+              </span>
+              <span>•</span>
+              <span>ขายแล้ว {shop?.completedSales ?? 0} ครั้ง</span>
+              {shop?.memberSince && (
+                <>
+                  <span>•</span>
+                  <span>สมาชิกตั้งแต่ {shop.memberSince}</span>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-2 pt-1 border-t border-slate-100">
+          {shop?.payeeVerified ? (
+            <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+              <CheckCircle2 className="w-3 h-3" />
+              ยืนยันบัญชีรับเงินแล้ว
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
+              <ShieldCheck className="w-3 h-3" />
+              ยังไม่ยืนยันบัญชี · นัดรับ + เงินสด
+            </span>
+          )}
+          {shop?.meetupZones.length ? (
+            <span className="inline-flex items-center gap-1 text-[11px] font-medium text-teal-700 bg-teal-50 border border-teal-200 px-2 py-0.5 rounded-full">
+              <MapPin className="w-3 h-3" />
+              มีจุดนัดรับใน มช.
+            </span>
+          ) : null}
+          {shop?.supportsParcel && (
+            <span className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-600 bg-slate-50 border border-slate-200 px-2 py-0.5 rounded-full">
+              <Truck className="w-3 h-3" />
+              ส่งพัสดุได้
+            </span>
+          )}
+        </div>
+
+        <div className="p-3 bg-emerald-50/70 border border-emerald-200 rounded-xl text-xs text-emerald-800 flex items-center gap-2">
+          <Sparkles className="w-4 h-4 text-[var(--color-primary)] shrink-0" />
+          <span>ซื้อหลายเล่มจากร้านเดียวกัน เหมาค่าส่งประหยัดกว่า</span>
+        </div>
+      </div>
+
+      {/* Listings */}
+      <div className="p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-bold text-slate-800">
+            หนังสือในร้าน ({sellerBooks.length} เล่ม)
+          </h2>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          {sellerBooks.map((book) => (
+            <BookCard
+              key={book.id}
+              book={book}
+              onClick={() => router.push(`/book/${book.id}`)}
+            />
+          ))}
+        </div>
+      </div>
+
+      {/* Reviews */}
+      <div className="px-4 pb-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-bold text-slate-800">รีวิวจากผู้ซื้อ</h2>
+          <span className="text-[11px] text-slate-400">
+            {shop?.reviews.length ?? 0} รีวิว
+          </span>
+        </div>
+
+        {shop?.reviews.length ? (
+          shop.reviews.map((review) => (
+            <div
+              key={review.id}
+              className="bg-white rounded-2xl border border-slate-200 p-3.5 space-y-1.5"
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  {review.avatar ? (
+                    <img
+                      src={review.avatar}
+                      alt={review.author}
+                      className="w-6 h-6 rounded-full object-cover bg-slate-100"
+                    />
+                  ) : (
+                    <div className="w-6 h-6 rounded-full bg-slate-100" />
+                  )}
+                  <span className="text-[11px] font-semibold text-slate-800">
+                    {review.author}
+                  </span>
+                </div>
+                <span className="flex items-center text-amber-500 text-[10px] font-bold">
+                  <Star className="w-3 h-3 fill-amber-400 stroke-amber-400 mr-0.5" />
+                  {review.rating}
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-600 leading-relaxed">{review.comment}</p>
+              <div className="flex items-center justify-between text-[10px] text-slate-400">
+                <span>{review.createdAt}</span>
+                {review.gradeMatched && (
+                  <span className="inline-flex items-center gap-1 text-emerald-700">
+                    <ShieldCheck className="w-3 h-3" />
+                    สภาพตรงเกรด
+                  </span>
+                )}
+              </div>
+            </div>
+          ))
+        ) : (
+          <div className="bg-white rounded-2xl border border-slate-200 p-4 text-center">
+            <MessageCircle className="w-6 h-6 text-slate-300 mx-auto mb-1.5" />
+            <p className="text-[11px] text-slate-500">ยังไม่มีรีวิวสำหรับร้านนี้</p>
+          </div>
+        )}
+      </div>
+
+      <div className="px-4">
+        <Button
+          variant="outline"
+          fullWidth
+          leftIcon={<Flag className="w-4 h-4" />}
+          onClick={() => setIsReportOpen(true)}
+        >
+          รายงานร้านนี้
+        </Button>
+      </div>
+
+      <ConfirmSheet
+        isOpen={isReportOpen}
+        onClose={() => setIsReportOpen(false)}
+        title="รายงานร้านนี้?"
+        description="ใช้เมื่อพบรูปปลอม ราคาผิด หรือข้อความชวนโอนนอกระบบ · แอดมินจะตรวจสอบ"
+        confirmLabel="ส่งรายงาน"
+        tone="danger"
+        onConfirm={() => {
+          setIsReportOpen(false);
+          setToastMessage('ส่งรายงานร้านให้แอดมินแล้ว');
+        }}
+      >
+        <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-[11px] text-slate-600">
+          ร้าน: {shop?.shopName || sellerInfo.sellerName}
+        </div>
+      </ConfirmSheet>
+
+      <Toast
+        isOpen={!!toastMessage}
+        onClose={() => setToastMessage(null)}
+        message={toastMessage || ''}
+      />
+    </div>
+  );
+}

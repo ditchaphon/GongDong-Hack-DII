@@ -1,0 +1,280 @@
+'use client';
+
+import React, { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { TopBar } from '@/components/layout/TopBar';
+import {
+  Button,
+  GradeBadge,
+  PriceSuggest,
+  Stepper,
+  Toast,
+} from '@/components/ui';
+import { useListing } from '@/hooks/useListing';
+import { useSeller } from '@/hooks/useSeller';
+import {
+  MapPin,
+  Truck,
+  Check,
+  ChevronRight,
+  Layers,
+  Info,
+} from 'lucide-react';
+
+export default function SellerListStep4Page() {
+  const router = useRouter();
+  const { draft, grade, update, toggleDelivery } = useListing();
+  const { publishListing, shop } = useSeller();
+
+  const isSet = draft.mode === 'SET';
+  const canParcel = shop?.payeeVerified ?? false;
+  const hasMeetup = draft.deliveryMethods.includes('MEETUP');
+  const hasParcel = draft.deliveryMethods.includes('PARCEL') && canParcel;
+
+  const [priceInput, setPriceInput] = useState(draft.price ? String(draft.price) : '');
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const price = Number(priceInput) || 0;
+  const shippingFee = hasParcel ? draft.parcelShippingFee : 0;
+  const buyerPays = price + shippingFee;
+
+  const handlePublish = () => {
+    if (price < 1) {
+      setError('กรุณาตั้งราคาขายอย่างน้อย ฿1');
+      return;
+    }
+    if (!hasMeetup && !hasParcel) {
+      setError('เลือกวิธีรับหนังสืออย่างน้อย 1 วิธี');
+      return;
+    }
+    setError(null);
+    update({ price });
+    publishListing({ ...draft, price });
+    router.push('/seller/list/success');
+  };
+
+  return (
+    <div className="flex flex-col min-h-screen bg-slate-50 select-none pb-32">
+      <TopBar title="ตั้งราคาและวิธีรับ" onBack={() => router.push('/seller/list/step-3')} />
+
+      <Stepper currentStep={4} />
+
+      <div className="p-4 space-y-4">
+        {/* Price */}
+        <div className="bg-white rounded-2xl border border-slate-200 p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+              {isSet ? 'ขั้นที่ 4 · ราคาขายทั้งชุด (S3B)' : 'ขั้นที่ 4 · ราคาขาย (S3)'}
+            </h3>
+            <GradeBadge grade={grade} size="sm" />
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-2xl font-black text-slate-300">฿</span>
+            <input
+              type="number"
+              inputMode="numeric"
+              min={1}
+              value={priceInput}
+              onChange={(e) => {
+                setPriceInput(e.target.value);
+                setError(null);
+              }}
+              placeholder="0"
+              aria-label="ราคาขาย"
+              className="flex-1 min-h-[52px] px-3 text-2xl font-black text-slate-900 bg-slate-50 rounded-xl border border-slate-200 focus:outline-none focus:border-[#06C755] focus:ring-2 focus:ring-[#06C755]/20"
+            />
+          </div>
+
+          {isSet && (
+            <div className="flex items-center gap-2 text-[11px] text-slate-500">
+              <Layers className="w-3.5 h-3.5" />
+              ขายยกชุด {draft.totalVolumes} เล่ม
+              {draft.missingVolumes.length > 0 &&
+                ` · ขาดเล่ม ${draft.missingVolumes.join(', ')}`}
+            </div>
+          )}
+
+          {draft.originalPrice > 0 && (
+            <PriceSuggest
+              originalPrice={draft.originalPrice}
+              grade={grade}
+              currentPrice={price}
+              onApplyPrice={(suggested) => {
+                setPriceInput(String(suggested));
+                update({ price: suggested });
+                setToastMessage('ใช้ราคาแนะนำแล้ว (TPRICE)');
+              }}
+            />
+          )}
+
+          {draft.originalPrice === 0 && (
+            <p className="text-[11px] text-slate-400 leading-relaxed">
+              ไม่มีราคาปกของเล่มนี้ ระบบจึงยังไม่แสดงราคาแนะนำ
+              ตั้งราคาตามสภาพที่คุณประเมินได้เลย
+            </p>
+          )}
+        </div>
+
+        {/* Delivery options */}
+        <div className="bg-white rounded-2xl border border-slate-200 p-4 space-y-3">
+          <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+            วิธีรับหนังสือ
+          </h3>
+
+          <button
+            type="button"
+            onClick={() => toggleDelivery('MEETUP')}
+            className={`w-full flex items-start gap-3 p-3.5 rounded-2xl border text-left transition ${
+              hasMeetup
+                ? 'border-[#06C755] bg-emerald-50/50'
+                : 'border-slate-200 bg-white hover:bg-slate-50'
+            }`}
+          >
+            <span
+              className={`mt-0.5 w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 ${
+                hasMeetup
+                  ? 'bg-[#06C755] border-[#06C755] text-white'
+                  : 'bg-white border-slate-300'
+              }`}
+            >
+              {hasMeetup && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+            </span>
+            <span className="flex-1">
+              <span className="flex items-center gap-1.5 text-sm font-bold text-slate-800">
+                <MapPin className="w-4 h-4 text-teal-600" />
+                นัดรับใน มช.
+              </span>
+              <span className="block text-[11px] text-slate-500 mt-0.5">
+                ฟรีค่าส่ง · ผู้ซื้อตรวจหนังสือก่อนจ่ายเงิน · โซน มช. และหอพัก
+              </span>
+            </span>
+            <span className="text-sm font-black text-emerald-600">฿0</span>
+          </button>
+
+          <button
+            type="button"
+            disabled={!canParcel}
+            onClick={() => toggleDelivery('PARCEL')}
+            className={`w-full flex items-start gap-3 p-3.5 rounded-2xl border text-left transition ${
+              hasParcel
+                ? 'border-[#06C755] bg-emerald-50/50'
+                : 'border-slate-200 bg-white hover:bg-slate-50'
+            } ${!canParcel ? 'opacity-50' : ''}`}
+          >
+            <span
+              className={`mt-0.5 w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 ${
+                hasParcel
+                  ? 'bg-[#06C755] border-[#06C755] text-white'
+                  : 'bg-white border-slate-300'
+              }`}
+            >
+              {hasParcel && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+            </span>
+            <span className="flex-1">
+              <span className="flex items-center gap-1.5 text-sm font-bold text-slate-800">
+                <Truck className="w-4 h-4 text-slate-500" />
+                ส่งพัสดุ
+              </span>
+              <span className="block text-[11px] text-slate-500 mt-0.5">
+                {canParcel
+                  ? 'ผู้ซื้อจ่ายผ่านคิวอาร์ + แนบสลิป · ส่งภายใน 48 ชม. หลังตรวจสลิป'
+                  : 'ต้องยืนยันบัญชีรับเงินก่อนเปิดส่งพัสดุ'}
+              </span>
+            </span>
+            <span className="text-sm font-black text-slate-800">
+              ฿{draft.parcelShippingFee}
+            </span>
+          </button>
+
+          {!canParcel && (
+            <div className="flex items-start gap-2 p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-[11px] text-amber-900 leading-relaxed">
+              <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+              ร้านที่ยังไม่ยืนยันบัญชีรับเงินรับได้เฉพาะนัดรับและจ่ายเงินสด
+              · ยืนยันได้ตอนเติมเครดิตครั้งแรก
+            </div>
+          )}
+
+          {hasParcel && (
+            <div className="pl-8 space-y-3">
+              <div className="flex items-center gap-2">
+                <label htmlFor="parcel-fee" className="text-xs text-slate-600">
+                  ค่าส่งเล่มแรก
+                </label>
+                <div className="flex items-center gap-1 ml-auto">
+                  <span className="text-xs text-slate-400">฿</span>
+                  <input
+                    id="parcel-fee"
+                    type="number"
+                    min={0}
+                    value={draft.parcelShippingFee}
+                    onChange={(e) =>
+                      update({ parcelShippingFee: Number(e.target.value) || 0 })
+                    }
+                    className="w-20 min-h-[38px] px-2 text-sm text-right bg-white rounded-lg border border-slate-200 focus:outline-none focus:border-[#06C755]"
+                  />
+                </div>
+              </div>
+              <p className="text-[11px] text-slate-400">
+                เล่มถัดไปในร้านเดียวกัน +฿10 ต่อเล่ม
+              </p>
+
+            </div>
+          )}
+        </div>
+
+        {/* Summary */}
+        <div className="bg-white rounded-2xl border border-slate-200 p-4 space-y-2 text-xs">
+          <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider pb-1">
+            สรุปการลงขาย
+          </h3>
+          <div className="flex justify-between text-slate-500">
+            <span>ค่าหนังสือ</span>
+            <span className="font-semibold text-slate-800">฿{price.toLocaleString()}</span>
+          </div>
+          <div className="flex justify-between text-slate-500">
+            <span>ค่าส่ง (ถ้าเลือกพัสดุ)</span>
+            <span className="font-semibold text-slate-800">
+              {shippingFee === 0 ? '฿0' : `฿${shippingFee}`}
+            </span>
+          </div>
+          <div className="pt-2 border-t border-slate-100 flex justify-between items-baseline text-sm">
+            <span className="font-bold text-slate-900">ผู้ซื้อจ่ายสูงสุด</span>
+            <span className="text-lg font-black text-[#06C755]">
+              ฿{buyerPays.toLocaleString()}
+            </span>
+          </div>
+          <p className="text-[11px] text-slate-400 pt-1">
+            ลงขายฟรี · จะใช้ 1 เครดิตก็ต่อเมื่อคุณกดรับออเดอร์เท่านั้น
+          </p>
+        </div>
+
+        {error && (
+          <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-700">
+            {error}
+          </div>
+        )}
+      </div>
+
+      <div className="fixed bottom-0 left-0 right-0 z-30 flex justify-center pointer-events-none">
+        <div className="w-full max-w-[430px] bg-white border-t border-slate-200 p-3 pointer-events-auto safe-area-bottom shadow-lg">
+          <Button
+            fullWidth
+            size="lg"
+            onClick={handlePublish}
+            rightIcon={<ChevronRight className="w-4 h-4" />}
+          >
+            ลงประกาศขาย
+          </Button>
+        </div>
+      </div>
+
+      <Toast
+        isOpen={!!toastMessage}
+        onClose={() => setToastMessage(null)}
+        message={toastMessage || ''}
+      />
+    </div>
+  );
+}

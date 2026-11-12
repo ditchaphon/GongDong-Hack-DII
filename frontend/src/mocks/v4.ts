@@ -1,0 +1,318 @@
+import { Book } from '@/types';
+import {
+  ChatMessage,
+  CreditEntry,
+  PublicIdentity,
+  ShopIdentity,
+  V4BookSnapshot,
+  V4Grade,
+  V4Order,
+} from '@/types/v4';
+import { MOCK_BOOKS } from './books';
+
+const hoursAgo = (hours: number): string =>
+  new Date(Date.now() - hours * 3600 * 1000).toISOString();
+
+const daysAhead = (days: number): string => {
+  const date = new Date(Date.now() + days * 24 * 3600 * 1000);
+  return date.toISOString().slice(0, 10);
+};
+
+const snapshot = (book: Book, grade: V4Grade = 'GENTLY_READ'): V4BookSnapshot => ({
+  id: book.id,
+  title: book.title,
+  author: book.author,
+  cover: book.photos.cover,
+  grade,
+  price: book.price,
+});
+
+export const MOCK_BUYER: PublicIdentity = {
+  nickname: 'สกายอ่านหนังสือ',
+  avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100',
+  rating: 4.8,
+  completedOrders: 12,
+  noShows: 0,
+};
+
+export const MOCK_BUYER_2: PublicIdentity = {
+  nickname: 'ธามสายมินต์',
+  avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100',
+  rating: 4.9,
+  completedOrders: 5,
+  noShows: 1,
+};
+
+export const MOCK_SHOP: ShopIdentity = {
+  shopName: 'ป้าหนอนหนังสือ',
+  avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100',
+  rating: 4.9,
+  completedSales: 34,
+  payeeVerified: true,
+  shopAgeDays: 120,
+};
+
+export const MOCK_SHOP_NEW: ShopIdentity = {
+  shopName: 'ร้านหนังสือมือสองใหม่',
+  rating: 4.6,
+  completedSales: 0,
+  payeeVerified: false,
+  shopAgeDays: 2,
+};
+
+export const MOCK_V4_ORDERS: V4Order[] = [
+  {
+    id: 'ORD-V4-1001',
+    status: 'REQUESTED',
+    delivery: 'MEETUP',
+    buyer: MOCK_BUYER,
+    shop: MOCK_SHOP,
+    books: [snapshot(MOCK_BOOKS[0], 'LIKE_NEW')],
+    amount: 190,
+    shippingFee: 0,
+    total: 190,
+    createdAtISO: hoursAgo(2),
+    updatedAtISO: hoursAgo(2),
+    slipCheck: 'NONE',
+    creditSpent: false,
+  },
+  {
+    id: 'ORD-V4-1002',
+    status: 'REQUESTED',
+    delivery: 'PARCEL',
+    buyer: MOCK_BUYER_2,
+    shop: MOCK_SHOP,
+    books: [snapshot(MOCK_BOOKS[1], 'GENTLY_READ')],
+    amount: 1850,
+    shippingFee: 40,
+    total: 1890,
+    createdAtISO: hoursAgo(20),
+    updatedAtISO: hoursAgo(20),
+    slipCheck: 'NONE',
+    creditSpent: false,
+    shipping: {
+      receiverName: 'ธาม ใจดี',
+      receiverPhone: '086-555-1234',
+    },
+  },
+  {
+    id: 'ORD-V4-1003',
+    status: 'ACCEPTED',
+    delivery: 'MEETUP',
+    buyer: MOCK_BUYER,
+    shop: MOCK_SHOP,
+    books: [snapshot(MOCK_BOOKS[2], 'LIKE_NEW')],
+    amount: 175,
+    shippingFee: 0,
+    total: 175,
+    createdAtISO: hoursAgo(5),
+    updatedAtISO: hoursAgo(4),
+    schedule: {
+      dateISO: daysAhead(1),
+      timeLabel: '16:30 - 17:00',
+      lat: 18.8023,
+      lng: 98.9524,
+      landmark: 'หน้าหอสมุดกลาง มช. ใต้ต้นไม้ใหญ่',
+      proposedBy: 'SELLER',
+      confirmedByBuyer: false,
+    },
+    slipCheck: 'NONE',
+    creditSpent: true,
+  },
+  {
+    id: 'ORD-V4-1004',
+    status: 'ACCEPTED',
+    delivery: 'PARCEL',
+    buyer: MOCK_BUYER_2,
+    shop: MOCK_SHOP,
+    books: [snapshot(MOCK_BOOKS[3], 'WELL_LOVED')],
+    amount: 130,
+    shippingFee: 40,
+    total: 170,
+    createdAtISO: hoursAgo(3),
+    updatedAtISO: hoursAgo(2),
+    slipCheck: 'NONE',
+    creditSpent: true,
+    shipping: {
+      receiverName: 'ธาม ใจดี',
+      receiverPhone: '086-555-1234',
+    },
+  },
+  {
+    id: 'ORD-V4-1005',
+    status: 'SCHEDULED',
+    delivery: 'MEETUP',
+    buyer: MOCK_BUYER,
+    shop: MOCK_SHOP,
+    books: [snapshot(MOCK_BOOKS[0], 'LIKE_NEW')],
+    amount: 190,
+    shippingFee: 0,
+    total: 190,
+    createdAtISO: hoursAgo(26),
+    updatedAtISO: hoursAgo(3),
+    schedule: {
+      dateISO: daysAhead(0),
+      timeLabel: '17:00 - 17:30',
+      lat: 18.8004,
+      lng: 98.9505,
+      landmark: 'ประตูหน้า มช. ข้างป้ายมหาวิทยาลัย',
+      proposedBy: 'SELLER',
+      confirmedByBuyer: true,
+    },
+    slipCheck: 'NONE',
+    handoverCode: '482913',
+    creditSpent: true,
+  },
+  {
+    id: 'ORD-V4-1006',
+    status: 'PAID',
+    delivery: 'PARCEL',
+    buyer: MOCK_BUYER_2,
+    shop: MOCK_SHOP,
+    books: [snapshot(MOCK_BOOKS[2], 'GENTLY_READ')],
+    amount: 175,
+    shippingFee: 40,
+    total: 215,
+    createdAtISO: hoursAgo(30),
+    updatedAtISO: hoursAgo(2),
+    slipCheck: 'PASSED',
+    slipUploadedAtISO: hoursAgo(2),
+    creditSpent: true,
+    shipping: {
+      receiverName: 'ธาม ใจดี',
+      receiverPhone: '086-555-1234',
+    },
+  },
+  {
+    id: 'ORD-V4-1007',
+    status: 'SHIPPED',
+    delivery: 'PARCEL',
+    buyer: MOCK_BUYER_2,
+    shop: MOCK_SHOP,
+    books: [snapshot(MOCK_BOOKS[1], 'GENTLY_READ')],
+    amount: 1850,
+    shippingFee: 40,
+    total: 1890,
+    createdAtISO: hoursAgo(72),
+    updatedAtISO: hoursAgo(20),
+    slipCheck: 'PASSED',
+    creditSpent: true,
+    shipping: {
+      carrier: 'Flash Express',
+      trackingNumber: 'TH0987654321CM',
+      boxPhoto: 'https://images.unsplash.com/photo-1607166452427-7e4477079cb9?w=600',
+      receiverName: 'ธาม ใจดี',
+      receiverPhone: '086-555-1234',
+    },
+  },
+  {
+    id: 'ORD-V4-1008',
+    status: 'COMPLETED',
+    delivery: 'PARCEL',
+    buyer: MOCK_BUYER,
+    shop: MOCK_SHOP,
+    books: [snapshot(MOCK_BOOKS[3], 'WELL_LOVED')],
+    amount: 130,
+    shippingFee: 40,
+    total: 170,
+    createdAtISO: hoursAgo(200),
+    updatedAtISO: hoursAgo(150),
+    slipCheck: 'PASSED',
+    creditSpent: true,
+  },
+  {
+    id: 'ORD-V4-1009',
+    status: 'DISPUTED',
+    delivery: 'MEETUP',
+    buyer: MOCK_BUYER_2,
+    shop: MOCK_SHOP,
+    books: [snapshot(MOCK_BOOKS[2], 'GENTLY_READ')],
+    amount: 175,
+    shippingFee: 0,
+    total: 175,
+    createdAtISO: hoursAgo(60),
+    updatedAtISO: hoursAgo(10),
+    slipCheck: 'NONE',
+    creditSpent: true,
+    dispute: {
+      reason: 'ผู้ซื้อไม่มาตามนัด',
+      openedBy: 'SELLER',
+      openedAtISO: hoursAgo(10),
+    },
+  },
+  {
+    id: 'ORD-V4-1010',
+    status: 'EXPIRED',
+    delivery: 'MEETUP',
+    buyer: MOCK_BUYER,
+    shop: MOCK_SHOP,
+    books: [snapshot(MOCK_BOOKS[1], 'LIKE_NEW')],
+    amount: 1850,
+    shippingFee: 0,
+    total: 1850,
+    createdAtISO: hoursAgo(50),
+    updatedAtISO: hoursAgo(26),
+    slipCheck: 'NONE',
+    creditSpent: false,
+  },
+];
+
+export const MOCK_V4_ORDER = MOCK_V4_ORDERS[4];
+
+export const MOCK_V4_CHAT: ChatMessage[] = [
+  {
+    id: 'msg-1',
+    orderId: 'ORD-V4-1003',
+    from: 'SELLER',
+    text: 'สวัสดีค่ะ นัดรับวันพรุ่งนี้ 16:30 ที่หน้าหอสมุดกลางได้ไหมคะ',
+    sentAtISO: hoursAgo(4),
+  },
+  {
+    id: 'msg-2',
+    orderId: 'ORD-V4-1003',
+    from: 'BUYER',
+    text: 'ได้ครับ ขอเบอร์ติดต่อด้วยได้ไหม 089-123-4567',
+    sentAtISO: hoursAgo(3.8),
+  },
+  {
+    id: 'msg-3',
+    orderId: 'ORD-V4-1003',
+    from: 'SELLER',
+    text: 'ติดต่อในแชทนี้ได้เลยค่ะ ส่งไลน์ส่วนตัวไม่ได้นะคะ',
+    sentAtISO: hoursAgo(3.7),
+  },
+  {
+    id: 'msg-4',
+    orderId: 'ORD-V4-1003',
+    from: 'SELLER',
+    text: 'จุดนัด: หน้าหอสมุดกลาง มช. ใต้ต้นไม้ใหญ่',
+    sentAtISO: hoursAgo(3.6),
+    kind: 'SCHEDULE_CARD',
+  },
+];
+
+export const MOCK_V4_LEDGER: CreditEntry[] = [
+  {
+    id: 'credit-3',
+    atISO: hoursAgo(26),
+    reason: 'ACCEPT_ORDER',
+    delta: -1,
+    balanceAfter: 1,
+    orderId: 'ORD-V4-1005',
+  },
+  {
+    id: 'credit-2',
+    atISO: hoursAgo(30),
+    reason: 'TOPUP',
+    delta: 3,
+    balanceAfter: 2,
+    note: 'แพ็กเกจ Starter',
+  },
+  {
+    id: 'credit-1',
+    atISO: hoursAgo(80),
+    reason: 'SIGNUP_BONUS',
+    delta: 1,
+    balanceAfter: 1,
+  },
+];
