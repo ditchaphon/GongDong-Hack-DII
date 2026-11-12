@@ -3,6 +3,9 @@ import cors from 'cors';
 import helmet from 'helmet';
 import { env } from './config/env';
 import { healthRouter } from './routes/health';
+import { orderRouter } from './routes/orders';
+import { bookRouter } from './routes/books';
+import { userRouter } from './routes/users';
 import { errorHandler } from './middlewares/errorHandler';
 
 const app = express();
@@ -23,6 +26,9 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // API Routes
 app.use('/api/health', healthRouter);
+app.use('/api/orders', orderRouter);
+app.use('/api/books', bookRouter);
+app.use('/api/users', userRouter);
 
 // Root Endpoint
 app.get('/', (_req: Request, res: Response) => {

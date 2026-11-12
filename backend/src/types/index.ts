@@ -26,10 +26,4 @@ export type VerificationStatus =
   | 'PENDING_ADMIN'
   | 'REJECTED';
 
-export interface ConditionAnswers {
-  spine: boolean; // สันหนังสือ: รอยพับ รอยย่น งอ
-  stains: boolean; // รอยเปื้อน: คราบน้ำ จุดเหลือง
-  markings: boolean; // รอยขีดเขียน: ดินสอ ปากกา ไฮไลต์
-  covers: boolean; // ปกหน้า-ปกหลัง: ยับ ฉีกขาด ถลอก
-  pages: boolean; // หน้ากระดาษ: หลุด ขาด แปะเทปซ่อม
-}
+export * from './services';

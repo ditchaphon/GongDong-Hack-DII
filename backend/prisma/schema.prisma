@@ -53,6 +53,7 @@ model BookCatalog {
   title         String   @db.VarChar(255)
   author        String?  @db.VarChar(255)
   publisher     String?  @db.VarChar(255)
+  category      String?  @db.VarChar(100)
   coverUrl      String?  @map("cover_url") @db.Text
   originalPrice Decimal? @map("original_price") @db.Decimal(10, 2)
   createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
@@ -74,6 +75,7 @@ model BookListing {
   price              Decimal  @db.Decimal(10, 2)
   conditionAnswers   Json     @map("condition_answers")
   grade              String   @db.VarChar(30) // LIKE_NEW, GENTLY_READ, WELL_LOVED, WORN_BUT_READABLE
+  category           String   @default("ทั่วไป / ไลฟ์สไตล์") @db.VarChar(100)
   allowPickup        Boolean  @default(true) @map("allow_pickup")
   pickupLat          Decimal? @map("pickup_lat") @db.Decimal(10, 7)
   pickupLng          Decimal? @map("pickup_lng") @db.Decimal(10, 7)
@@ -92,6 +94,7 @@ model BookListing {
   @@index([status, createdAt(sort: Desc)])
   @@index([sellerId])
   @@index([isbn])
+  @@index([category])
   @@map("book_listings")
 }
 

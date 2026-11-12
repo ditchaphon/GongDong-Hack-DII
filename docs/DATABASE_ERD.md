@@ -53,6 +53,7 @@ erDiagram
         varchar(255) title "ชื่อหนังสือ"
         varchar(255) author "ผู้แต่ง"
         varchar(255) publisher "สำนักพิมพ์"
+        varchar(100) category "หมวดหมู่หลักสากลจาก Google Books"
         text cover_url "รูปปกตั้งต้นจาก Google Books"
         decimal(10_2) original_price "ราคาปกตั้งต้น"
         timestamptz created_at
@@ -66,6 +67,7 @@ erDiagram
         decimal(10_2) price "ราคาขายจริง"
         jsonb condition_answers "คำตอบเช็กสภาพ 5 จุด"
         varchar(30) grade "LIKE_NEW, GENTLY_READ, WELL_LOVED, WORN_BUT_READABLE"
+        varchar(100) category "หมวดหมู่หนังสือสำหรับแสดงและกรอง"
         boolean allow_pickup "สะดวกนัดรับ"
         decimal(10_7) pickup_lat "พิกัดละติจูดจุดนัดรับ"
         decimal(10_7) pickup_lng "พิกัดลองจิจูดจุดนัดรับ"
@@ -192,6 +194,7 @@ erDiagram
 * `title` (VARCHAR(255), NOT NULL): ชื่อหนังสือ
 * `author` (VARCHAR(255)): ชื่อผู้แต่ง
 * `publisher` (VARCHAR(255)): สำนักพิมพ์
+* `category` (VARCHAR(100)): หมวดหมู่สากลที่อ่านได้จาก Google Books API (เช่น "Psychology", "Business & Economics")
 * `cover_url` (TEXT): ลิงก์รูปปกมาตรฐาน
 * `original_price` (DECIMAL(10, 2), CHECK >= 0): ราคาปกตั้งต้น (ใช้คำนวณราคาแนะนำ 75%, 60%, 45%, 30%)
 * `created_at` / `updated_at` (TIMESTAMPTZ)
@@ -206,6 +209,7 @@ erDiagram
 * `price` (DECIMAL(10, 2), NOT NULL, CHECK >= 0): ราคาขายจริงที่ผู้ขายตั้ง
 * `condition_answers` (JSONB, NOT NULL): ผลตรวจสภาพ 5 จุด (`spine`, `stains`, `markings`, `covers`, `pages`)
 * `grade` (VARCHAR(30), NOT NULL): เกรดอัตโนมัติจาก Server (`LIKE_NEW`, `GENTLY_READ`, `WELL_LOVED`, `WORN_BUT_READABLE`)
+* `category` (VARCHAR(100), DEFAULT 'ทั่วไป / ไลฟ์สไตล์', NOT NULL): หมวดหมู่ภาษาไทยสำหรับแสดงผลและกรองค้นหาบนหน้าแรก (B1)
 * `allow_pickup` (BOOLEAN, DEFAULT TRUE): สะดวกให้นัดรับหรือไม่
 * `pickup_lat` / `pickup_lng` (DECIMAL(10, 7)): พิกัดละติจูด-ลองจิจูดจุดนัดรับ (จาก Leaflet OpenStreetMap)
 * `pickup_location_name` (VARCHAR(255)): ชื่อสถานที่หรือจุดสังเกต (เช่น "หน้าหอสมุดกลาง มช.")
@@ -354,6 +358,7 @@ CREATE UNIQUE INDEX idx_users_line_user_id ON users(line_user_id);
 CREATE INDEX idx_book_listings_feed ON book_listings(status, created_at DESC) WHERE status = 'AVAILABLE';
 CREATE INDEX idx_book_listings_seller ON book_listings(seller_id);
 CREATE INDEX idx_book_listings_isbn ON book_listings(isbn);
+CREATE INDEX idx_book_listings_category ON book_listings(category);
 
 -- 3. Book Listing Images (ดึงรูปตามลำดับ & ค้นหารูปปกหลัก)
 CREATE INDEX idx_book_listing_images_order ON book_listing_images(book_listing_id, display_order ASC);
@@ -425,6 +430,7 @@ CREATE TABLE IF NOT EXISTS book_catalog (
     title VARCHAR(255) NOT NULL,
     author VARCHAR(255),
     publisher VARCHAR(255),
+    category VARCHAR(100),
     cover_url TEXT,
     original_price DECIMAL(10, 2) CHECK (original_price >= 0),
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
@@ -441,6 +447,7 @@ CREATE TABLE IF NOT EXISTS book_listings (
     price DECIMAL(10, 2) NOT NULL CHECK (price >= 0),
     condition_answers JSONB NOT NULL,
     grade VARCHAR(30) NOT NULL CHECK (grade IN ('LIKE_NEW', 'GENTLY_READ', 'WELL_LOVED', 'WORN_BUT_READABLE')),
+    category VARCHAR(100) DEFAULT 'ทั่วไป / ไลฟ์สไตล์' NOT NULL,
     allow_pickup BOOLEAN DEFAULT TRUE NOT NULL,
     pickup_lat DECIMAL(10, 7),
     pickup_lng DECIMAL(10, 7),
@@ -597,6 +604,7 @@ CREATE INDEX IF NOT EXISTS idx_users_line_user_id ON users(line_user_id);
 CREATE INDEX IF NOT EXISTS idx_book_listings_feed ON book_listings(status, created_at DESC) WHERE status = 'AVAILABLE';
 CREATE INDEX IF NOT EXISTS idx_book_listings_seller ON book_listings(seller_id);
 CREATE INDEX IF NOT EXISTS idx_book_listings_isbn ON book_listings(isbn);
+CREATE INDEX IF NOT EXISTS idx_book_listings_category ON book_listings(category);
 CREATE INDEX IF NOT EXISTS idx_book_listing_images_order ON book_listing_images(book_listing_id, display_order ASC);
 CREATE INDEX IF NOT EXISTS idx_book_listing_images_cover ON book_listing_images(book_listing_id) WHERE is_cover = TRUE;
 CREATE INDEX IF NOT EXISTS idx_orders_buyer_status ON orders(buyer_id, status);
