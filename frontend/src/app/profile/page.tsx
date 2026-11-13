@@ -86,7 +86,7 @@ export default function ProfilePage() {
             alt=""
             className={clsx(
               'w-14 h-14 rounded-full object-cover bg-slate-100 border-2',
-              isSeller ? 'border-teal-500' : 'border-[#06C755]'
+              isSeller ? 'border-teal-500' : 'border-[#8B5E3C]'
             )}
           />
           <div className="flex-1 min-w-0">

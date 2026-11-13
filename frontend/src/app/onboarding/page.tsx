@@ -26,7 +26,7 @@ export default function OnboardingPage() {
       <div className="space-y-6 pt-4">
         {/* Brand header */}
         <div className="space-y-1">
-          <div className="w-12 h-12 rounded-2xl bg-[#06C755] text-white flex items-center justify-center font-black text-2xl shadow-sm mb-4">
+          <div className="w-12 h-12 rounded-2xl bg-[#8B5E3C] text-white flex items-center justify-center font-black text-2xl shadow-sm mb-4">
             ก
           </div>
           <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">
@@ -60,7 +60,7 @@ export default function OnboardingPage() {
             <div>
               <h3 className="font-bold text-slate-900 text-sm">ซื้ออย่างมั่นใจ</h3>
               <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
-                รูปจริง 4 ด้าน + ป้ายชื่อร้าน · เกรดสภาพจากเช็ก 5 จุด
+                ถ่ายรูปจริงจากกล้อง · เกรดสภาพจากเช็ก 5 จุด
               </p>
             </div>
           </div>

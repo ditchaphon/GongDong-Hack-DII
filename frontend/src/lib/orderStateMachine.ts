@@ -32,29 +32,29 @@ export const STATUS_META: Record<V4OrderStatus, StatusMeta> = {
     timerHours: 24,
   },
   ACCEPTED: {
-    label: 'ผู้ขายรับแล้ว',
+    label: 'รอชำระเงิน',
     tone: 'blue',
-    explanation: 'เปิดแชทในออเดอร์แล้ว · นัดเวลาและจุดรับหรือชำระเงิน',
+    explanation: 'ผู้ขายรับคำขอแล้ว · ชำระเงินเพื่อให้ผู้ขายเริ่มจัดส่ง',
     whoActs: 'BOTH',
     timerHours: 24,
   },
   SCHEDULED: {
     label: 'นัดรับแล้ว',
     tone: 'teal',
-    explanation: 'ยืนยันเวลาและจุดนัดแล้ว · ตรวจหนังสือและจ่ายเงินหน้างาน',
+    explanation: 'ผู้ขายรับคำขอแล้ว · เจอกันตามนัด ตรวจหนังสือ จ่ายเงิน แล้วให้ผู้ขายสแกน QR',
     whoActs: 'BOTH',
   },
   PAID: {
-    label: 'ชำระเงินแล้ว',
+    label: 'รอผู้ขายจัดส่ง',
     tone: 'blue',
-    explanation: 'ตรวจสลิปผ่านแล้ว · ผู้ขายต้องจัดส่งภายใน 48 ชม.',
+    explanation: 'ชำระเงินแล้ว (ระบบพักเงินไว้) · ผู้ขายกำลังเตรียมจัดส่ง',
     whoActs: 'SELLER',
     timerHours: 48,
   },
   SHIPPED: {
-    label: 'จัดส่งแล้ว',
+    label: 'กำลังจัดส่ง',
     tone: 'violet',
-    explanation: 'ผู้ขายแจ้งเลขพัสดุแล้ว · รอผู้ซื้อกดรับของ',
+    explanation: 'ผู้ขายส่งของแล้ว · ติดตามด้วยเลขพัสดุ',
     whoActs: 'BUYER',
     timerHours: 7 * 24,
   },
@@ -102,12 +102,12 @@ export const TIMER_HOURS = {
 } as const;
 
 export const MAIN_PATH: Record<V4Delivery, V4OrderStatus[]> = {
-  MEETUP: ['REQUESTED', 'ACCEPTED', 'SCHEDULED', 'COMPLETED'],
+  MEETUP: ['REQUESTED', 'SCHEDULED', 'COMPLETED'],
   PARCEL: ['REQUESTED', 'ACCEPTED', 'PAID', 'SHIPPED', 'COMPLETED'],
 };
 
 const TRANSITIONS: Record<V4OrderStatus, V4OrderStatus[]> = {
-  REQUESTED: ['ACCEPTED', 'REJECTED', 'EXPIRED', 'CANCELLED'],
+  REQUESTED: ['ACCEPTED', 'SCHEDULED', 'REJECTED', 'EXPIRED', 'CANCELLED'],
   ACCEPTED: ['SCHEDULED', 'PAID', 'CANCELLED', 'DISPUTED'],
   SCHEDULED: ['COMPLETED', 'DISPUTED'],
   PAID: ['SHIPPED', 'DISPUTED'],
@@ -217,7 +217,7 @@ export interface OrderAction {
 const sellerActions: Partial<Record<V4OrderStatus, OrderAction>> = {
   REQUESTED: {
     key: 'RESPOND_REQUEST',
-    title: 'มีคำขอซื้อรอคุณ',
+    title: 'มีคำขอซื้อรอคุณตอบรับ',
     description: 'รับออเดอร์ใช้ 1 เครดิต · ปฏิเสธไม่เสียเครดิต',
     whoActs: 'SELLER',
     primaryLabel: 'ดูคำขอ',
@@ -231,30 +231,29 @@ const sellerActions: Partial<Record<V4OrderStatus, OrderAction>> = {
   },
   PAID: {
     key: 'SHIP_PARCEL',
-    title: 'จัดส่งภายใน 48 ชม.',
-    description: 'กรอกขนส่ง เลขพัสดุ และแนบรูปกล่อง',
+    title: 'จัดส่งตามเวลาที่ตั้งไว้',
+    description: 'ส่งแล้วใส่เลขพัสดุให้ผู้ซื้อติดตาม',
     whoActs: 'SELLER',
-    primaryLabel: 'แจ้งจัดส่ง',
+    primaryLabel: 'ใส่เลขพัสดุ',
   },
   SHIPPED: {
     key: 'WAIT_SHIPMENT',
-    title: 'รอผู้ซื้อกดรับของ',
-    description: 'ระบบจะปิดออเดอร์อัตโนมัติใน 7 วัน',
+    title: 'รอผู้ซื้อถ่ายรูปยืนยันรับของ',
+    description: 'ได้รับเงินเมื่อผู้ซื้อยืนยัน · ครบ 7 วันระบบปิดให้อัตโนมัติ',
     whoActs: 'BUYER',
   },
   SCHEDULED: {
     key: 'ENTER_HANDOVER_CODE',
-    title: 'รับหนังสือแล้วหรือยัง?',
-    description: 'ขอรหัส 6 หลักจากผู้ซื้อหลังตรวจหนังสือและรับเงินแล้ว',
+    title: 'ไปตามนัด แล้วสแกน QR ของผู้ซื้อ',
+    description: 'สแกนหลังผู้ซื้อตรวจหนังสือและจ่ายเงินแล้ว เพื่อปิดการขาย',
     whoActs: 'SELLER',
-    primaryLabel: 'ใส่รหัสรับของ',
+    primaryLabel: 'สแกน QR ผู้ซื้อ',
   },
   COMPLETED: {
-    key: 'REVIEW',
-    title: 'ให้คะแนนผู้ซื้อ',
-    description: 'ช่วยให้คนอื่นรู้ว่าผู้ซื้อนัดรับตรงเวลาไหม',
-    whoActs: 'BOTH',
-    primaryLabel: 'ให้คะแนน',
+    key: 'NONE',
+    title: 'ปิดการขายแล้ว',
+    description: 'ดูรีวิวจากผู้ซื้อได้ในออเดอร์',
+    whoActs: 'NONE',
   },
   DISPUTED: {
     key: 'VIEW_DISPUTE',
@@ -273,30 +272,30 @@ const buyerActions: Partial<Record<V4OrderStatus, OrderAction>> = {
   },
   ACCEPTED: {
     key: 'PAY_ORDER',
-    title: 'ชำระเงินในออเดอร์',
-    description: 'สแกน QR แล้วแนบสลิป · ห้ามโอนเข้าบัญชีที่ส่งมาทางแชท',
+    title: 'ผู้ขายรับแล้ว · ชำระเงิน',
+    description: 'สแกน QR แล้วแนบสลิป · ระบบพักเงินไว้จนคุณได้รับของ',
     whoActs: 'BUYER',
     primaryLabel: 'ไปหน้าชำระเงิน',
   },
   SCHEDULED: {
     key: 'SHOW_HANDOVER_CODE',
-    title: 'แสดงรหัสรับของ',
-    description: 'ตรวจหนังสือและจ่ายเงินก่อน แล้วจึงบอกหรือโชว์รหัส',
+    title: 'นัดรับแล้ว · เปิด QR ตอนรับของ',
+    description: 'ตรวจหนังสือและจ่ายเงินก่อน แล้วให้ผู้ขายสแกน QR',
     whoActs: 'BUYER',
-    primaryLabel: 'ดูรหัสรับของ',
+    primaryLabel: 'แสดง QR รับของ',
   },
   PAID: {
     key: 'WAIT_SHIPMENT',
     title: 'รอผู้ขายจัดส่ง',
-    description: 'ผู้ขายต้องส่งภายใน 48 ชม. หลังตรวจสลิปผ่าน',
+    description: 'ผู้ขายกำลังเตรียมส่งตามเวลาที่ร้านตั้งไว้',
     whoActs: 'SELLER',
   },
   SHIPPED: {
     key: 'CONFIRM_RECEIVED',
-    title: 'ได้รับหนังสือแล้วหรือยัง?',
-    description: 'กดยืนยันเมื่อได้รับของจริง · ครบ 7 วันระบบปิดให้อัตโนมัติ',
+    title: 'กำลังจัดส่ง · ได้รับแล้วถ่ายรูปยืนยัน',
+    description: 'ติดตามด้วยเลขพัสดุ · ได้รับแล้วถ่ายรูปและรีวิว',
     whoActs: 'BUYER',
-    primaryLabel: 'ได้รับแล้ว',
+    primaryLabel: 'ได้รับของแล้ว',
   },
   COMPLETED: {
     key: 'REVIEW',
@@ -342,6 +341,15 @@ export function getNextAction(order: V4Order, role: ViewRole): OrderAction {
             whoActs: 'SELLER',
           };
     }
+  }
+
+  if (order.status === 'COMPLETED' && (role === 'SELLER' || order.review)) {
+    return {
+      key: 'NONE',
+      title: role === 'SELLER' ? 'ปิดการขายแล้ว' : 'รีวิวแล้ว · ขอบคุณที่ใช้กองดอง',
+      description: STATUS_META.COMPLETED.explanation,
+      whoActs: 'NONE',
+    };
   }
 
   if (action) return action;

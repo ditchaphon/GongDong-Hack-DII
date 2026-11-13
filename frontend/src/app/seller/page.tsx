@@ -15,6 +15,8 @@ import {
 import { useSeller } from '@/hooks/useSeller';
 import { useLiff } from '@/hooks/useLiff';
 import { useAppMode } from '@/hooks/useAppMode';
+import { useV4Orders } from '@/hooks/useV4Orders';
+import { StatusBadgeV4 } from '@/components/v4';
 import {
   Plus,
   BookOpen,
@@ -48,6 +50,8 @@ export default function SellerShopPage() {
   } = useSeller();
 
   const { mode, setMode } = useAppMode();
+  const { orders: allOrders, isMineAsBuyer } = useV4Orders();
+  const sales = allOrders.filter((order) => !isMineAsBuyer(order));
 
   // Landing on the dashboard with a ready shop means the seller hat is on.
   useEffect(() => {
@@ -61,12 +65,11 @@ export default function SellerShopPage() {
     (l) => l.status === 'ACTIVE' || l.status === 'WAITING_PAYMENT'
   );
   const hiddenListings = listings.filter((l) => l.status === 'HIDDEN');
-  const completedCount = orders.filter((o) => o.status === 'COMPLETED').length;
-  const waitingOrders = orders.filter(
-    (o) => o.status === 'WAITING_PAYMENT' || o.status === 'PAYMENT_SUBMITTED'
-  );
-  const closedListings = listings.filter((l) => l.status === 'CLOSED');
-  const newOrderCount = orders.filter((o) => o.status === 'PENDING_ACCEPT').length;
+  const completedSales = sales.filter((o) => o.status === 'COMPLETED');
+  const completedCount = completedSales.length;
+  // Orders where money is still on its way: waiting for the slip, or paid and not yet closed.
+  const waitingOrders = sales.filter((o) => ['ACCEPTED', 'PAID', 'SHIPPED', 'SCHEDULED'].includes(o.status));
+  const newOrderCount = sales.filter((o) => o.status === 'REQUESTED').length;
 
   return (
     <div className="flex flex-col min-h-screen bg-slate-50 select-none pb-24">
@@ -148,13 +151,13 @@ export default function SellerShopPage() {
             </div>
             <div className="p-2 rounded-xl bg-slate-50">
               <div className="text-base font-black text-slate-900">
-                {orders.filter((o) => o.status === 'COMPLETED').length}
+                {completedCount}
               </div>
               <div className="text-[10px] text-slate-500">ขายสำเร็จ</div>
             </div>
             <div className="p-2 rounded-xl bg-slate-50">
               <div className="text-base font-black text-slate-900">
-                {orders.filter((o) => o.status === 'PENDING_ACCEPT').length}
+                {newOrderCount}
               </div>
               <div className="text-[10px] text-slate-500">รอตอบรับ</div>
             </div>
@@ -217,7 +220,7 @@ export default function SellerShopPage() {
             size="sm"
           />
           <Chip
-            label="รอชำระเงิน"
+            label="รอรับเงิน"
             selected={tab === 'WAITING'}
             count={waitingOrders.length}
             onClick={() => setTab('WAITING')}
@@ -226,6 +229,7 @@ export default function SellerShopPage() {
           <Chip
             label="ปิดการขาย"
             selected={tab === 'CLOSED'}
+            count={completedCount}
             onClick={() => setTab('CLOSED')}
             size="sm"
           />
@@ -267,7 +271,7 @@ export default function SellerShopPage() {
                     <p className="text-[11px] text-slate-400">
                       {listing.isSet ? `ยกชุด ${listing.totalVolumes} เล่ม` : 'เล่มเดียว'}
                     </p>
-                    <p className="text-sm font-black text-[#06C755]">
+                    <p className="text-sm font-black text-[#8B5E3C]">
                       ฿{listing.price.toLocaleString()}
                     </p>
                     <div className="flex items-center gap-3 text-[10px] text-slate-400 pt-0.5">
@@ -349,123 +353,109 @@ export default function SellerShopPage() {
           </div>
         )}
 
-        {/* S4W — waiting for payment */}
+        {/* Waiting for money: each card opens the order (slip, shipping, QR) */}
         {tab === 'WAITING' && (
           <div className="space-y-3">
             {waitingOrders.length === 0 ? (
               <div className="bg-white rounded-2xl border border-slate-200">
                 <EmptyState
                   icon={<Clock className="w-8 h-8 text-slate-400" />}
-                  title="ไม่มีออเดอร์ที่รอชำระเงิน"
-                  description="ออเดอร์ที่คุณรับแล้วแต่ผู้ซื้อยังไม่โอนเงินหรือแนบสลิปจะแสดงที่นี่"
+                  title="ไม่มีออเดอร์ที่รอรับเงิน"
+                  description="ออเดอร์ที่คุณรับแล้วแต่ยังไม่ปิดการขายจะแสดงที่นี่"
                 />
               </div>
             ) : (
               waitingOrders.map((order) => (
-                <div
+                <button
                   key={order.id}
-                  className="bg-white rounded-2xl border border-slate-200 p-4 space-y-2.5"
+                  type="button"
+                  onClick={() => router.push(`/orders/${order.id}`)}
+                  className="w-full text-left bg-white rounded-2xl border border-slate-200 p-3.5 space-y-2.5 hover:border-slate-300"
                 >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <img
-                        src={order.books[0]?.photos.cover}
-                        alt=""
-                        className="w-10 h-14 rounded-lg object-cover bg-slate-100"
-                      />
-                      <div className="min-w-0">
-                        <h4 className="text-xs font-bold text-slate-800 line-clamp-1">
-                          {order.books[0]?.title}
-                        </h4>
-                        <p className="text-[11px] text-slate-400">
-                          {order.buyerName} · #{order.id}
-                        </p>
+                  <div className="flex items-start gap-3">
+                    <img src={order.books[0]?.cover} alt="" className="w-11 h-15 rounded-lg object-cover bg-slate-100 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-start justify-between gap-2">
+                        <h4 className="text-xs font-bold text-slate-800 line-clamp-2">{order.books[0]?.title}</h4>
+                        <StatusBadgeV4 status={order.status} size="sm" />
                       </div>
+                      <p className="text-[11px] text-slate-400 mt-0.5">
+                        #{order.id} · {order.delivery === 'MEETUP' ? 'นัดรับ' : 'ส่งพัสดุ'}
+                      </p>
+                      <p className="text-sm font-black text-slate-900 mt-0.5">฿{order.amount.toLocaleString()}</p>
                     </div>
-                    <StatusBadge status={order.status} size="sm" />
                   </div>
-
-                  <div className="flex items-center justify-between text-[11px] text-slate-500">
-                    <span>
-                      {order.deliveryMethod === 'MEETUP'
-                        ? `นัดรับ · ${order.meetupDetails?.scheduledAt}`
-                        : `ส่งพัสดุ · ฿${order.shippingFee}`}
+                  <div className="flex items-center justify-between gap-2 p-2 rounded-xl bg-slate-50 border border-slate-200 text-[11px]">
+                    <span className="text-slate-600">
+                      {order.status === 'ACCEPTED'
+                        ? 'รอผู้ซื้อแนบสลิป'
+                        : order.status === 'PAID'
+                        ? 'ได้สลิปแล้ว · รอคุณจัดส่ง'
+                        : order.status === 'SHIPPED'
+                        ? 'ส่งแล้ว · รอผู้ซื้อยืนยันรับของ'
+                        : 'นัดรับ · สแกน QR ผู้ซื้อเพื่อรับเงิน'}
                     </span>
-                    <span className="font-bold text-slate-900">
-                      ฿{order.totalAmount.toLocaleString()}
+                    <span className="inline-flex items-center gap-0.5 font-semibold text-[var(--color-primary-dark)] shrink-0">
+                      {order.slipImage ? 'ดูสลิป' : 'ดูรายละเอียด'}
+                      <ChevronRight className="w-3.5 h-3.5" />
                     </span>
                   </div>
-
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    fullWidth
-                    onClick={() => router.push(`/orders/${order.id}?role=seller`)}
-                  >
-                    {order.status === 'PAYMENT_SUBMITTED'
-                      ? 'ตรวจสลิปและจัดส่ง'
-                      : 'ดูรายละเอียด / กระตุ้นผู้ซื้อ'}
-                  </Button>
-                </div>
+                </button>
               ))
             )}
           </div>
         )}
 
-        {/* S4C — closed */}
+        {/* Closed sales with the buyer's review */}
         {tab === 'CLOSED' && (
           <div className="space-y-3">
-            {closedListings.length === 0 ? (
+            {completedSales.length === 0 ? (
               <div className="bg-white rounded-2xl border border-slate-200">
                 <EmptyState
                   icon={<CheckCircle2 className="w-8 h-8 text-slate-400" />}
                   title="ยังไม่มีรายการที่ปิดการขาย"
-                  description="เมื่อขายหนังสือได้ รายการจะย้ายมาแสดงในแท็บนี้"
+                  description="เมื่อขายหนังสือได้ รายการและรีวิวจากผู้ซื้อจะแสดงที่นี่"
                 />
               </div>
             ) : (
-              closedListings.map((listing) => (
-                <div
-                  key={listing.id}
-                  className="bg-white rounded-2xl border border-slate-200 p-3.5 flex gap-3 opacity-90"
-                >
-                  <div className="w-14 h-20 rounded-xl bg-slate-100 overflow-hidden shrink-0">
-                    <img
-                      src={listing.photos.cover}
-                      alt={listing.title}
-                      className="w-full h-full object-cover"
-                    />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <h4 className="text-sm font-semibold text-slate-800 line-clamp-2 leading-snug">
-                      {listing.title}
-                    </h4>
-                    <p className="text-xs font-bold text-slate-500 mt-1">
-                      ขายได้ ฿{listing.price.toLocaleString()}
-                    </p>
-                    <span className="inline-flex items-center gap-1 mt-1 text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
-                      <CheckCircle2 className="w-3 h-3" /> ปิดการขายแล้ว
-                    </span>
-                  </div>
-                </div>
-              ))
-            )}
-
-            {orders
-              .filter((o) => o.status === 'COMPLETED')
-              .map((order) => (
+              completedSales.map((order) => (
                 <button
                   key={order.id}
                   type="button"
-                  onClick={() => router.push(`/orders/${order.id}?role=seller`)}
-                  className="w-full flex items-center justify-between p-3.5 rounded-2xl bg-white border border-slate-200 text-left hover:bg-slate-50"
+                  onClick={() => router.push(`/orders/${order.id}`)}
+                  className="w-full text-left bg-white rounded-2xl border border-slate-200 p-3.5 space-y-2.5 hover:border-slate-300"
                 >
-                  <span className="text-xs text-slate-600">
-                    ออเดอร์ #{order.id} · {order.buyerName}
-                  </span>
-                  <ChevronRight className="w-4 h-4 text-slate-400" />
+                  <div className="flex items-start gap-3">
+                    <img src={order.books[0]?.cover} alt="" className="w-11 h-15 rounded-lg object-cover bg-slate-100 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <h4 className="text-xs font-bold text-slate-800 line-clamp-2">{order.books[0]?.title}</h4>
+                      <p className="text-[11px] text-emerald-700 font-semibold mt-0.5">ได้รับเงิน ฿{order.amount.toLocaleString()}</p>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-slate-300 self-center" />
+                  </div>
+                  {order.review ? (
+                    <div className="p-2.5 rounded-xl bg-amber-50/60 border border-amber-200 space-y-1">
+                      <div className="flex items-center gap-0.5">
+                        {[1, 2, 3, 4, 5].map((n) => (
+                          <Star
+                            key={n}
+                            className={`w-3.5 h-3.5 ${n <= order.review!.rating ? 'fill-amber-400 stroke-amber-400' : 'stroke-slate-300'}`}
+                          />
+                        ))}
+                        <span className="ml-1 text-[10px] font-semibold text-slate-500">
+                          {order.review.isGradeMatched ? '· สภาพตรงเกรด' : '· ไม่ตรงเกรด'}
+                        </span>
+                      </div>
+                      {order.review.comment && (
+                        <p className="text-[11px] text-slate-700 line-clamp-2">“{order.review.comment}”</p>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-slate-400">ผู้ซื้อยังไม่ได้รีวิว</p>
+                  )}
                 </button>
-              ))}
+              ))
+            )}
           </div>
         )}
       </div>

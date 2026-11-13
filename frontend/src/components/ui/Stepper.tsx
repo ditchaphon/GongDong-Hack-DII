@@ -35,7 +35,7 @@ export const Stepper: React.FC<StepperProps> = ({
         {/* Track Line behind steps */}
         <div className="absolute left-6 right-6 top-3.5 h-0.5 bg-slate-200 -z-0" />
         <div
-          className="absolute left-6 top-3.5 h-0.5 bg-[#06C755] -z-0 transition-all duration-300"
+          className="absolute left-6 top-3.5 h-0.5 bg-[#8B5E3C] -z-0 transition-all duration-300"
           style={{
             width: `${Math.max(0, Math.min(100, ((currentStep - 1) / (steps.length - 1)) * 100))}%`,
           }}
@@ -58,7 +58,7 @@ export const Stepper: React.FC<StepperProps> = ({
                 className={clsx(
                   'w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all shadow-xs',
                   isCompleted
-                    ? 'bg-[#06C755] text-white ring-2 ring-emerald-100'
+                    ? 'bg-[#8B5E3C] text-white ring-2 ring-emerald-100'
                     : isCurrent
                     ? 'bg-slate-900 text-white ring-4 ring-slate-100'
                     : 'bg-white text-slate-400 border-2 border-slate-200'
@@ -69,7 +69,7 @@ export const Stepper: React.FC<StepperProps> = ({
               <span
                 className={clsx(
                   'text-[11px] font-medium transition-colors',
-                  isCurrent ? 'text-slate-900 font-bold' : isCompleted ? 'text-[#06C755]' : 'text-slate-400'
+                  isCurrent ? 'text-slate-900 font-bold' : isCompleted ? 'text-[#8B5E3C]' : 'text-slate-400'
                 )}
               >
                 {s.title}

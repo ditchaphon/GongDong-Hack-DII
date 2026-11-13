@@ -49,7 +49,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({
     <div
       className={clsx(
         'relative flex items-center w-full min-h-[44px] bg-slate-100 rounded-2xl px-3.5 py-2 transition-all',
-        'focus-within:bg-white focus-within:ring-2 focus-within:ring-[#06C755]/20 focus-within:border focus-within:border-[#06C755]',
+        'focus-within:bg-white focus-within:ring-2 focus-within:ring-[#8B5E3C]/20 focus-within:border focus-within:border-[#8B5E3C]',
         disabled && 'opacity-50 pointer-events-none',
         className
       )}

@@ -1,3 +1,5 @@
+import type { MeetupPoint, ShipMode } from '@/lib/delivery';
+
 export type BookGrade = 'A' | 'B' | 'C' | 'D';
 
 export interface ConditionChecklist {
@@ -113,6 +115,14 @@ export interface ShopProfile {
   meetupZones: string[];
   supportsParcel: boolean;
   reviews: Review[];
+  /** Where parcels ship from; used for the calculated shipping fee. */
+  province: string;
+  /** Seller-defined meet-up points (any province). */
+  meetupPoints: MeetupPoint[];
+  availableDays: string[];
+  availableSlots: string[];
+  shipMode: ShipMode;
+  shipWithinDays: number;
 }
 
 export interface SellerListing extends Book {
@@ -137,6 +147,11 @@ export interface CreditPackage {
   isPopular?: boolean;
 }
 
+export interface PhotoCheck {
+  status: 'GOOD' | 'DEFECT';
+  issues: (keyof ConditionChecklist)[];
+}
+
 export interface ListingDefect {
   id: string;
   note: string;
@@ -156,10 +171,15 @@ export interface ListingDraft {
     cover: string;
     back: string;
     spine: string;
+    /** Legacy; listings no longer require a name-tag photo. */
     nameTag: string;
+    /** Inner pages photo (camera only). */
+    inner?: string;
     defects: string[];
   };
   checklist: ConditionChecklist;
+  /** Seller's per-photo inspection: good, or which checklist items fail. */
+  photoChecks?: Record<string, PhotoCheck>;
   defects: ListingDefect[];
   price: number;
   deliveryMethods: DeliveryMethod[];

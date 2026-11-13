@@ -43,7 +43,7 @@ export default function SellerListSuccessPage() {
     <div className="flex flex-col min-h-screen bg-slate-50 select-none pb-32">
       <div className="bg-white border-b border-slate-100 px-4 pt-10 pb-6 text-center space-y-3">
         <div className="w-16 h-16 rounded-full bg-emerald-50 border border-emerald-200 flex items-center justify-center mx-auto">
-          <CheckCircle2 className="w-8 h-8 text-[#06C755]" />
+          <CheckCircle2 className="w-8 h-8 text-[#8B5E3C]" />
         </div>
         <h1 className="text-xl font-black text-slate-900">ลงประกาศขายสำเร็จ!</h1>
         <p className="text-xs text-slate-500 leading-relaxed max-w-xs mx-auto">
@@ -76,7 +76,7 @@ export default function SellerListSuccessPage() {
               <div className="mt-1.5">
                 <GradeBadge grade={grade} size="sm" />
               </div>
-              <p className="text-lg font-black text-[#06C755] mt-1">
+              <p className="text-lg font-black text-[#8B5E3C] mt-1">
                 ฿{draft.price.toLocaleString()}
               </p>
             </div>

@@ -15,6 +15,16 @@ export const MOCK_SHOPS: ShopProfile[] = [
     memberSince: '2568',
     meetupZones: ['หน้าหอสมุดกลาง มช.', 'ประตูหน้า มช.', 'หอพักนักศึกษา'],
     supportsParcel: true,
+    province: 'เชียงใหม่',
+    meetupPoints: [
+      { id: 'mp-01', name: 'หน้าหอสมุดกลาง มช. ใต้ต้นไม้ใหญ่', province: 'เชียงใหม่', lat: 18.8023, lng: 98.9524 },
+      { id: 'mp-02', name: 'ประตูหน้า มช. ข้างป้ายมหาวิทยาลัย', province: 'เชียงใหม่', lat: 18.8004, lng: 98.9505 },
+      { id: 'mp-03', name: 'เซ็นทรัล เฟสติวัล เชียงใหม่ ชั้น 1 หน้า Starbucks', province: 'เชียงใหม่', lat: 18.8077, lng: 99.0186 },
+    ],
+    availableDays: ['จ', 'อ', 'พ', 'พฤ', 'ศ'],
+    availableSlots: ['บ่าย 12–16 น.', 'เย็น 16–20 น.'],
+    shipMode: 'DAILY',
+    shipWithinDays: 1,
     reviews: [
       {
         id: 'rev-01',
@@ -53,8 +63,16 @@ export const MOCK_SHOPS: ShopProfile[] = [
     completedSales: 88,
     payeeVerified: true,
     memberSince: '2567',
-    meetupZones: ['หน้าหอสมุดกลาง มช.'],
+    meetupZones: ['สยามสแควร์'],
     supportsParcel: true,
+    province: 'กรุงเทพมหานคร',
+    meetupPoints: [
+      { id: 'mp-11', name: 'BTS สยาม ทางออก 4', province: 'กรุงเทพมหานคร', lat: 13.7456, lng: 100.5341 },
+    ],
+    availableDays: ['ส', 'อา'],
+    availableSlots: ['บ่าย 12–16 น.'],
+    shipMode: 'AFTER_ACCEPT',
+    shipWithinDays: 2,
     reviews: [
       {
         id: 'rev-04',
@@ -85,6 +103,15 @@ export const MOCK_SHOPS: ShopProfile[] = [
     memberSince: '2569',
     meetupZones: ['หอพักนักศึกษา ชาย/หญิง', 'คณะมนุษยศาสตร์ มช.'],
     supportsParcel: false,
+    province: 'เชียงใหม่',
+    meetupPoints: [
+      { id: 'mp-21', name: 'หอพักนักศึกษา มช. หน้าเซเว่น', province: 'เชียงใหม่', lat: 18.7966, lng: 98.9531 },
+      { id: 'mp-22', name: 'คณะมนุษยศาสตร์ มช. ลานจอดรถ', province: 'เชียงใหม่', lat: 18.8017, lng: 98.9509 },
+    ],
+    availableDays: ['พ', 'ศ', 'ส'],
+    availableSlots: ['เย็น 16–20 น.'],
+    shipMode: 'AFTER_ACCEPT',
+    shipWithinDays: 3,
     reviews: [
       {
         id: 'rev-06',

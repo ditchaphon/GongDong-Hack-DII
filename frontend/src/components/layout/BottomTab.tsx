@@ -45,7 +45,7 @@ export const BottomTab: React.FC<BottomTabProps> = ({
   ];
 
   const tabs = isSeller ? sellerTabs : buyerTabs;
-  const activeColor = isSeller ? 'text-teal-700 font-semibold' : 'text-[#06C755] font-semibold';
+  const activeColor = isSeller ? 'text-teal-700 font-semibold' : 'text-[#8B5E3C] font-semibold';
 
   return (
     <nav

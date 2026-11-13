@@ -93,6 +93,8 @@ export interface V4Shipping {
   /** Delivery fields: seller may read these only in PAID / SHIPPED. */
   receiverName?: string;
   receiverPhone?: string;
+  /** One-line delivery address; shown to the seller only after payment. */
+  receiverAddress?: string;
 }
 
 export interface V4Order {
@@ -124,6 +126,19 @@ export interface V4Order {
     openedAtISO: string;
   };
   cancelReason?: string;
+  /** Shop profile id, used to link back to the public shop page. */
+  shopId?: string;
+  /** Parcel: days the seller promised to ship after payment. */
+  shipWithinDays?: number;
+  /** Parcel: deadline for the seller to hand the box to the carrier. */
+  shipByISO?: string;
+  /** Parcel: buyer's transfer slip (seller + admin can view). */
+  slipImage?: string;
+  /** Parcel: photo the buyer took when the box arrived. */
+  receivedPhoto?: string;
+  receivedAtISO?: string;
+  /** When GongDong released the money to the seller. */
+  payoutReleasedAtISO?: string;
   /** 1 credit was spent on this order (refundable only via no-show flow). */
   creditSpent: boolean;
   review?: {

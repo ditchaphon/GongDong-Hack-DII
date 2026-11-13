@@ -228,7 +228,7 @@ export default function SearchPage() {
                 name="search_zone"
                 checked={selectedZone === z.id}
                 onChange={() => {}}
-                className="accent-[#06C755] w-4 h-4"
+                className="accent-[#8B5E3C] w-4 h-4"
               />
             </label>
           ))}
@@ -249,7 +249,7 @@ export default function SearchPage() {
         <div className="space-y-4 py-3">
           <div className="flex justify-between items-baseline">
             <span className="text-xs text-slate-500">ราคาสูงสุด:</span>
-            <span className="text-xl font-bold text-[#06C755]">
+            <span className="text-xl font-bold text-[#8B5E3C]">
               {maxPrice >= 3000 ? 'ไม่จำกัด' : `฿${maxPrice.toLocaleString()}`}
             </span>
           </div>
@@ -261,7 +261,7 @@ export default function SearchPage() {
             step={50}
             value={maxPrice}
             onChange={(e) => setMaxPrice(Number(e.target.value))}
-            className="w-full accent-[#06C755] cursor-pointer"
+            className="w-full accent-[#8B5E3C] cursor-pointer"
           />
 
           <div className="flex justify-between text-xs text-slate-400">

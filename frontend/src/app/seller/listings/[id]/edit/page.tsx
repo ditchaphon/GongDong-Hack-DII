@@ -28,7 +28,6 @@ export default function EditListingPage({
   const [price, setPrice] = useState(listing ? String(listing.price) : '');
   const [meetup, setMeetup] = useState(listing?.deliveryMethods.includes('MEETUP') ?? true);
   const [parcel, setParcel] = useState(listing?.deliveryMethods.includes('PARCEL') ?? false);
-  const [parcelFee, setParcelFee] = useState(listing?.parcelShippingFee || 40);
   const [error, setError] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -60,7 +59,7 @@ export default function EditListingPage({
         ...(meetup ? (['MEETUP'] as const) : []),
         ...(parcel ? (['PARCEL'] as const) : []),
       ],
-      parcelShippingFee: parcel ? Number(parcelFee) || 40 : undefined,
+      parcelShippingFee: undefined,
     });
     setToastMessage('บันทึกการแก้ไขแล้ว');
     setTimeout(() => router.push('/seller'), 500);
@@ -171,22 +170,7 @@ export default function EditListingPage({
           </button>
 
           {parcel && (
-            <div className="flex items-center gap-2 pl-8">
-              <label htmlFor="edit-parcel-fee" className="text-xs text-slate-600">
-                ค่าส่งเล่มแรก
-              </label>
-              <div className="flex items-center gap-1 ml-auto">
-                <span className="text-xs text-slate-400">฿</span>
-                <input
-                  id="edit-parcel-fee"
-                  type="number"
-                  min={0}
-                  value={parcelFee}
-                  onChange={(event) => setParcelFee(Number(event.target.value) || 0)}
-                  className="w-20 min-h-[38px] px-2 text-sm text-right bg-white rounded-lg border border-slate-200 focus:outline-none focus:border-[var(--color-primary)]"
-                />
-              </div>
-            </div>
+            <p className="pl-8 text-[11px] text-slate-500">ค่าส่งระบบคำนวณให้ผู้ซื้ออัตโนมัติ</p>
           )}
         </div>
 

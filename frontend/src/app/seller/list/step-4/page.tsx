@@ -36,8 +36,7 @@ export default function SellerListStep4Page() {
   const [error, setError] = useState<string | null>(null);
 
   const price = Number(priceInput) || 0;
-  const shippingFee = hasParcel ? draft.parcelShippingFee : 0;
-  const buyerPays = price + shippingFee;
+  const pointCount = shop?.meetupPoints.length ?? 0;
 
   const handlePublish = () => {
     if (price < 1) {
@@ -83,7 +82,7 @@ export default function SellerListStep4Page() {
               }}
               placeholder="0"
               aria-label="ราคาขาย"
-              className="flex-1 min-h-[52px] px-3 text-2xl font-black text-slate-900 bg-slate-50 rounded-xl border border-slate-200 focus:outline-none focus:border-[#06C755] focus:ring-2 focus:ring-[#06C755]/20"
+              className="flex-1 min-h-[52px] px-3 text-2xl font-black text-slate-900 bg-slate-50 rounded-xl border border-slate-200 focus:outline-none focus:border-[#8B5E3C] focus:ring-2 focus:ring-[#8B5E3C]/20"
             />
           </div>
 
@@ -120,7 +119,7 @@ export default function SellerListStep4Page() {
         {/* Delivery options */}
         <div className="bg-white rounded-2xl border border-slate-200 p-4 space-y-3">
           <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-            วิธีรับหนังสือ
+            วิธีส่งหนังสือ
           </h3>
 
           <button
@@ -128,14 +127,14 @@ export default function SellerListStep4Page() {
             onClick={() => toggleDelivery('MEETUP')}
             className={`w-full flex items-start gap-3 p-3.5 rounded-2xl border text-left transition ${
               hasMeetup
-                ? 'border-[#06C755] bg-emerald-50/50'
+                ? 'border-[#8B5E3C] bg-emerald-50/50'
                 : 'border-slate-200 bg-white hover:bg-slate-50'
             }`}
           >
             <span
               className={`mt-0.5 w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 ${
                 hasMeetup
-                  ? 'bg-[#06C755] border-[#06C755] text-white'
+                  ? 'bg-[#8B5E3C] border-[#8B5E3C] text-white'
                   : 'bg-white border-slate-300'
               }`}
             >
@@ -144,13 +143,13 @@ export default function SellerListStep4Page() {
             <span className="flex-1">
               <span className="flex items-center gap-1.5 text-sm font-bold text-slate-800">
                 <MapPin className="w-4 h-4 text-teal-600" />
-                นัดรับใน มช.
+                นัดรับ
               </span>
               <span className="block text-[11px] text-slate-500 mt-0.5">
-                ฟรีค่าส่ง · ผู้ซื้อตรวจหนังสือก่อนจ่ายเงิน · โซน มช. และหอพัก
+                ผู้ซื้อเลือกจากจุดนัดของร้าน ({pointCount} จุด) · ตรวจหนังสือก่อนจ่าย · สแกน QR ปิดการขาย
               </span>
             </span>
-            <span className="text-sm font-black text-emerald-600">฿0</span>
+            <span className="text-xs font-bold text-emerald-700">ฟรี</span>
           </button>
 
           <button
@@ -159,14 +158,14 @@ export default function SellerListStep4Page() {
             onClick={() => toggleDelivery('PARCEL')}
             className={`w-full flex items-start gap-3 p-3.5 rounded-2xl border text-left transition ${
               hasParcel
-                ? 'border-[#06C755] bg-emerald-50/50'
+                ? 'border-[#8B5E3C] bg-emerald-50/50'
                 : 'border-slate-200 bg-white hover:bg-slate-50'
             } ${!canParcel ? 'opacity-50' : ''}`}
           >
             <span
               className={`mt-0.5 w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 ${
                 hasParcel
-                  ? 'bg-[#06C755] border-[#06C755] text-white'
+                  ? 'bg-[#8B5E3C] border-[#8B5E3C] text-white'
                   : 'bg-white border-slate-300'
               }`}
             >
@@ -179,49 +178,20 @@ export default function SellerListStep4Page() {
               </span>
               <span className="block text-[11px] text-slate-500 mt-0.5">
                 {canParcel
-                  ? 'ผู้ซื้อจ่ายผ่านคิวอาร์ + แนบสลิป · ส่งภายใน 48 ชม. หลังตรวจสลิป'
-                  : 'ต้องยืนยันบัญชีรับเงินก่อนเปิดส่งพัสดุ'}
+                  ? `ค่าส่งระบบคำนวณให้ผู้ซื้อ · ${shop?.shipMode === 'DAILY' ? 'ส่งภายใน 1 วัน' : `ส่งภายใน ${shop?.shipWithinDays ?? 2} วัน`}หลังชำระเงิน`
+                  : 'ต้องยืนยันตัวตน (KYC) ก่อนเปิดส่งพัสดุ'}
               </span>
             </span>
-            <span className="text-sm font-black text-slate-800">
-              ฿{draft.parcelShippingFee}
-            </span>
+            <span className="text-[11px] font-bold text-slate-500">ระบบคำนวณ</span>
           </button>
 
           {!canParcel && (
             <div className="flex items-start gap-2 p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-[11px] text-amber-900 leading-relaxed">
               <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-              ร้านที่ยังไม่ยืนยันบัญชีรับเงินรับได้เฉพาะนัดรับและจ่ายเงินสด
-              · ยืนยันได้ตอนเติมเครดิตครั้งแรก
+              ร้านที่ยังไม่ยืนยันตัวตนรับได้เฉพาะนัดรับ · ยืนยันได้ในตั้งค่าร้าน
             </div>
           )}
 
-          {hasParcel && (
-            <div className="pl-8 space-y-3">
-              <div className="flex items-center gap-2">
-                <label htmlFor="parcel-fee" className="text-xs text-slate-600">
-                  ค่าส่งเล่มแรก
-                </label>
-                <div className="flex items-center gap-1 ml-auto">
-                  <span className="text-xs text-slate-400">฿</span>
-                  <input
-                    id="parcel-fee"
-                    type="number"
-                    min={0}
-                    value={draft.parcelShippingFee}
-                    onChange={(e) =>
-                      update({ parcelShippingFee: Number(e.target.value) || 0 })
-                    }
-                    className="w-20 min-h-[38px] px-2 text-sm text-right bg-white rounded-lg border border-slate-200 focus:outline-none focus:border-[#06C755]"
-                  />
-                </div>
-              </div>
-              <p className="text-[11px] text-slate-400">
-                เล่มถัดไปในร้านเดียวกัน +฿10 ต่อเล่ม
-              </p>
-
-            </div>
-          )}
         </div>
 
         {/* Summary */}
@@ -234,15 +204,13 @@ export default function SellerListStep4Page() {
             <span className="font-semibold text-slate-800">฿{price.toLocaleString()}</span>
           </div>
           <div className="flex justify-between text-slate-500">
-            <span>ค่าส่ง (ถ้าเลือกพัสดุ)</span>
-            <span className="font-semibold text-slate-800">
-              {shippingFee === 0 ? '฿0' : `฿${shippingFee}`}
-            </span>
+            <span>ค่าส่ง</span>
+            <span className="font-semibold text-slate-800">ระบบคำนวณตอนผู้ซื้อสั่ง</span>
           </div>
           <div className="pt-2 border-t border-slate-100 flex justify-between items-baseline text-sm">
-            <span className="font-bold text-slate-900">ผู้ซื้อจ่ายสูงสุด</span>
-            <span className="text-lg font-black text-[#06C755]">
-              ฿{buyerPays.toLocaleString()}
+            <span className="font-bold text-slate-900">คุณได้รับ</span>
+            <span className="text-lg font-black text-[#8B5E3C]">
+              ฿{price.toLocaleString()}
             </span>
           </div>
           <p className="text-[11px] text-slate-400 pt-1">

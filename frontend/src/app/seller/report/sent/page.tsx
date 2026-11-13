@@ -20,7 +20,7 @@ export default function SellerReportSentPage() {
     <div className="flex flex-col min-h-screen bg-slate-50 select-none pb-28">
       <div className="bg-white border-b border-slate-100 px-4 pt-12 pb-7 text-center space-y-3">
         <div className="w-16 h-16 rounded-full bg-emerald-50 border border-emerald-200 flex items-center justify-center mx-auto">
-          <CheckCircle2 className="w-8 h-8 text-[#06C755]" />
+          <CheckCircle2 className="w-8 h-8 text-[#8B5E3C]" />
         </div>
         <h1 className="text-xl font-black text-slate-900">ส่งรายงานแล้ว (S6RS)</h1>
         <p className="text-xs text-slate-500 leading-relaxed max-w-xs mx-auto">

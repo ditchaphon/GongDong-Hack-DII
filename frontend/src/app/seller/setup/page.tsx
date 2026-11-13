@@ -5,12 +5,12 @@ import clsx from 'clsx';
 import { useRouter } from 'next/navigation';
 import { TopBar } from '@/components/layout/TopBar';
 import { Button, Input, Toast } from '@/components/ui';
-import { NicknameAvatarPicker } from '@/components/v4';
+import { NicknameAvatarPicker, MapPinPicker } from '@/components/v4';
 import { useSeller } from '@/hooks/useSeller';
 import { useProfile } from '@/hooks/useProfile';
 import { useLiff } from '@/hooks/useLiff';
 import { useAppMode } from '@/hooks/useAppMode';
-import { SELLER_MEETUP_ZONES } from '@/mocks/seller';
+import { MeetupPoint, ShipMode, THAI_PROVINCES, provinceCentre } from '@/lib/delivery';
 import { findContactLeaks } from '@/lib/masking';
 import {
   detectPromptPay,
@@ -31,7 +31,22 @@ import {
   CalendarDays,
   ShieldCheck,
   Lock,
+  Plus,
+  Trash2,
+  Upload,
+  Package,
+  Calculator,
 } from 'lucide-react';
+
+const BANKS = ['กสิกรไทย', 'ไทยพาณิชย์', 'กรุงเทพ', 'กรุงไทย', 'กรุงศรีอยุธยา', 'ทหารไทยธนชาต', 'ออมสิน', 'อื่น ๆ'];
+
+const DEFAULT_POINT: MeetupPoint = {
+  id: 'mp-default',
+  name: 'หน้าหอสมุดกลาง มช.',
+  province: 'เชียงใหม่',
+  lat: 18.8023,
+  lng: 98.9524,
+};
 
 const SHOP_AVATARS = [
   'https://images.unsplash.com/photo-1524578271613-d550eacf6090?w=120',
@@ -65,11 +80,11 @@ const STEP_HEADINGS: Record<number, { title: string; subtitle: string }> = {
   },
   3: {
     title: 'ตารางจัดส่ง',
-    subtitle: 'วันเวลาที่สะดวกนัดรับหรือส่งพัสดุ ผู้ซื้อจะเห็นก่อนสั่ง',
+    subtitle: 'จุดนัดรับ วันเวลา และรอบส่งพัสดุ · ผู้ซื้อเห็นก่อนส่งคำขอ ใช้ได้ทุกจังหวัด',
   },
   4: {
     title: 'ยืนยันตัวตน (KYC)',
-    subtitle: 'ใช้ยืนยันว่าเป็นเจ้าของบัญชีพร้อมเพย์ที่รับเงิน · แอดมินเห็นเท่านั้น',
+    subtitle: 'ยืนยันตัวตนและบัญชีพร้อมเพย์ที่ใช้รับเงินจากการขาย · แอดมินเห็นเท่านั้น',
   },
 };
 
@@ -95,13 +110,18 @@ export default function ShopSetupWizardPage() {
   const [shopAvatar, setShopAvatar] = useState(shop?.avatar || SHOP_AVATARS[0]);
 
   // Step 3 — delivery schedule
-  const [zones, setZones] = useState<string[]>(
-    shop?.meetupZones?.length ? shop.meetupZones : [SELLER_MEETUP_ZONES[0]]
+  const [province, setProvince] = useState(shop?.province ?? 'เชียงใหม่');
+  const [points, setPoints] = useState<MeetupPoint[]>(
+    shop?.meetupPoints?.length ? shop.meetupPoints : [DEFAULT_POINT]
   );
+  const [addingPoint, setAddingPoint] = useState(false);
+  const [newPointProvince, setNewPointProvince] = useState(shop?.province ?? 'เชียงใหม่');
+  const [newPointName, setNewPointName] = useState('');
+  const [newPointPin, setNewPointPin] = useState<{ lat: number; lng: number } | null>(null);
   const [days, setDays] = useState<string[]>(shop?.availableDays ?? ['จ', 'อ', 'พ', 'พฤ', 'ศ']);
   const [slots, setSlots] = useState<string[]>(shop?.availableSlots ?? [SLOTS[1]]);
   const [supportsParcel, setSupportsParcel] = useState(shop?.supportsParcel ?? false);
-  const [parcelFee, setParcelFee] = useState(shop?.parcelFee || 40);
+  const [shipMode, setShipMode] = useState<ShipMode>(shop?.shipMode ?? 'DAILY');
   const [shipWithinDays, setShipWithinDays] = useState(shop?.shipWithinDays ?? 2);
 
   // Step 4 — KYC (raw values live only in this form)
@@ -109,6 +129,8 @@ export default function ShopSetupWizardPage() {
   const [firstName, setFirstName] = useState(shop?.kyc?.firstName || '');
   const [lastName, setLastName] = useState(shop?.kyc?.lastName || '');
   const [promptPay, setPromptPay] = useState('');
+  const [promptPayName, setPromptPayName] = useState(shop?.kyc?.promptPayAccountName || '');
+  const [promptPayBank, setPromptPayBank] = useState(shop?.kyc?.promptPayBank || BANKS[0]);
   const [kycConsent, setKycConsent] = useState(false);
   const [editKyc, setEditKyc] = useState(!shop?.kyc);
 
@@ -136,7 +158,8 @@ export default function ShopSetupWizardPage() {
         return 'รายละเอียดร้านห้ามมีเบอร์โทร ไลน์ หรือช่องทางติดต่อ';
     }
     if (current === 3) {
-      if (zones.length === 0) return 'เลือกจุดนัดรับอย่างน้อย 1 จุด';
+      if (points.length === 0 && !supportsParcel)
+        return 'เพิ่มจุดนัดรับอย่างน้อย 1 จุด หรือเปิดรับส่งพัสดุ';
       if (days.length === 0) return 'เลือกวันที่สะดวกอย่างน้อย 1 วัน';
       if (slots.length === 0) return 'เลือกช่วงเวลาที่สะดวกอย่างน้อย 1 ช่วง';
     }
@@ -146,6 +169,10 @@ export default function ShopSetupWizardPage() {
       if (!isValidPersonName(lastName)) return 'กรอกนามสกุลเป็นภาษาไทยหรืออังกฤษ';
       if (!detectPromptPay(promptPay))
         return 'พร้อมเพย์ต้องเป็นเบอร์มือถือ 10 หลัก หรือเลขบัตรประชาชน 13 หลัก';
+      if (!isValidPersonName(promptPayName)) return 'กรอกชื่อบัญชีพร้อมเพย์ตามที่แสดงในแอปธนาคาร';
+      const holder = promptPayName.replace(/\s+/g, '');
+      if (!holder.includes(firstName.trim().replace(/\s+/g, '')))
+        return 'ชื่อบัญชีพร้อมเพย์ต้องเป็นชื่อเดียวกับบัตรประชาชน';
       if (!kycConsent) return 'กรุณายืนยันว่าข้อมูลเป็นของคุณ';
     }
     return null;
@@ -187,11 +214,12 @@ export default function ShopSetupWizardPage() {
       shopName: shopName.trim(),
       description: description.trim(),
       avatar: shopAvatar,
-      meetupZones: zones,
+      province,
+      meetupPoints: points,
       availableDays: days,
       availableSlots: slots,
       supportsParcel,
-      parcelFee: supportsParcel ? Number(parcelFee) || 40 : 0,
+      shipMode,
       shipWithinDays,
     });
     if (editKyc) {
@@ -202,6 +230,8 @@ export default function ShopSetupWizardPage() {
         nationalIdMasked: maskThaiId(nationalId),
         promptPayMasked: maskPromptPay(promptPay),
         promptPayType: type,
+        promptPayAccountName: promptPayName.trim(),
+        promptPayBank,
         verifiedAt: new Date().toISOString(),
       });
     }
@@ -329,6 +359,28 @@ export default function ShopSetupWizardPage() {
 
               <div className="space-y-2">
                 <span className="text-xs font-semibold text-slate-700">รูปร้าน</span>
+                <div className="flex items-center gap-3 p-3 rounded-2xl bg-slate-50 border border-slate-200">
+                  <img src={shopAvatar} alt="รูปร้านที่เลือก" className="w-16 h-16 rounded-2xl object-cover border-2 border-teal-500 bg-white" />
+                  <div className="flex-1 min-w-0 space-y-1">
+                    <label className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white border border-slate-200 text-xs font-semibold text-slate-700 cursor-pointer hover:bg-slate-100">
+                      <Upload className="w-3.5 h-3.5" />
+                      อัปโหลดรูปร้านของคุณ
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(event) => {
+                          const file = event.target.files?.[0];
+                          if (!file) return;
+                          const reader = new FileReader();
+                          reader.onload = () => typeof reader.result === 'string' && setShopAvatar(reader.result);
+                          reader.readAsDataURL(file);
+                        }}
+                      />
+                    </label>
+                    <p className="text-[10px] text-slate-400">โลโก้ร้าน ชั้นหนังสือ หรือเลือกรูปด้านล่าง</p>
+                  </div>
+                </div>
                 <div className="flex gap-2 overflow-x-auto pb-1">
                   {SHOP_AVATARS.map((url) => (
                     <button
@@ -360,24 +412,117 @@ export default function ShopSetupWizardPage() {
           {step === 3 && (
             <div className="space-y-5">
               <section className="space-y-2">
-                <div className="flex items-center gap-1.5 text-xs font-bold text-slate-700">
-                  <MapPin className="w-4 h-4 text-teal-600" />
-                  จุดนัดรับใน มช. *
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {SELLER_MEETUP_ZONES.map((zone) => (
-                    <ChoiceChip
-                      key={zone}
-                      selected={zones.includes(zone)}
-                      onClick={() => {
-                        setZones((prev) => toggle(prev, zone));
-                        setError(null);
-                      }}
-                    >
-                      {zone}
-                    </ChoiceChip>
+                <label htmlFor="shop-province" className="flex items-center gap-1.5 text-xs font-bold text-slate-700">
+                  <Package className="w-4 h-4 text-teal-600" />
+                  จังหวัดที่ร้านอยู่ *
+                </label>
+                <select
+                  id="shop-province"
+                  value={province}
+                  onChange={(event) => setProvince(event.target.value)}
+                  className="w-full min-h-[44px] px-3 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:border-teal-500"
+                >
+                  {THAI_PROVINCES.map((p) => (
+                    <option key={p} value={p}>{p}</option>
                   ))}
+                </select>
+              </section>
+
+              <section className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="flex items-center gap-1.5 text-xs font-bold text-slate-700">
+                    <MapPin className="w-4 h-4 text-teal-600" />
+                    จุดนัดรับของร้าน
+                  </span>
+                  <span className="text-[10px] text-slate-400">{points.length} จุด · เพิ่มได้ทุกจังหวัด</span>
                 </div>
+                <ul className="space-y-2">
+                  {points.map((point) => (
+                    <li key={point.id} className="flex items-start gap-2 p-2.5 rounded-xl border border-teal-200 bg-teal-50/50">
+                      <MapPin className="w-4 h-4 text-teal-600 shrink-0 mt-0.5" />
+                      <div className="flex-1 min-w-0 text-xs">
+                        <p className="font-semibold text-slate-800">{point.name}</p>
+                        <p className="text-[10px] text-slate-500">{point.province} · {point.lat.toFixed(4)}, {point.lng.toFixed(4)}</p>
+                      </div>
+                      <button
+                        type="button"
+                        aria-label={`ลบ ${point.name}`}
+                        onClick={() => setPoints((prev) => prev.filter((p) => p.id !== point.id))}
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-white"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+
+                {addingPoint ? (
+                  <div className="p-3 rounded-2xl border border-slate-200 bg-slate-50 space-y-3">
+                    <select
+                      value={newPointProvince}
+                      aria-label="จังหวัดของจุดนัด"
+                      onChange={(event) => {
+                        setNewPointProvince(event.target.value);
+                        setNewPointPin(provinceCentre(event.target.value));
+                      }}
+                      className="w-full min-h-[42px] px-3 rounded-xl border border-slate-200 bg-white text-sm"
+                    >
+                      {THAI_PROVINCES.map((p) => (
+                        <option key={p} value={p}>{p}</option>
+                      ))}
+                    </select>
+                    <MapPinPicker
+                      value={newPointPin}
+                      onChange={setNewPointPin}
+                      landmark={newPointName}
+                      onLandmarkChange={setNewPointName}
+                    />
+                    <div className="grid grid-cols-2 gap-2">
+                      <Button variant="outline" size="sm" onClick={() => setAddingPoint(false)}>
+                        ยกเลิก
+                      </Button>
+                      <Button
+                        size="sm"
+                        disabled={newPointName.trim().length < 3 || !newPointPin}
+                        onClick={() => {
+                          if (!newPointPin) return;
+                          if (findContactLeaks(newPointName).length > 0) {
+                            setError('ชื่อจุดนัดห้ามมีเบอร์โทรหรือช่องทางติดต่อ');
+                            return;
+                          }
+                          setPoints((prev) => [
+                            ...prev,
+                            {
+                              id: `mp-${Date.now()}`,
+                              name: newPointName.trim(),
+                              province: newPointProvince,
+                              lat: newPointPin.lat,
+                              lng: newPointPin.lng,
+                            },
+                          ]);
+                          setNewPointName('');
+                          setAddingPoint(false);
+                          setError(null);
+                        }}
+                      >
+                        บันทึกจุดนัด
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAddingPoint(true);
+                      setNewPointProvince(province);
+                      setNewPointPin(provinceCentre(province));
+                    }}
+                    className="w-full flex items-center justify-center gap-1.5 p-2.5 rounded-xl border-2 border-dashed border-teal-300 text-xs font-bold text-teal-700 hover:bg-teal-50"
+                  >
+                    <Plus className="w-4 h-4" />
+                    เพิ่มจุดนัดรับเอง
+                  </button>
+                )}
               </section>
 
               <section className="space-y-2">
@@ -451,38 +596,50 @@ export default function ShopSetupWizardPage() {
                 </div>
 
                 {supportsParcel ? (
-                  <div className="space-y-3">
-                    <div className="flex items-center gap-2">
-                      <label htmlFor="shop-parcel-fee" className="text-xs text-slate-600">
-                        ค่าส่งเล่มแรก
-                      </label>
-                      <div className="flex items-center gap-1 ml-auto">
-                        <span className="text-xs text-slate-400">฿</span>
-                        <input
-                          id="shop-parcel-fee"
-                          type="number"
-                          min={0}
-                          value={parcelFee}
-                          onChange={(event) => setParcelFee(Number(event.target.value) || 0)}
-                          className="w-20 min-h-[38px] px-2 text-sm text-right bg-white rounded-lg border border-slate-200 focus:outline-none focus:border-teal-500"
-                        />
+                  <div className="space-y-2">
+                    <span className="text-xs text-slate-600">รอบการส่งของ</span>
+                    {([
+                      { id: 'DAILY', title: 'ส่งได้ทุกวัน', note: 'ส่งภายใน 1 วันหลังผู้ซื้อชำระเงิน' },
+                      { id: 'AFTER_ACCEPT', title: 'ส่งหลังตอบรับคำขอ', note: `ส่งภายใน ${shipWithinDays} วันหลังผู้ซื้อชำระเงิน` },
+                    ] as const).map((option) => {
+                      const selected = shipMode === option.id;
+                      return (
+                        <button
+                          key={option.id}
+                          type="button"
+                          onClick={() => setShipMode(option.id)}
+                          aria-pressed={selected}
+                          className={clsx(
+                            'w-full flex items-start gap-2.5 p-3 rounded-xl border text-left',
+                            selected ? 'border-teal-400 bg-teal-50' : 'border-slate-200 bg-white'
+                          )}
+                        >
+                          <span className={clsx('mt-0.5 w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0', selected ? 'border-teal-600' : 'border-slate-300')}>
+                            {selected && <span className="w-2 h-2 rounded-full bg-teal-600" />}
+                          </span>
+                          <span className="text-xs">
+                            <span className="font-bold text-slate-800">{option.title}</span>
+                            <span className="block text-[11px] text-slate-500">{option.note}</span>
+                          </span>
+                        </button>
+                      );
+                    })}
+                    {shipMode === 'AFTER_ACCEPT' && (
+                      <div className="flex items-center gap-2 pl-1">
+                        <span className="text-[11px] text-slate-600">ส่งภายใน</span>
+                        <div className="flex gap-1.5 ml-auto">
+                          {[1, 2, 3, 5].map((n) => (
+                            <ChoiceChip key={n} selected={shipWithinDays === n} onClick={() => setShipWithinDays(n)}>
+                              {n} วัน
+                            </ChoiceChip>
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-slate-600">ส่งของภายใน</span>
-                      <div className="flex gap-1.5 ml-auto">
-                        {[1, 2, 3].map((n) => (
-                          <ChoiceChip
-                            key={n}
-                            selected={shipWithinDays === n}
-                            onClick={() => setShipWithinDays(n)}
-                          >
-                            {n} วัน
-                          </ChoiceChip>
-                        ))}
-                      </div>
-                    </div>
-                    <p className="text-[11px] text-slate-400">เล่มถัดไปในร้านเดียวกัน +฿10 ต่อเล่ม</p>
+                    )}
+                    <p className="flex items-start gap-1.5 p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-[11px] text-slate-600">
+                      <Calculator className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                      ไม่ต้องตั้งค่าส่ง · กองดองคำนวณให้อัตโนมัติตามจำนวนเล่มและจังหวัดปลายทาง
+                    </p>
                   </div>
                 ) : (
                   <p className="text-[11px] text-slate-500 leading-relaxed">
@@ -505,8 +662,11 @@ export default function ShopSetupWizardPage() {
                     </p>
                     <p>บัตรประชาชน {shop.kyc.nationalIdMasked}</p>
                     <p>
-                      พร้อมเพย์ ({shop.kyc.promptPayType === 'PHONE' ? 'เบอร์มือถือ' : 'เลขบัตร'}){' '}
+                      รับเงินทางพร้อมเพย์ ({shop.kyc.promptPayType === 'PHONE' ? 'เบอร์มือถือ' : 'เลขบัตร'}){' '}
                       {shop.kyc.promptPayMasked}
+                    </p>
+                    <p>
+                      ชื่อบัญชี {shop.kyc.promptPayAccountName} · {shop.kyc.promptPayBank}
                     </p>
                   </div>
                 </div>
@@ -564,10 +724,10 @@ export default function ShopSetupWizardPage() {
                 </div>
                 <Input
                   id="kyc-promptpay"
-                  label="รหัสพร้อมเพย์ *"
+                  label="เบอร์มือถือ / เลขบัตรที่ผูกพร้อมเพย์ *"
                   inputMode="numeric"
                   autoComplete="off"
-                  placeholder="เบอร์มือถือ หรือ เลขบัตรประชาชน"
+                  placeholder="เช่น 0812345678"
                   value={promptPay}
                   onChange={(event) => {
                     setPromptPay(onlyDigits(event.target.value).slice(0, 13));
@@ -578,9 +738,34 @@ export default function ShopSetupWizardPage() {
                       ? '✓ พร้อมเพย์แบบเบอร์มือถือ'
                       : promptPayType === 'NATIONAL_ID'
                       ? '✓ พร้อมเพย์แบบเลขบัตรประชาชน'
-                      : 'ชื่อบัญชีพร้อมเพย์ต้องตรงกับชื่อ-นามสกุลด้านบน'
+                      : 'กองดองโอนเงินค่าหนังสือเข้าพร้อมเพย์นี้หลังปิดการขาย'
                   }
                 />
+                <div className="grid grid-cols-2 gap-3">
+                  <Input
+                    id="kyc-promptpay-name"
+                    label="ชื่อบัญชีพร้อมเพย์ *"
+                    placeholder="ตามที่แสดงในแอปธนาคาร"
+                    value={promptPayName}
+                    onChange={(event) => {
+                      setPromptPayName(event.target.value);
+                      setError(null);
+                    }}
+                  />
+                  <div className="flex flex-col gap-1.5">
+                    <label htmlFor="kyc-bank" className="text-xs font-semibold text-slate-700">ธนาคารที่ผูก *</label>
+                    <select
+                      id="kyc-bank"
+                      value={promptPayBank}
+                      onChange={(event) => setPromptPayBank(event.target.value)}
+                      className="min-h-[44px] px-3 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:border-teal-500"
+                    >
+                      {BANKS.map((bank) => (
+                        <option key={bank} value={bank}>{bank}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
                 {nationalIdDigits.length === 13 && (
                   <button
                     type="button"

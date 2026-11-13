@@ -3,6 +3,8 @@
 import React, { createContext, useContext, useState, ReactNode } from 'react';
 import {
   ChatMessage,
+  V4BookSnapshot,
+  V4Delivery,
   V4Order,
   V4OrderStatus,
   V4Schedule,
@@ -12,8 +14,26 @@ import {
 import { MOCK_BUYER, MOCK_V4_CHAT, MOCK_V4_ORDERS } from '@/mocks/v4';
 import { useLiff } from '@/hooks/useLiff';
 
+export interface CreateOrderInput {
+  delivery: V4Delivery;
+  shop: V4Order['shop'];
+  shopId?: string;
+  books: V4BookSnapshot[];
+  shippingFee: number;
+  schedule?: V4Schedule;
+  shipping?: V4Shipping;
+  shipWithinDays?: number;
+}
+
 export interface V4OrdersContextValue {
   orders: V4Order[];
+  createOrder: (input: CreateOrderInput) => string;
+  payOrder: (id: string, slipImage?: string) => void;
+  confirmReceived: (
+    id: string,
+    photo: string,
+    review: { rating: number; isGradeMatched: boolean; tags: string[]; comment: string }
+  ) => void;
   getOrder: (id: string) => V4Order | undefined;
   messagesFor: (orderId: string) => ChatMessage[];
   sendMessage: (orderId: string, role: ViewRole, text: string) => void;
@@ -38,6 +58,9 @@ export interface V4OrdersContextValue {
 const OrdersContext = createContext<V4OrdersContextValue | null>(null);
 
 const code6 = () => String(Math.floor(100000 + Math.random() * 900000));
+
+const SAMPLE_SLIP =
+  'https://images.unsplash.com/photo-1554224155-6726b3ff858f?w=500';
 
 export const V4OrdersProvider: React.FC<{ children: ReactNode }> = ({
   children,
@@ -85,9 +108,13 @@ export const V4OrdersProvider: React.FC<{ children: ReactNode }> = ({
     setOrders((prev) =>
       prev.map((item) => {
         if (item.id === id) {
+          // Meet-up point + time were chosen in the request, so accepting
+          // confirms the appointment. Parcel orders wait for payment.
+          const scheduled = item.delivery === 'MEETUP' && !!item.schedule;
           return {
             ...item,
-            status: 'ACCEPTED',
+            status: scheduled ? 'SCHEDULED' : 'ACCEPTED',
+            schedule: scheduled ? { ...item.schedule!, confirmedByBuyer: true } : item.schedule,
             creditSpent: true,
             updatedAtISO: now,
             handoverCode: item.handoverCode ?? code6(),
@@ -112,7 +139,10 @@ export const V4OrdersProvider: React.FC<{ children: ReactNode }> = ({
         id: `msg-accept-${id}`,
         orderId: id,
         from: 'SELLER',
-        text: 'รับคำขอแล้วค่ะ · นัดรับหรือชำระเงินได้เลย',
+        text:
+          order.delivery === 'MEETUP'
+            ? 'ผู้ขายรับคำขอแล้ว · นัดรับยืนยันแล้ว แชทในออเดอร์เปิดแล้ว'
+            : 'ผู้ขายรับคำขอแล้ว · ชำระเงินเพื่อให้ผู้ขายเริ่มจัดส่ง',
         sentAtISO: now,
         kind: 'SYSTEM',
       },
@@ -142,12 +172,75 @@ export const V4OrdersProvider: React.FC<{ children: ReactNode }> = ({
     );
   };
 
-  const markPaid = (id: string) => {
+  const markPaid = (id: string) => payOrder(id);
+
+  /** Money is held by GongDong until the buyer confirms receipt. */
+  const payOrder = (id: string, slipImage?: string) => {
+    const order = getOrder(id);
+    const days = order?.shipWithinDays ?? 2;
+    const now = Date.now();
     patchOrder(
       id,
-      { slipCheck: 'PASSED', slipUploadedAtISO: new Date().toISOString() },
+      {
+        slipCheck: 'PASSED',
+        slipUploadedAtISO: new Date(now).toISOString(),
+        slipImage: slipImage ?? order?.slipImage ?? SAMPLE_SLIP,
+        shipByISO: new Date(now + days * 86400000).toISOString(),
+      },
       'PAID'
     );
+  };
+
+  const confirmReceived: V4OrdersContextValue['confirmReceived'] = (id, photo, review) => {
+    const now = new Date().toISOString();
+    patchOrder(
+      id,
+      {
+        receivedPhoto: photo,
+        receivedAtISO: now,
+        payoutReleasedAtISO: now,
+        review: { ...review, reviewedAtISO: now },
+      },
+      'COMPLETED'
+    );
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: `msg-received-${id}`,
+        orderId: id,
+        from: 'BUYER',
+        text: 'ผู้ซื้อยืนยันรับของพร้อมรูปถ่ายแล้ว · โอนเงินให้ผู้ขายเรียบร้อย',
+        sentAtISO: now,
+        kind: 'SYSTEM',
+      },
+    ]);
+  };
+
+  const createOrder = (input: CreateOrderInput) => {
+    const id = `ORD-${Math.floor(100000 + Math.random() * 900000)}`;
+    const now = new Date().toISOString();
+    const amount = input.books.reduce((sum, book) => sum + book.price, 0);
+    const order: V4Order = {
+      id,
+      status: 'REQUESTED',
+      delivery: input.delivery,
+      buyer: MOCK_BUYER,
+      shop: input.shop,
+      shopId: input.shopId,
+      books: input.books,
+      amount,
+      shippingFee: input.shippingFee,
+      total: amount + input.shippingFee,
+      createdAtISO: now,
+      updatedAtISO: now,
+      schedule: input.schedule,
+      shipping: input.shipping,
+      shipWithinDays: input.shipWithinDays,
+      slipCheck: 'NONE',
+      creditSpent: false,
+    };
+    setOrders((prev) => [order, ...prev]);
+    return id;
   };
 
   const markShipped = (id: string, shipping: V4Shipping) => {
@@ -180,18 +273,32 @@ export const V4OrdersProvider: React.FC<{ children: ReactNode }> = ({
     });
   };
 
+  /** Seller scanned the buyer's QR at the meet-up: sale closes, chat locks. */
   const verifyHandover = (id: string, code: string) => {
     const order = getOrder(id);
     if (!order?.handoverCode) return false;
     if (order.handoverCode !== code.trim()) return false;
+    const now = new Date().toISOString();
     patchOrder(
       id,
       {
-        handoverCodeVerifiedAtISO: new Date().toISOString(),
+        handoverCodeVerifiedAtISO: now,
+        payoutReleasedAtISO: now,
         handoverCode: undefined,
       },
       'COMPLETED'
     );
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: `msg-handover-${id}`,
+        orderId: id,
+        from: 'SELLER',
+        text: 'ผู้ขายสแกน QR รับของแล้ว · ปิดการขายเรียบร้อย',
+        sentAtISO: now,
+        kind: 'SYSTEM',
+      },
+    ]);
     return true;
   };
 
@@ -215,6 +322,9 @@ export const V4OrdersProvider: React.FC<{ children: ReactNode }> = ({
     <OrdersContext.Provider
       value={{
         orders,
+        createOrder,
+        payOrder,
+        confirmReceived,
         getOrder,
         messagesFor,
         sendMessage,

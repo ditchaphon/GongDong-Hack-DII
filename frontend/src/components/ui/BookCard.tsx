@@ -69,7 +69,7 @@ export const BookCard: React.FC<BookCardProps> = ({
 
           <div className="flex items-baseline justify-between mt-2 pt-1 border-t border-slate-100">
             <div className="flex items-baseline gap-1.5">
-              <span className="text-base font-bold text-[#06C755]">
+              <span className="text-base font-bold text-[#8B5E3C]">
                 ฿{book.price.toLocaleString()}
               </span>
               {book.originalPrice && (
@@ -132,7 +132,7 @@ export const BookCard: React.FC<BookCardProps> = ({
 
       <div className="p-3 flex flex-col flex-1 justify-between gap-2">
         <div>
-          <h3 className="font-semibold text-slate-900 text-sm line-clamp-2 leading-snug group-hover:text-[#059669] transition-colors">
+          <h3 className="font-semibold text-slate-900 text-sm line-clamp-2 leading-snug group-hover:text-[#6B4628] transition-colors">
             {book.title}
           </h3>
           <p className="text-xs text-slate-500 mt-1 truncate">{book.author}</p>
@@ -140,7 +140,7 @@ export const BookCard: React.FC<BookCardProps> = ({
 
         <div>
           <div className="flex items-baseline gap-1.5">
-            <span className="text-base font-bold text-[#06C755]">
+            <span className="text-base font-bold text-[#8B5E3C]">
               ฿{book.price.toLocaleString()}
             </span>
             {book.originalPrice && (

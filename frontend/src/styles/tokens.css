@@ -1,10 +1,10 @@
 /* Design tokens for GongDong (กองดอง) */
 :root {
   /* Brand Colors */
-  --color-primary: #06C755;          /* LINE Green */
-  --color-primary-dark: #059669;     /* Forest Emerald */
-  --color-primary-light: #E8F8EE;    /* Soft Green Tint */
-  --color-primary-hover: #04A847;
+  --color-primary: #8B5E3C;          /* Bookshop brown */
+  --color-primary-dark: #6B4628;     /* Dark walnut */
+  --color-primary-light: #F3E8DA;    /* Paper tint */
+  --color-primary-hover: #724B30;
 
   /* Secondary & Accents */
   --color-secondary: #F59E0B;        /* Warm Amber */
@@ -13,8 +13,8 @@
   --color-accent-blue-light: #EFF6FF;
 
   /* Condition Grades */
-  --color-grade-a: #10B981;          /* Grade A (Mint/Like New) */
-  --color-grade-a-bg: #ECFDF5;
+  --color-grade-a: #8B5E3C;          /* Grade A (Mint/Like New) */
+  --color-grade-a-bg: #FAF5EF;
   --color-grade-b: #0284C7;          /* Grade B (Good) */
   --color-grade-b-bg: #F0F9FF;
   --color-grade-c: #D97706;          /* Grade C (Fair/Acceptable) */
@@ -24,22 +24,22 @@
 
   /* Status Colors */
   --color-status-pending: #F59E0B;
-  --color-status-success: #10B981;
+  --color-status-success: #8B5E3C;
   --color-status-danger: #EF4444;
   --color-status-info: #3B82F6;
 
   /* Neutral Surface & Backgrounds */
-  --color-bg-app: #F8FAFC;
+  --color-bg-app: #FBF8F4;
   --color-bg-card: #FFFFFF;
-  --color-bg-subtle: #F1F5F9;
-  --color-border: #E2E8F0;
-  --color-border-focus: #06C755;
+  --color-bg-subtle: #F4EFE8;
+  --color-border: #E8E0D5;
+  --color-border-focus: #8B5E3C;
 
   /* Text Colors */
-  --color-text-main: #0F172A;        /* Slate 900 */
-  --color-text-secondary: #334155;   /* Slate 700 */
-  --color-text-muted: #64748B;       /* Slate 500 */
-  --color-text-placeholder: #94A3B8; /* Slate 400 */
+  --color-text-main: #1F1A16;        /* Slate 900 */
+  --color-text-secondary: #483E35;   /* Slate 700 */
+  --color-text-muted: #7D6F60;       /* Slate 500 */
+  --color-text-placeholder: #A89A89; /* Slate 400 */
 
   /* Typography */
   --font-thai: 'IBM Plex Sans Thai', 'Noto Sans Thai', -apple-system, BlinkMacSystemFont, sans-serif;

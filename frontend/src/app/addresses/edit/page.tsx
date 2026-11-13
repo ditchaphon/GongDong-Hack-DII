@@ -94,7 +94,7 @@ export default function AddressEditPage() {
               rows={3}
               value={detail}
               onChange={(e) => setDetail(e.target.value)}
-              className="w-full text-sm p-3 rounded-xl border border-slate-200 focus:outline-none focus:border-[#06C755]"
+              className="w-full text-sm p-3 rounded-xl border border-slate-200 focus:outline-none focus:border-[#8B5E3C]"
             />
           </div>
 
@@ -104,7 +104,7 @@ export default function AddressEditPage() {
               type="checkbox"
               checked={isDefault}
               onChange={(e) => setIsDefault(e.target.checked)}
-              className="w-4 h-4 accent-[#06C755] rounded"
+              className="w-4 h-4 accent-[#8B5E3C] rounded"
             />
             <span className="text-xs font-semibold text-slate-700">
               ตั้งเป็นที่อยู่จัดส่งเริ่มต้น

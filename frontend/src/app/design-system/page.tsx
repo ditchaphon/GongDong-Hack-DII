@@ -84,7 +84,7 @@ export default function DesignSystemPage() {
         rightAction={
           <Link
             href="/"
-            className="text-xs font-semibold text-[#06C755] hover:underline px-2 py-1"
+            className="text-xs font-semibold text-[#8B5E3C] hover:underline px-2 py-1"
           >
             กลับหน้าแรก
           </Link>
@@ -106,9 +106,9 @@ export default function DesignSystemPage() {
             1. Brand & Grade Tokens
           </h3>
           <div className="grid grid-cols-2 gap-2 text-xs">
-            <div className="p-3 bg-[#06C755] text-white rounded-xl font-bold flex justify-between items-center shadow-xs">
+            <div className="p-3 bg-[#8B5E3C] text-white rounded-xl font-bold flex justify-between items-center shadow-xs">
               <span>LINE Green</span>
-              <span className="font-mono text-[10px] opacity-80">#06C755</span>
+              <span className="font-mono text-[10px] opacity-80">#8B5E3C</span>
             </div>
             <div className="p-3 bg-amber-500 text-white rounded-xl font-bold flex justify-between items-center shadow-xs">
               <span>Warm Amber</span>
@@ -408,7 +408,7 @@ export default function DesignSystemPage() {
                   type="radio"
                   name="zone"
                   defaultChecked={i === 0}
-                  className="accent-[#06C755] w-4 h-4"
+                  className="accent-[#8B5E3C] w-4 h-4"
                 />
                 <span className="text-sm font-medium text-slate-800">{zone}</span>
               </label>

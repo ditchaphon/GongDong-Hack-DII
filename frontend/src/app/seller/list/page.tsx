@@ -145,12 +145,12 @@ export default function SellerListStep1Page() {
             }}
             className={`p-3 rounded-2xl border text-left transition ${
               !isSet
-                ? 'border-[#06C755] bg-emerald-50/60 ring-2 ring-[#06C755]/20'
+                ? 'border-[#8B5E3C] bg-emerald-50/60 ring-2 ring-[#8B5E3C]/20'
                 : 'border-slate-200 bg-white hover:bg-slate-50'
             }`}
           >
             <BookOpen
-              className={`w-5 h-5 mb-1.5 ${!isSet ? 'text-[#059669]' : 'text-slate-400'}`}
+              className={`w-5 h-5 mb-1.5 ${!isSet ? 'text-[#6B4628]' : 'text-slate-400'}`}
             />
             <div className="text-sm font-bold text-slate-800">ขายเล่มเดียว</div>
             <div className="text-[11px] text-slate-500">หนังสือ 1 เล่ม</div>
@@ -163,12 +163,12 @@ export default function SellerListStep1Page() {
             }}
             className={`p-3 rounded-2xl border text-left transition ${
               isSet
-                ? 'border-[#06C755] bg-emerald-50/60 ring-2 ring-[#06C755]/20'
+                ? 'border-[#8B5E3C] bg-emerald-50/60 ring-2 ring-[#8B5E3C]/20'
                 : 'border-slate-200 bg-white hover:bg-slate-50'
             }`}
           >
             <Layers
-              className={`w-5 h-5 mb-1.5 ${isSet ? 'text-[#059669]' : 'text-slate-400'}`}
+              className={`w-5 h-5 mb-1.5 ${isSet ? 'text-[#6B4628]' : 'text-slate-400'}`}
             />
             <div className="text-sm font-bold text-slate-800">ขายยกชุด</div>
             <div className="text-[11px] text-slate-500">หลายเล่มในราคาเดียว</div>

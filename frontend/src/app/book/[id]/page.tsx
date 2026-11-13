@@ -7,12 +7,12 @@ import { TopBar } from '@/components/layout/TopBar';
 import {
   Button,
   GradeBadge,
-  TrustBadge,
   ConditionChecklist,
   Modal,
   Toast,
 } from '@/components/ui';
-import { PhotoGallery, ConfirmSheet } from '@/components/v4';
+import { PhotoGallery, ConfirmSheet, CartAddedSheet, CartAddedState } from '@/components/v4';
+import { calcParcelFee, shipModeLabel } from '@/lib/delivery';
 import { MOCK_BOOKS } from '@/mocks/books';
 import { getShopById } from '@/mocks/shops';
 import { useCart } from '@/hooks/useCart';
@@ -28,6 +28,7 @@ import {
   Flag,
   Store,
   CheckCircle2,
+  CalendarDays,
 } from 'lucide-react';
 
 export default function BookDetailPage({
@@ -37,7 +38,7 @@ export default function BookDetailPage({
 }) {
   const resolvedParams = use(params);
   const router = useRouter();
-  const { addToCart } = useCart();
+  const { addToCart, replaceCart, items: cartItems } = useCart();
 
   const book = MOCK_BOOKS.find((b) => b.id === resolvedParams.id) || MOCK_BOOKS[0];
   const shop = getShopById(book.sellerId);
@@ -47,12 +48,13 @@ export default function BookDetailPage({
   const [isGradeModalOpen, setIsGradeModalOpen] = useState(false);
   const [isReportOpen, setIsReportOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [cartSheet, setCartSheet] = useState<CartAddedState | null>(null);
+  const [buyAfterReplace, setBuyAfterReplace] = useState(false);
 
   const photoList = [
-    { src: book.photos.cover, label: 'ปกหน้า + ป้ายชื่อร้าน' },
+    { src: book.photos.cover, label: 'ปกหน้า' },
     { src: book.photos.back, label: 'ปกหลัง' },
     { src: book.photos.spine, label: 'สันหนังสือ' },
-    { src: book.photos.nameTag, label: 'ป้ายชื่อร้าน + วันที่' },
     ...(book.defects || []).map((defect) => ({
       src: defect.photo,
       label: defect.label,
@@ -60,15 +62,33 @@ export default function BookDetailPage({
     })),
   ];
 
+  const sameShopCount = cartItems.filter((item) => item.sellerId === book.sellerId).length;
+
   const handleAddToCart = () => {
     const res = addToCart(book);
-    setToastMessage(res.success ? 'เพิ่มลงตะกร้าแล้ว' : res.message || 'เกิดข้อผิดพลาด');
+    if (res.success) {
+      setCartSheet({ kind: 'ADDED', book, count: sameShopCount + 1 });
+    } else if (res.reason === 'OTHER_SHOP') {
+      setBuyAfterReplace(false);
+      setCartSheet({ kind: 'OTHER_SHOP', book, currentShop: cartItems[0]?.sellerName ?? 'ร้านอื่น' });
+    } else {
+      setCartSheet({ kind: 'DUPLICATE', book, count: sameShopCount });
+    }
   };
 
   const handleBuyNow = () => {
-    addToCart(book);
+    const res = addToCart(book);
+    if (!res.success && res.reason === 'OTHER_SHOP') {
+      setBuyAfterReplace(true);
+      setCartSheet({ kind: 'OTHER_SHOP', book, currentShop: cartItems[0]?.sellerName ?? 'ร้านอื่น' });
+      return;
+    }
     router.push('/cart');
   };
+
+  const offersMeetup = book.deliveryMethods.includes('MEETUP') && (shop?.meetupPoints.length ?? 0) > 0;
+  const offersParcel =
+    book.deliveryMethods.includes('PARCEL') && (shop ? shop.supportsParcel && shop.payeeVerified : true);
 
   const handleShare = async () => {
     try {
@@ -102,10 +122,6 @@ export default function BookDetailPage({
           alt={book.title}
           className="w-full h-full object-contain"
         />
-
-        <div className="absolute top-3 left-3">
-          <TrustBadge type="nametag" label="ป้ายชื่อร้าน + วันที่" />
-        </div>
 
         <button
           type="button"
@@ -202,6 +218,78 @@ export default function BookDetailPage({
         </p>
       </div>
 
+      {/* Delivery options — shown before the condition report */}
+      <div className="mt-2 p-4 bg-white border-y border-slate-100 space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-bold text-slate-800">วิธีรับหนังสือจากร้านนี้</h2>
+          <span className="text-[11px] text-slate-400">
+            {[offersMeetup && 'นัดรับ', offersParcel && 'ส่งพัสดุ'].filter(Boolean).join(' · ')}
+          </span>
+        </div>
+
+        {offersMeetup && shop && (
+          <div className="rounded-2xl border border-teal-200 bg-teal-50/60 p-3 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <span className="inline-flex items-center gap-1.5 text-xs font-bold text-teal-900">
+                <MapPin className="w-4 h-4 text-teal-600" />
+                นัดรับ · ฟรีค่าส่ง
+              </span>
+              <span className="text-[10px] text-teal-700">ดูของก่อนจ่ายเงิน</span>
+            </div>
+            <ul className="space-y-1.5">
+              {shop.meetupPoints.map((point) => (
+                <li
+                  key={point.id}
+                  className="flex items-start gap-2 p-2 rounded-xl bg-white border border-teal-100 text-[11px] text-slate-700"
+                >
+                  <span className="mt-1 w-1.5 h-1.5 rounded-full bg-teal-500 shrink-0" />
+                  <span className="flex-1">
+                    {point.name}
+                    <span className="text-slate-400"> · {point.province}</span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <p className="flex items-center gap-1.5 text-[11px] text-teal-800">
+              <CalendarDays className="w-3.5 h-3.5" />
+              สะดวกวัน {shop.availableDays.join(' ')} · {shop.availableSlots.join(', ')}
+            </p>
+          </div>
+        )}
+
+        {offersParcel && (
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-800">
+                <Truck className="w-4 h-4 text-slate-500" />
+                ส่งพัสดุ
+              </span>
+              <span className="text-xs font-bold text-slate-800">
+                เริ่ม ฿{calcParcelFee(1, shop?.province, shop?.province)}
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-500 leading-relaxed">
+              {shop ? shipModeLabel(shop.shipMode, shop.shipWithinDays) : 'ผู้ขายส่งภายใน 2 วันหลังชำระเงิน'}
+              {shop ? ` · ส่งจาก${shop.province}` : ''}
+            </p>
+            <p className="text-[10px] text-slate-400">
+              ค่าส่งคำนวณโดยระบบตามจำนวนเล่มและจังหวัดปลายทาง · เงินถูกพักไว้จนคุณได้รับของ
+            </p>
+          </div>
+        )}
+
+        {!offersMeetup && !offersParcel && (
+          <p className="text-[11px] text-slate-500">ร้านนี้ยังไม่ได้ตั้งค่าการจัดส่ง</p>
+        )}
+
+        {shop && !shop.payeeVerified && (
+          <div className="flex items-start gap-2 p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-[10px] text-amber-900">
+            <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+            ร้านนี้ยังไม่ยืนยันตัวตน · รับได้เฉพาะนัดรับและจ่ายเงินสด
+          </div>
+        )}
+      </div>
+
       {/* 5-point checklist */}
       <div className="mt-2 p-4 bg-white border-y border-slate-100 space-y-3">
         <div className="flex items-center justify-between">
@@ -275,10 +363,10 @@ export default function BookDetailPage({
                 {shop?.payeeVerified ? (
                   <span className="inline-flex items-center gap-1 text-emerald-700 font-medium">
                     <CheckCircle2 className="w-3 h-3" />
-                    ยืนยันบัญชีรับเงิน
+                    ยืนยันตัวตนแล้ว
                   </span>
                 ) : (
-                  <span className="text-amber-700 font-medium">ยังไม่ยืนยันบัญชี</span>
+                  <span className="text-amber-700 font-medium">ยังไม่ยืนยันตัวตน</span>
                 )}
               </div>
             </div>
@@ -318,43 +406,6 @@ export default function BookDetailPage({
             ))}
           </div>
         )}
-      </div>
-
-      {/* Delivery */}
-      <div className="mt-2 p-4 bg-white border-y border-slate-100 space-y-3">
-        <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-          วิธีรับหนังสือ
-        </h2>
-        <div className="space-y-2 text-xs">
-          {book.deliveryMethods.includes('MEETUP') && (
-            <div className="flex items-start gap-2.5 p-3 rounded-xl bg-teal-50/70 border border-teal-200 text-teal-900">
-              <MapPin className="w-4 h-4 text-teal-600 shrink-0 mt-0.5" />
-              <div>
-                <span className="font-bold">นัดรับฟรี ฿0 (ดูของก่อนจ่าย)</span>
-                <p className="text-[11px] text-teal-700 mt-0.5">
-                  ผู้ขายจะเสนอบลาและหมุดจุดนัดในแชทออเดอร์ · ผู้ซื้อเป็นคนยืนยันนัด
-                </p>
-              </div>
-            </div>
-          )}
-          {book.deliveryMethods.includes('PARCEL') && (
-            <div className="flex items-start gap-2.5 p-3 rounded-xl bg-slate-50 border border-slate-200 text-slate-800">
-              <Truck className="w-4 h-4 text-slate-500 shrink-0 mt-0.5" />
-              <div>
-                <span className="font-bold">ส่งพัสดุ (฿{book.parcelShippingFee || 40})</span>
-                <p className="text-[11px] text-slate-500 mt-0.5">
-                  +฿10 ต่อเล่มถัดไปในร้านเดียวกัน · ผู้ขายส่งภายใน 48 ชม. หลังตรวจสลิปผ่าน
-                </p>
-              </div>
-            </div>
-          )}
-          {shop && !shop.payeeVerified && (
-            <div className="flex items-start gap-2 p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-[10px] text-amber-900">
-              <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-              ร้านนี้ยังไม่ยืนยันบัญชีรับเงิน · รับได้เฉพาะนัดรับและจ่ายเงินสด
-            </div>
-          )}
-        </div>
       </div>
 
       <PhotoGallery
@@ -422,6 +473,24 @@ export default function BookDetailPage({
           </Button>
         </div>
       </div>
+
+      <CartAddedSheet
+        state={cartSheet}
+        onClose={() => setCartSheet(null)}
+        onViewCart={() => {
+          setCartSheet(null);
+          router.push('/cart');
+        }}
+        onReplace={() => {
+          replaceCart(book);
+          if (buyAfterReplace) {
+            setCartSheet(null);
+            router.push('/cart');
+            return;
+          }
+          setCartSheet({ kind: 'ADDED', book, count: 1 });
+        }}
+      />
 
       <Toast
         isOpen={!!toastMessage}

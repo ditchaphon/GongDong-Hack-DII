@@ -6,6 +6,7 @@ import { CreditEntry } from '@/types/v4';
 import { MOCK_SELLER_LISTINGS, MOCK_SELLER_ORDERS } from '@/mocks/seller';
 import { MOCK_V4_LEDGER } from '@/mocks/v4';
 import { useLiff } from '@/hooks/useLiff';
+import type { MeetupPoint, ShipMode } from '@/lib/delivery';
 
 /** KYC result kept for the prototype: masked values only, never the raw ID. */
 export interface ShopKyc {
@@ -14,6 +15,9 @@ export interface ShopKyc {
   nationalIdMasked: string;
   promptPayMasked: string;
   promptPayType: 'PHONE' | 'NATIONAL_ID';
+  /** Account holder name shown in the banking app for this PromptPay. */
+  promptPayAccountName: string;
+  promptPayBank: string;
   verifiedAt: string;
 }
 
@@ -22,14 +26,17 @@ export interface ShopSettings {
   shopName: string;
   description: string;
   avatar?: string;
-  meetupZones: string[];
+  /** Province parcels ship from (used for the calculated fee). */
+  province: string;
+  /** Seller-defined meet-up points, any province. */
+  meetupPoints: MeetupPoint[];
   /** Days the seller can meet or ship, e.g. ['จ', 'พ']. */
   availableDays: string[];
   availableSlots: string[];
-  /** Days to drop a parcel after payment. */
-  shipWithinDays: number;
   supportsParcel: boolean;
-  parcelFee: number;
+  /** Ship every day, or within N days after the order is paid. */
+  shipMode: ShipMode;
+  shipWithinDays: number;
   /** Payout verification is admin-only data; buyers only see a badge. */
   payeeVerified: boolean;
   kyc?: ShopKyc;
@@ -71,8 +78,6 @@ const SellerContext = createContext<SellerContextValue | null>(null);
 
 const FALLBACK_COVER =
   'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=600';
-
-const DEFAULT_ZONES = ['หน้าหอสมุดกลาง มช.', 'ประตูหน้า มช.'];
 
 export const SellerProvider: React.FC<{ children: ReactNode }> = ({
   children,
@@ -195,10 +200,9 @@ export const SellerProvider: React.FC<{ children: ReactNode }> = ({
       sellerAvatar: shop?.avatar || user.pictureUrl,
       isPromptPayVerified: shop?.payeeVerified ?? false,
       deliveryMethods: allowedDelivery.length ? allowedDelivery : ['MEETUP'],
-      parcelShippingFee: allowedDelivery.includes('PARCEL')
-        ? draft.parcelShippingFee
-        : undefined,
-      meetupZones: shop?.meetupZones?.length ? shop.meetupZones : DEFAULT_ZONES,
+      // Parcel fees are calculated by GongDong at checkout.
+      parcelShippingFee: undefined,
+      meetupZones: shop?.meetupPoints.map((point) => point.name) ?? [],
       createdAt: 'เมื่อสักครู่',
       status: 'ACTIVE',
       views: 0,

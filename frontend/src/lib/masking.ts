@@ -5,7 +5,7 @@
 
 export const MASK = '•••';
 
-export type LeakKind = 'PHONE' | 'LINE' | 'HANDLE' | 'EMAIL' | 'BANK';
+export type LeakKind = 'PHONE' | 'LINE' | 'HANDLE' | 'EMAIL' | 'BANK' | 'SOCIAL' | 'OFF_APP';
 
 interface Rule {
   kind: LeakKind;
@@ -19,7 +19,9 @@ const RULES: Rule[] = [
   { kind: 'BANK', re: /\b\d{10,15}\b/g },
   { kind: 'PHONE', re: /\b\d{9,10}\b/g },
   { kind: 'HANDLE', re: /(^|[\s(])@[A-Za-z0-9._-]{2,}/g },
-  { kind: 'LINE', re: /line\s*id|lineid|ไลน์|ไอดีไลน์/gi },
+  { kind: 'LINE', re: /line\s*id|lineid|ไลน์|ไอดีไลน์|แอดไลน์/gi },
+  { kind: 'SOCIAL', re: /facebook|\bfb\b|เฟส(?:บุ๊ก|บุ๊ค)?|instagram|\big\b|ไอจี|tiktok|ติ๊กต็อก|messenger|whatsapp|telegram/gi },
+  { kind: 'OFF_APP', re: /เบอร์(?:โทร)?|โทรหา|โทรมา|ทักแชทส่วนตัว|ทักส่วนตัว|โอนตรง|โอนนอกแอป|เลขบัญชี|นอกแอป/gi },
 ];
 
 function applyRules(text: string): { masked: string; hits: { kind: LeakKind; value: string }[] } {
@@ -61,4 +63,20 @@ export function findContactLeaks(text: string): ContactLeak[] {
     seen.add(key);
     return true;
   });
+}
+
+const KIND_LABEL: Record<LeakKind, string> = {
+  PHONE: 'เบอร์โทร',
+  LINE: 'ไลน์',
+  HANDLE: 'ไอดีโซเชียล',
+  EMAIL: 'อีเมล',
+  BANK: 'เลขบัญชี',
+  SOCIAL: 'โซเชียล',
+  OFF_APP: 'ชวนติดต่อนอกแอป',
+};
+
+/** Human-readable list of what was hidden, e.g. "เบอร์โทร, ไลน์". */
+export function describeLeaks(text: string): string {
+  const kinds = Array.from(new Set(applyRules(text).hits.map((hit) => hit.kind)));
+  return kinds.map((kind) => KIND_LABEL[kind]).join(', ');
 }

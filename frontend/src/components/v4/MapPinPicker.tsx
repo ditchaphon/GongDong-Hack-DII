@@ -24,7 +24,7 @@ const LeafletMapInner = dynamic(() => import('./LeafletMapInner'), {
   ssr: false,
   loading: () => (
     <div className="w-full aspect-[4/3] rounded-2xl bg-slate-100 border border-slate-200 flex flex-col items-center justify-center gap-2 text-slate-400">
-      <Loader2 className="w-6 h-6 animate-spin text-[var(--color-primary-dark,#10b981)]" />
+      <Loader2 className="w-6 h-6 animate-spin text-[var(--color-primary-dark,#8B5E3C)]" />
       <span className="text-xs font-medium">กำลังโหลด OpenStreetMap...</span>
     </div>
   ),
@@ -119,7 +119,7 @@ export const MapPinPicker: React.FC<MapPinPickerProps> = ({
           type="button"
           onClick={useCurrentLocation}
           disabled={isLocating}
-          className="inline-flex items-center gap-1 text-[11px] font-semibold text-[var(--color-primary-dark,#10b981)] hover:opacity-80 transition active:scale-95 disabled:opacity-50"
+          className="inline-flex items-center gap-1 text-[11px] font-semibold text-[var(--color-primary-dark,#8B5E3C)] hover:opacity-80 transition active:scale-95 disabled:opacity-50"
         >
           {isLocating ? (
             <Loader2 className="w-3.5 h-3.5 animate-spin" />

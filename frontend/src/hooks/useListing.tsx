@@ -54,7 +54,7 @@ export interface ListingContextValue {
   setDraft: React.Dispatch<React.SetStateAction<ListingDraft>>;
   update: (patch: Partial<ListingDraft>) => void;
   setPhoto: (
-    key: 'cover' | 'back' | 'spine' | 'nameTag',
+    key: 'cover' | 'back' | 'spine' | 'nameTag' | 'inner',
     url: string
   ) => void;
   setChecklist: (next: ConditionChecklistType) => void;
@@ -77,7 +77,7 @@ export const ListingProvider: React.FC<{ children: ReactNode }> = ({
   const update = (patch: Partial<ListingDraft>) =>
     setDraft((prev) => ({ ...prev, ...patch }));
 
-  const setPhoto = (key: 'cover' | 'back' | 'spine' | 'nameTag', url: string) =>
+  const setPhoto = (key: 'cover' | 'back' | 'spine' | 'nameTag' | 'inner', url: string) =>
     setDraft((prev) => ({
       ...prev,
       photos: { ...prev.photos, [key]: url },

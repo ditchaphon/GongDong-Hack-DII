@@ -44,7 +44,7 @@ export default function AddressesPage() {
             key={addr.id}
             className={`p-4 rounded-2xl border transition space-y-3 ${
               addr.isDefault
-                ? 'bg-white border-[#06C755] ring-1 ring-[#06C755]/20 shadow-xs'
+                ? 'bg-white border-[#8B5E3C] ring-1 ring-[#8B5E3C]/20 shadow-xs'
                 : 'bg-white border-slate-200'
             }`}
           >
@@ -87,7 +87,7 @@ export default function AddressesPage() {
                 <button
                   type="button"
                   onClick={() => handleSetDefault(addr.id)}
-                  className="text-xs text-[#06C755] font-semibold hover:underline"
+                  className="text-xs text-[#8B5E3C] font-semibold hover:underline"
                 >
                   ตั้งเป็นที่อยู่จัดส่งเริ่มต้น
                 </button>

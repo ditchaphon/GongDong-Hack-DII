@@ -40,7 +40,7 @@ export default function LinePreviewPage() {
         {/* Rich Menu */}
         <section className="bg-white rounded-2xl border border-slate-200 shadow-xs p-4 space-y-3">
           <div className="flex items-center gap-2">
-            <Menu className="w-4 h-4 text-[#06C755]" />
+            <Menu className="w-4 h-4 text-[#8B5E3C]" />
             <h2 className="text-sm font-bold text-slate-900">Rich Menu (spec only)</h2>
           </div>
           <p className="text-xs text-slate-500">
@@ -76,7 +76,7 @@ export default function LinePreviewPage() {
         {/* Flex templates */}
         <section className="bg-white rounded-2xl border border-slate-200 shadow-xs p-4 space-y-3">
           <div className="flex items-center gap-2">
-            <MessageSquare className="w-4 h-4 text-[#06C755]" />
+            <MessageSquare className="w-4 h-4 text-[#8B5E3C]" />
             <h2 className="text-sm font-bold text-slate-900">Flex Message templates</h2>
           </div>
           <p className="text-xs text-slate-500">
@@ -91,7 +91,7 @@ export default function LinePreviewPage() {
                 onClick={() => setSelected(t)}
                 className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold border transition ${
                   selected.id === t.id
-                    ? 'bg-[#06C755] text-white border-[#06C755]'
+                    ? 'bg-[#8B5E3C] text-white border-[#8B5E3C]'
                     : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
                 }`}
               >
@@ -105,7 +105,7 @@ export default function LinePreviewPage() {
             <div className="text-xs font-bold text-slate-800">{selected.title}</div>
             <div className="text-xs text-slate-600 leading-relaxed">{selected.body}</div>
             <div className="pt-2">
-              <span className="inline-block px-3 py-1.5 rounded-lg bg-[#06C755] text-white text-xs font-bold">
+              <span className="inline-block px-3 py-1.5 rounded-lg bg-[#8B5E3C] text-white text-xs font-bold">
                 {selected.ctaLabel}
               </span>
             </div>

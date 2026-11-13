@@ -49,7 +49,7 @@ export default function WishlistPage() {
             type="button"
             onClick={() => setIsAddSheetOpen(true)}
             aria-label="เพิ่มรายการตามหา"
-            className="flex items-center gap-1 text-xs font-bold text-[#06C755] px-2 py-1 bg-emerald-50 rounded-lg hover:bg-emerald-100 transition"
+            className="flex items-center gap-1 text-xs font-bold text-[#8B5E3C] px-2 py-1 bg-emerald-50 rounded-lg hover:bg-emerald-100 transition"
           >
             <Plus className="w-4 h-4" />
             <span>ตามหาเล่มใหม่</span>
@@ -60,7 +60,7 @@ export default function WishlistPage() {
       {/* Info Hero Banner */}
       <div className="p-4 bg-white border-b border-slate-100 space-y-2">
         <div className="flex items-center gap-2 text-xs font-bold text-slate-800">
-          <Bell className="w-4 h-4 text-[#06C755]" />
+          <Bell className="w-4 h-4 text-[#8B5E3C]" />
           <span>ระบบแจ้งเตือนอัตโนมัติผ่าน LINE</span>
         </div>
         <p className="text-xs text-slate-500 leading-relaxed">
@@ -86,7 +86,7 @@ export default function WishlistPage() {
                     {item.title}
                   </h3>
                   <div className="text-xs text-slate-500 mt-1 space-x-2">
-                    <span>งบไม่เกิน: <strong className="text-[#06C755]">฿{item.maxPrice}</strong></span>
+                    <span>งบไม่เกิน: <strong className="text-[#8B5E3C]">฿{item.maxPrice}</strong></span>
                     {item.meetupZone && (
                       <span>• นัดรับ: <strong>{item.meetupZone}</strong></span>
                     )}
@@ -110,10 +110,10 @@ export default function WishlistPage() {
                   className="flex items-center justify-between p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold hover:bg-emerald-100 transition"
                 >
                   <span className="flex items-center gap-1.5">
-                    <Sparkles className="w-4 h-4 text-[#06C755]" />
+                    <Sparkles className="w-4 h-4 text-[#8B5E3C]" />
                     พบหนังสือที่ตรงกับเงื่อนไข {item.matchCount} เล่ม!
                   </span>
-                  <span className="text-[#06C755]">ดูรายการ →</span>
+                  <span className="text-[#8B5E3C]">ดูรายการ →</span>
                 </Link>
               ) : (
                 <div className="flex items-center gap-1.5 text-[11px] text-slate-400">

@@ -1,6 +1,50 @@
 @import "tailwindcss";
 @import "./tokens.css";
 
+/*
+ * Second-hand bookshop palette. Existing utility classes keep working:
+ *  - emerald-* → "latte" brown (buyer / primary)
+ *  - teal-*    → "terracotta" brown (seller mode)
+ *  - slate-*   → warm paper greys
+ */
+@theme {
+  --color-emerald-50: #faf5ef;
+  --color-emerald-100: #f3e8da;
+  --color-emerald-200: #e6d0b5;
+  --color-emerald-300: #d4b28a;
+  --color-emerald-400: #bd8f60;
+  --color-emerald-500: #a47148;
+  --color-emerald-600: #8b5e3c;
+  --color-emerald-700: #724b30;
+  --color-emerald-800: #5c3d29;
+  --color-emerald-900: #4a3222;
+  --color-emerald-950: #2a1b12;
+
+  --color-teal-50: #fbf3ec;
+  --color-teal-100: #f5e1cf;
+  --color-teal-200: #eac3a2;
+  --color-teal-300: #dc9f75;
+  --color-teal-400: #c97d52;
+  --color-teal-500: #b0623a;
+  --color-teal-600: #93502f;
+  --color-teal-700: #774029;
+  --color-teal-800: #5f3424;
+  --color-teal-900: #4d2c20;
+  --color-teal-950: #2b170f;
+
+  --color-slate-50: #fbf8f4;
+  --color-slate-100: #f4efe8;
+  --color-slate-200: #e8e0d5;
+  --color-slate-300: #d5c9ba;
+  --color-slate-400: #a89a89;
+  --color-slate-500: #7d6f60;
+  --color-slate-600: #5e5246;
+  --color-slate-700: #483e35;
+  --color-slate-800: #2f2823;
+  --color-slate-900: #1f1a16;
+  --color-slate-950: #120f0c;
+}
+
 @layer base {
   body {
     background-color: var(--color-bg-app);
@@ -21,3 +65,23 @@
   padding-top: env(safe-area-inset-top, 16px);
 }
 
+
+@keyframes gd-pop {
+  0% { transform: scale(0.6); opacity: 0; }
+  60% { transform: scale(1.08); opacity: 1; }
+  100% { transform: scale(1); }
+}
+.animate-pop { animation: gd-pop 0.35s ease-out both; }
+
+@keyframes gd-sheet-up {
+  from { transform: translateY(24px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+.animate-sheet-up { animation: gd-sheet-up 0.25s ease-out both; }
+
+@keyframes gd-scan {
+  0% { top: 8%; }
+  50% { top: 88%; }
+  100% { top: 8%; }
+}
+.animate-scan-line { animation: gd-scan 2.2s ease-in-out infinite; }

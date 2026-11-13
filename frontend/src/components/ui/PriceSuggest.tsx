@@ -48,7 +48,7 @@ export const PriceSuggest: React.FC<PriceSuggestProps> = ({
 
       <div className="flex items-baseline justify-between mt-3">
         <div>
-          <span className="text-2xl font-black text-[#06C755]">
+          <span className="text-2xl font-black text-[#8B5E3C]">
             ฿{suggestedPrice.toLocaleString()}
           </span>
           <span className="text-xs text-slate-500 ml-1.5 font-medium">

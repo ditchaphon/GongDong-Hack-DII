@@ -59,7 +59,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
               rightIcon && 'pr-10',
               error
                 ? 'border-rose-400 text-rose-900 focus:border-rose-500 focus:ring-rose-200'
-                : 'border-slate-200 text-slate-900 focus:border-[#06C755] focus:ring-[#06C755]/20',
+                : 'border-slate-200 text-slate-900 focus:border-[#8B5E3C] focus:ring-[#8B5E3C]/20',
               disabled && 'bg-slate-50 text-slate-400 border-slate-200 cursor-not-allowed select-none',
               className
             )}

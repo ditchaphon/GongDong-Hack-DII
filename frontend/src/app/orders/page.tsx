@@ -53,7 +53,7 @@ function OrderRow({
             {order.books.length > 1 ? ` +${order.books.length - 1}` : ''}
           </h3>
           <p className="text-[10px] text-slate-400 mt-0.5">
-            {role === 'BUYER' ? order.shop.shopName : order.buyer.nickname} ·{' '}
+            {role === 'BUYER' ? order.shop.shopName : `ผู้ซื้อ #${order.id.slice(-4)}`} ·{' '}
             {order.delivery === 'MEETUP' ? 'นัดรับ' : 'ส่งพัสดุ'}
           </p>
           <p className="text-sm font-black text-slate-900 mt-1">

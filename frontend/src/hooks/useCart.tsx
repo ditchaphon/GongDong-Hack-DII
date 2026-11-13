@@ -18,7 +18,13 @@ export interface CartContextValue {
   setMeetupNote: (note: string) => void;
   selectedAddress: Address;
   setSelectedAddress: (addr: Address) => void;
-  addToCart: (book: Book) => { success: boolean; message?: string };
+  addToCart: (book: Book) => {
+    success: boolean;
+    message?: string;
+    reason?: 'OTHER_SHOP' | 'DUPLICATE';
+  };
+  /** Empty the cart and start over with this book (cart holds one shop). */
+  replaceCart: (book: Book) => void;
   removeFromCart: (bookId: string) => void;
   clearCart: () => void;
   bookTotal: number;
@@ -45,16 +51,19 @@ export const CartProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     if (items.length > 0 && items[0].sellerId !== book.sellerId) {
       return {
         success: false,
-        message: `ตะกร้าปัจจุบันมีหนังสือจาก "${items[0].sellerName}" อยู่ สามารถสั่งรวมได้ทีละร้านเท่านั้น`,
+        reason: 'OTHER_SHOP' as const,
+        message: `ตะกร้ามีหนังสือจาก "${items[0].sellerName}" อยู่ · สั่งรวมได้ทีละร้าน`,
       };
     }
     // Check if already in cart
     if (items.some((i) => i.id === book.id)) {
-      return { success: false, message: 'หนังสือเล่มนี้อยู่ในตะกร้าแล้ว' };
+      return { success: false, reason: 'DUPLICATE' as const, message: 'หนังสือเล่มนี้อยู่ในตะกร้าแล้ว' };
     }
     setItems((prev) => [...prev, book]);
     return { success: true };
   };
+
+  const replaceCart = (book: Book) => setItems([book]);
 
   const removeFromCart = (bookId: string) => {
     setItems((prev) => prev.filter((i) => i.id !== bookId));
@@ -94,6 +103,7 @@ export const CartProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         selectedAddress,
         setSelectedAddress,
         addToCart,
+        replaceCart,
         removeFromCart,
         clearCart,
         bookTotal,

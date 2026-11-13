@@ -82,7 +82,7 @@ export default function SellerCreditsPage() {
                 onClick={() => setSelectedPackageId(pkg.id)}
                 className={`relative w-full text-left p-4 rounded-2xl border bg-white transition ${
                   isSelected
-                    ? 'border-[#06C755] ring-2 ring-[#06C755]/20'
+                    ? 'border-[#8B5E3C] ring-2 ring-[#8B5E3C]/20'
                     : 'border-slate-200 hover:border-slate-300'
                 }`}
               >
@@ -98,7 +98,7 @@ export default function SellerCreditsPage() {
                     <span
                       className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${
                         isSelected
-                          ? 'bg-[#06C755] border-[#06C755] text-white'
+                          ? 'bg-[#8B5E3C] border-[#8B5E3C] text-white'
                           : 'border-slate-300 bg-white'
                       }`}
                     >

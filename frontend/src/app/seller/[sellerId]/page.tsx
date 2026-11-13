@@ -82,18 +82,18 @@ export default function SellerShopPage({
           {shop?.payeeVerified ? (
             <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
               <CheckCircle2 className="w-3 h-3" />
-              ยืนยันบัญชีรับเงินแล้ว
+              ยืนยันตัวตนแล้ว
             </span>
           ) : (
             <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
               <ShieldCheck className="w-3 h-3" />
-              ยังไม่ยืนยันบัญชี · นัดรับ + เงินสด
+              ยังไม่ยืนยันตัวตน · นัดรับเท่านั้น
             </span>
           )}
-          {shop?.meetupZones.length ? (
+          {shop?.meetupPoints.length ? (
             <span className="inline-flex items-center gap-1 text-[11px] font-medium text-teal-700 bg-teal-50 border border-teal-200 px-2 py-0.5 rounded-full">
               <MapPin className="w-3 h-3" />
-              มีจุดนัดรับใน มช.
+              นัดรับ {shop.meetupPoints.length} จุด · {shop.province}
             </span>
           ) : null}
           {shop?.supportsParcel && (
@@ -106,7 +106,7 @@ export default function SellerShopPage({
 
         <div className="p-3 bg-emerald-50/70 border border-emerald-200 rounded-xl text-xs text-emerald-800 flex items-center gap-2">
           <Sparkles className="w-4 h-4 text-[var(--color-primary)] shrink-0" />
-          <span>ซื้อหลายเล่มจากร้านเดียวกัน เหมาค่าส่งประหยัดกว่า</span>
+          <span>ซื้อหลายเล่มจากร้านเดียวกัน ค่าส่งที่ระบบคำนวณจะถูกกว่า</span>
         </div>
       </div>
 

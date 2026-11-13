@@ -66,7 +66,7 @@ export default function SellerReportPage() {
               id="report-order"
               value={orderId}
               onChange={(e) => setOrderId(e.target.value)}
-              className="w-full min-h-[44px] px-3.5 text-sm bg-white rounded-xl border border-slate-200 focus:outline-none focus:border-[#06C755] focus:ring-2 focus:ring-[#06C755]/20"
+              className="w-full min-h-[44px] px-3.5 text-sm bg-white rounded-xl border border-slate-200 focus:outline-none focus:border-[#8B5E3C] focus:ring-2 focus:ring-[#8B5E3C]/20"
             >
               {orders.map((o) => (
                 <option key={o.id} value={o.id}>
@@ -97,12 +97,12 @@ export default function SellerReportPage() {
               onClick={() => setReason(r)}
               className={`w-full flex items-center justify-between p-3 rounded-xl border text-sm text-left transition ${
                 reason === r
-                  ? 'border-[#06C755] bg-emerald-50/60 text-slate-900 font-semibold'
+                  ? 'border-[#8B5E3C] bg-emerald-50/60 text-slate-900 font-semibold'
                   : 'border-slate-200 text-slate-600 hover:bg-slate-50'
               }`}
             >
               {r}
-              {reason === r && <span className="w-2 h-2 rounded-full bg-[#06C755]" />}
+              {reason === r && <span className="w-2 h-2 rounded-full bg-[#8B5E3C]" />}
             </button>
           ))}
         </div>
@@ -122,7 +122,7 @@ export default function SellerReportPage() {
                 setError(null);
               }}
               placeholder="เช่น นัดรับเวลา 16:30 ที่หน้าหอสมุดกลาง รอ 30 นาที ติดต่อผู้ซื้อไม่ได้"
-              className="w-full text-sm p-3 rounded-xl border border-slate-200 focus:outline-none focus:border-[#06C755] focus:ring-2 focus:ring-[#06C755]/20"
+              className="w-full text-sm p-3 rounded-xl border border-slate-200 focus:outline-none focus:border-[#8B5E3C] focus:ring-2 focus:ring-[#8B5E3C]/20"
             />
             <span className="text-[11px] text-slate-400">
               {detail.trim().length}/10 ตัวอักษรขั้นต่ำ

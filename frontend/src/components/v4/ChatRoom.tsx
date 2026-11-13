@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import { ChatMessage, V4OrderStatus, ViewRole } from '@/types/v4';
 import { canChat, isChatReadOnly } from '@/lib/orderStateMachine';
-import { hasContactLeak, maskContact } from '@/lib/masking';
+import { describeLeaks, hasContactLeak, maskContact } from '@/lib/masking';
 
 export interface ChatRoomProps {
   messages: ChatMessage[];
@@ -72,7 +72,7 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
         <div className="w-11 h-11 rounded-full bg-slate-100 flex items-center justify-center mx-auto text-slate-400">
           <Lock className="w-5 h-5" />
         </div>
-        <h3 className="text-sm font-bold text-slate-800">แชทจะเปิดหลังผู้ขายรับออเดอร์</h3>
+        <h3 className="text-sm font-bold text-slate-800">แชทจะเปิดหลังผู้ขายตอบรับคำขอ</h3>
         <p className="text-[11px] text-slate-500 leading-relaxed max-w-xs mx-auto">
           ระหว่างนี้ติดต่อกันไม่ได้ · ไม่มีเบอร์โทรหรือไลน์ให้เห็น
           ระบบจะแจ้งเตือนเมื่อมีความคืบหน้า
@@ -153,6 +153,17 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
                   </span>
                 )}
                 <p className="whitespace-pre-wrap">{maskContact(message.text)}</p>
+                {(hasContactLeak(message.text) || message.text.includes('•••')) && (
+                  <span
+                    className={clsx(
+                      'mt-1 inline-flex items-center gap-1 text-[9px] font-semibold px-1.5 py-0.5 rounded',
+                      mine && !isSchedule ? 'bg-white/20 text-white' : 'bg-amber-50 text-amber-700'
+                    )}
+                  >
+                    <EyeOff className="w-2.5 h-2.5" />
+                    ซ่อน{describeLeaks(message.text) || 'ข้อมูลติดต่อ'}แล้ว
+                  </span>
+                )}
                 <span
                   className={clsx(
                     'block text-[9px] mt-1',
@@ -195,7 +206,7 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
 
           {leak && (
             <div className="mx-3 mt-2 px-2.5 py-1.5 rounded-lg bg-amber-50 border border-amber-200 text-[10px] text-amber-800">
-              ข้อความมีเบอร์โทร/ไลน์ · ระบบจะปิดเป็น ••• ก่อนส่ง
+              พบ{describeLeaks(draft)} · ระบบจะซ่อนเป็น ••• ก่อนส่ง เพื่อป้องกันการนัดนอกแอป
             </div>
           )}
 
