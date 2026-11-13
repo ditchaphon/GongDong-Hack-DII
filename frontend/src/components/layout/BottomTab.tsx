@@ -4,7 +4,8 @@ import React from 'react';
 import clsx from 'clsx';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Home, Bell, Package, Store } from 'lucide-react';
+import { Home, Bell, Package, Store, PlusCircle, UserRound } from 'lucide-react';
+import { useAppMode } from '@/hooks/useAppMode';
 
 export interface BottomTabProps {
   orderBadge?: number;
@@ -17,34 +18,34 @@ export const BottomTab: React.FC<BottomTabProps> = ({
 }) => {
   const pathname = usePathname();
 
-  const tabs = [
-    {
-      id: 'home',
-      label: 'หน้าแรก',
-      href: '/',
-      icon: Home,
-      exact: true,
-    },
-    {
-      id: 'wishlist',
-      label: 'ฝากตามหา',
-      href: '/wishlist',
-      icon: Bell,
-    },
-    {
-      id: 'orders',
-      label: 'ออเดอร์',
-      href: '/orders',
-      icon: Package,
-      badge: orderBadge,
-    },
-    {
-      id: 'shop',
-      label: 'ร้านของฉัน',
-      href: '/seller',
-      icon: Store,
-    },
+  const { mode } = useAppMode();
+  const isSeller = mode === 'SELLER';
+
+  type Tab = {
+    id: string;
+    label: string;
+    href: string;
+    icon: React.ElementType;
+    exact?: boolean;
+    badge?: number;
+  };
+
+  const buyerTabs: Tab[] = [
+    { id: 'home', label: 'หน้าแรก', href: '/', icon: Home, exact: true },
+    { id: 'wishlist', label: 'ฝากตามหา', href: '/wishlist', icon: Bell },
+    { id: 'orders', label: 'ออเดอร์', href: '/orders', icon: Package, badge: orderBadge },
+    { id: 'profile', label: 'โปรไฟล์', href: '/profile', icon: UserRound },
   ];
+
+  const sellerTabs: Tab[] = [
+    { id: 'shop', label: 'ร้านของฉัน', href: '/seller', icon: Store, exact: true },
+    { id: 'list', label: 'ลงขาย', href: '/seller/list', icon: PlusCircle },
+    { id: 'orders', label: 'ออเดอร์ร้าน', href: '/orders', icon: Package, badge: orderBadge },
+    { id: 'profile', label: 'โปรไฟล์', href: '/profile', icon: UserRound },
+  ];
+
+  const tabs = isSeller ? sellerTabs : buyerTabs;
+  const activeColor = isSeller ? 'text-teal-700 font-semibold' : 'text-[#06C755] font-semibold';
 
   return (
     <nav
@@ -53,7 +54,12 @@ export const BottomTab: React.FC<BottomTabProps> = ({
         className
       )}
     >
-      <div className="w-full max-w-[430px] bg-white/95 backdrop-blur-md border-t border-slate-200 pointer-events-auto safe-area-bottom">
+      <div
+        className={clsx(
+          'w-full max-w-[430px] backdrop-blur-md border-t pointer-events-auto safe-area-bottom',
+          isSeller ? 'bg-teal-50/95 border-teal-200' : 'bg-white/95 border-slate-200'
+        )}
+      >
         <div className="flex items-center justify-around h-14 px-2">
           {tabs.map((tab) => {
             const isActive = tab.exact
@@ -67,7 +73,7 @@ export const BottomTab: React.FC<BottomTabProps> = ({
                 href={tab.href}
                 className={clsx(
                   'relative flex flex-col items-center justify-center flex-1 h-full min-h-[44px] transition-colors select-none active:scale-95',
-                  isActive ? 'text-[#06C755] font-semibold' : 'text-slate-400 hover:text-slate-600'
+                  isActive ? activeColor : 'text-slate-400 hover:text-slate-600'
                 )}
               >
                 <div className="relative">

@@ -9,12 +9,10 @@ import { MOCK_BOOKS } from '@/mocks/books';
 import { Book } from '@/types';
 import { Bell, MoreHorizontal, X, MapPin, Sparkles, ShoppingBag } from 'lucide-react';
 import { useCart } from '@/hooks/useCart';
-import { useProfile } from '@/hooks/useProfile';
 
 export default function HomePage() {
   const router = useRouter();
   const { items: cartItems } = useCart();
-  const { isComplete: hasProfile } = useProfile();
   const [activeCategory, setActiveCategory] = useState<string>('all');
   const [isLiffMenuOpen, setIsLiffMenuOpen] = useState(false);
 
@@ -84,19 +82,6 @@ export default function HomePage() {
           </button>
         </div>
       </header>
-
-      {/* v4 identity prompt */}
-      {!hasProfile && (
-        <Link
-          href="/setup?next=buy"
-          className="flex items-center justify-between gap-2 mx-4 mt-3 p-3 rounded-2xl bg-emerald-50 border border-emerald-200"
-        >
-          <span className="text-[11px] font-semibold text-emerald-900 leading-snug">
-            ตั้งชื่อเล่นและรูปก่อนซื้อขาย · ไม่มีเบอร์โทรให้ใครเห็น
-          </span>
-          <span className="text-[11px] font-bold text-emerald-700 shrink-0">ตั้งค่า →</span>
-        </Link>
-      )}
 
       {/* Search Bar Hotspot (Clicks to /search) */}
       <div className="p-4 bg-white border-b border-slate-100">
@@ -185,11 +170,11 @@ export default function HomePage() {
             <span className="text-xs text-slate-400">→</span>
           </Link>
           <Link
-            href="/setup"
+            href="/profile"
             onClick={() => setIsLiffMenuOpen(false)}
             className="flex items-center justify-between p-3.5 rounded-xl hover:bg-slate-50 border border-slate-100"
           >
-            <span className="text-sm font-medium text-slate-800">แก้ไขชื่อเล่น / รูปโปรไฟล์</span>
+            <span className="text-sm font-medium text-slate-800">โปรไฟล์ / สลับโหมดผู้ขาย</span>
             <span className="text-xs text-slate-400">→</span>
           </Link>
           <Link

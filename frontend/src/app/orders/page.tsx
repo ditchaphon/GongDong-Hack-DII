@@ -1,15 +1,16 @@
 'use client';
 
-import React, { useState } from 'react';
+import React from 'react';
 import { useRouter } from 'next/navigation';
 import { TopBar } from '@/components/layout/TopBar';
 import { BottomTab } from '@/components/layout/BottomTab';
 import { EmptyState } from '@/components/ui';
 import { StatusBadgeV4 } from '@/components/v4';
 import { useV4Orders } from '@/hooks/useV4Orders';
+import { useAppMode } from '@/hooks/useAppMode';
 import { getNextAction, getTimerInfo, isTerminal } from '@/lib/orderStateMachine';
 import { V4Order, ViewRole } from '@/types/v4';
-import { Package, Clock, ChevronRight, ShoppingBag, Store } from 'lucide-react';
+import { Package, Clock, ChevronRight } from 'lucide-react';
 
 type Tab = 'BUYING' | 'SELLING';
 
@@ -84,7 +85,8 @@ function OrderRow({
 export default function OrdersPage() {
   const router = useRouter();
   const { orders, isMineAsBuyer } = useV4Orders();
-  const [tab, setTab] = useState<Tab>('BUYING');
+  const { mode } = useAppMode();
+  const tab: Tab = mode === 'SELLER' ? 'SELLING' : 'BUYING';
 
   const buying = orders.filter(isMineAsBuyer);
   const selling = orders.filter((order) => !isMineAsBuyer(order));
@@ -108,46 +110,11 @@ export default function OrdersPage() {
 
   return (
     <div className="flex flex-col min-h-screen bg-slate-50 select-none pb-20">
-      <TopBar title="ออเดอร์" showBack={false} />
-
-      <div className="grid grid-cols-2 gap-2 p-4 bg-white border-b border-slate-100">
-        <button
-          type="button"
-          onClick={() => setTab('BUYING')}
-          aria-pressed={tab === 'BUYING'}
-          className={`relative flex items-center justify-center gap-1.5 p-2.5 rounded-xl border text-xs font-bold transition ${
-            tab === 'BUYING'
-              ? 'bg-emerald-50 border-emerald-300 text-emerald-800'
-              : 'bg-white border-slate-200 text-slate-500'
-          }`}
-        >
-          <ShoppingBag className="w-4 h-4" />
-          ที่ซื้อ ({buying.length})
-          {needsBuyer > 0 && (
-            <span className="absolute top-1.5 right-2 min-w-4 h-4 px-1 rounded-full bg-rose-500 text-white text-[9px] font-bold flex items-center justify-center">
-              {needsBuyer}
-            </span>
-          )}
-        </button>
-        <button
-          type="button"
-          onClick={() => setTab('SELLING')}
-          aria-pressed={tab === 'SELLING'}
-          className={`relative flex items-center justify-center gap-1.5 p-2.5 rounded-xl border text-xs font-bold transition ${
-            tab === 'SELLING'
-              ? 'bg-emerald-50 border-emerald-300 text-emerald-800'
-              : 'bg-white border-slate-200 text-slate-500'
-          }`}
-        >
-          <Store className="w-4 h-4" />
-          ที่ขาย ({selling.length})
-          {needsSeller > 0 && (
-            <span className="absolute top-1.5 right-2 min-w-4 h-4 px-1 rounded-full bg-rose-500 text-white text-[9px] font-bold flex items-center justify-center">
-              {needsSeller}
-            </span>
-          )}
-        </button>
-      </div>
+      <TopBar
+        title={tab === 'BUYING' ? 'ออเดอร์ที่ซื้อ' : 'ออเดอร์ร้าน'}
+        subtitle={tab === 'BUYING' ? `${buying.length} รายการ` : `${selling.length} รายการ`}
+        showBack={false}
+      />
 
       <div className="p-4 space-y-3 flex-1">
         {sorted.length === 0 ? (
@@ -182,7 +149,7 @@ export default function OrdersPage() {
         )}
       </div>
 
-      <BottomTab orderBadge={needsBuyer + needsSeller} />
+      <BottomTab orderBadge={tab === 'BUYING' ? needsBuyer : needsSeller} />
     </div>
   );
 }

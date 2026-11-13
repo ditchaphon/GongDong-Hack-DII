@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { TopBar } from '@/components/layout/TopBar';
 import { BottomTab } from '@/components/layout/BottomTab';
@@ -14,6 +14,7 @@ import {
 } from '@/components/ui';
 import { useSeller } from '@/hooks/useSeller';
 import { useLiff } from '@/hooks/useLiff';
+import { useAppMode } from '@/hooks/useAppMode';
 import {
   Plus,
   BookOpen,
@@ -45,6 +46,13 @@ export default function SellerShopPage() {
     orders,
     setListingStatus,
   } = useSeller();
+
+  const { mode, setMode } = useAppMode();
+
+  // Landing on the dashboard with a ready shop means the seller hat is on.
+  useEffect(() => {
+    if (isShopSetup && mode !== 'SELLER') setMode('SELLER');
+  }, [isShopSetup, mode, setMode]);
 
   const [tab, setTab] = useState<Tab>('LISTINGS');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -109,9 +117,9 @@ export default function SellerShopPage() {
                 <span>•</span>
                 <span>ขายแล้ว {completedCount} ครั้ง</span>
                 {shop?.payeeVerified ? (
-                  <span className="text-emerald-700 font-medium">• ยืนยันบัญชีแล้ว</span>
+                  <span className="text-emerald-700 font-medium">• ยืนยันตัวตนแล้ว</span>
                 ) : (
-                  <span className="text-amber-700 font-medium">• ยังไม่ยืนยันบัญชี</span>
+                  <span className="text-amber-700 font-medium">• ยังไม่ยืนยันตัวตน</span>
                 )}
               </div>
             </div>
@@ -160,20 +168,19 @@ export default function SellerShopPage() {
             >
               <Store className="w-4 h-4 text-emerald-600 shrink-0" />
               <span className="flex-1 text-[11px] text-emerald-900 leading-snug">
-                ตั้งชื่อร้านและจุดนัดรับก่อนลงขาย · ใช้เวลาประมาณ 1 นาที
+                เปิดร้านก่อนลงขาย · กรอกข้อมูลร้าน ตารางจัดส่ง และยืนยันตัวตน (KYC)
               </span>
               <ChevronRight className="w-4 h-4 text-emerald-600" />
             </button>
           ) : !shop?.payeeVerified ? (
             <button
               type="button"
-              onClick={() => router.push('/seller/credits/verify')}
+              onClick={() => router.push('/seller/setup?step=4')}
               className="w-full flex items-center gap-2 p-3 rounded-xl bg-amber-50 border border-amber-200 text-left"
             >
               <ShieldAlert className="w-4 h-4 text-amber-600 shrink-0" />
               <span className="flex-1 text-[11px] text-amber-900 leading-snug">
-                ยังไม่ยืนยันบัญชีรับเงิน · รับได้เฉพาะนัดรับและจ่ายเงินสด
-                (ยืนยันตอนเติมเครดิตครั้งแรก)
+                ยังไม่ยืนยันตัวตน (KYC) · กดเพื่อกรอกบัตรประชาชนและพร้อมเพย์
               </span>
               <ChevronRight className="w-4 h-4 text-amber-600" />
             </button>

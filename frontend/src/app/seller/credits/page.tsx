@@ -52,12 +52,12 @@ export default function SellerCreditsPage() {
         {!payeeVerified && (
           <button
             type="button"
-            onClick={() => router.push('/seller/credits/verify')}
+            onClick={() => router.push('/seller/setup?step=4')}
             className="w-full flex items-start gap-2.5 p-3.5 rounded-2xl bg-amber-50 border border-amber-200 text-left"
           >
             <ShieldAlert className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
             <span className="flex-1 text-[11px] text-amber-900 leading-relaxed">
-              เติมเครดิตครั้งแรกต้องยืนยันบัญชีรับเงินก่อน · ใช้ตรวจสลิปเท่านั้น
+              เติมเครดิตครั้งแรกต้องยืนยันตัวตน (KYC) ก่อน · ใช้ตรวจสลิปเท่านั้น
               ผู้ซื้อไม่เห็นข้อมูลนี้
             </span>
             <ChevronRight className="w-4 h-4 text-amber-600 shrink-0" />
@@ -190,7 +190,7 @@ export default function SellerCreditsPage() {
             size="lg"
             onClick={() =>
               router.push(
-                payeeVerified ? '/seller/credits/pay' : '/seller/credits/verify'
+                payeeVerified ? '/seller/credits/pay' : '/seller/setup?step=4'
               )
             }
             rightIcon={<ChevronRight className="w-4 h-4" />}

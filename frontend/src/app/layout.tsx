@@ -6,6 +6,7 @@ import { SellerProvider } from '@/hooks/useSeller';
 import { ListingProvider } from '@/hooks/useListing';
 import { ProfileProvider } from '@/hooks/useProfile';
 import { V4OrdersProvider } from '@/hooks/useV4Orders';
+import { AppModeProvider } from '@/hooks/useAppMode';
 import { AppShell } from '@/components/layout/AppShell';
 
 export const metadata: Metadata = {
@@ -38,6 +39,7 @@ export default function RootLayout({
       </head>
       <body className="min-h-screen bg-slate-100 text-slate-900 antialiased flex flex-col items-center">
         <LiffProvider>
+          <AppModeProvider>
           <ProfileProvider>
             <CartProvider>
               <SellerProvider>
@@ -49,6 +51,7 @@ export default function RootLayout({
               </SellerProvider>
             </CartProvider>
           </ProfileProvider>
+          </AppModeProvider>
         </LiffProvider>
       </body>
     </html>

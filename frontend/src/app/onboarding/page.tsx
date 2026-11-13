@@ -4,18 +4,21 @@ import React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui';
+import { useAppMode } from '@/hooks/useAppMode';
 import { BookOpen, ShieldCheck, MapPin, Gift, ChevronRight } from 'lucide-react';
 
 export default function OnboardingPage() {
   const router = useRouter();
+  const { setMode } = useAppMode();
 
-  // v4: both paths start with nickname + avatar + PDPA consent.
+  // Buyers start browsing right away; sellers go through the shop + KYC wizard.
   const handleStartBuying = () => {
-    router.push('/setup?next=buy');
+    setMode('BUYER');
+    router.push('/');
   };
 
   const handleStartSelling = () => {
-    router.push('/setup?next=sell');
+    router.push('/seller/setup');
   };
 
   return (

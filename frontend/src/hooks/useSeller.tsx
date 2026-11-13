@@ -7,15 +7,32 @@ import { MOCK_SELLER_LISTINGS, MOCK_SELLER_ORDERS } from '@/mocks/seller';
 import { MOCK_V4_LEDGER } from '@/mocks/v4';
 import { useLiff } from '@/hooks/useLiff';
 
-/** Public shop identity + delivery settings. No real name, phone or bank data. */
+/** KYC result kept for the prototype: masked values only, never the raw ID. */
+export interface ShopKyc {
+  firstName: string;
+  lastName: string;
+  nationalIdMasked: string;
+  promptPayMasked: string;
+  promptPayType: 'PHONE' | 'NATIONAL_ID';
+  verifiedAt: string;
+}
+
+/** Public shop identity + delivery settings. KYC is admin-only data. */
 export interface ShopSettings {
   shopName: string;
+  description: string;
   avatar?: string;
   meetupZones: string[];
+  /** Days the seller can meet or ship, e.g. ['จ', 'พ']. */
+  availableDays: string[];
+  availableSlots: string[];
+  /** Days to drop a parcel after payment. */
+  shipWithinDays: number;
   supportsParcel: boolean;
   parcelFee: number;
   /** Payout verification is admin-only data; buyers only see a badge. */
   payeeVerified: boolean;
+  kyc?: ShopKyc;
   setupComplete: boolean;
 }
 
@@ -29,7 +46,8 @@ export interface PendingTopUp {
 export interface SellerContextValue {
   shop: ShopSettings | null;
   isShopSetup: boolean;
-  saveShop: (settings: Omit<ShopSettings, 'setupComplete' | 'payeeVerified'>) => void;
+  saveShop: (settings: Omit<ShopSettings, 'setupComplete' | 'payeeVerified' | 'kyc'>) => void;
+  submitKyc: (kyc: ShopKyc) => void;
   verifyPayee: () => void;
   credits: number;
   addCredits: (amount: number) => void;
@@ -71,13 +89,19 @@ export const SellerProvider: React.FC<{ children: ReactNode }> = ({
   const isShopSetup = !!shop?.setupComplete;
 
   const saveShop = (
-    settings: Omit<ShopSettings, 'setupComplete' | 'payeeVerified'>
+    settings: Omit<ShopSettings, 'setupComplete' | 'payeeVerified' | 'kyc'>
   ) => {
     setShop((prev) => ({
       ...settings,
       payeeVerified: prev?.payeeVerified ?? false,
+      kyc: prev?.kyc,
       setupComplete: true,
     }));
+  };
+
+  /** Format-checked KYC passes immediately and unlocks PromptPay payouts. */
+  const submitKyc = (kyc: ShopKyc) => {
+    setShop((prev) => (prev ? { ...prev, kyc, payeeVerified: true } : prev));
   };
 
   const verifyPayee = () => {
@@ -227,6 +251,7 @@ export const SellerProvider: React.FC<{ children: ReactNode }> = ({
         shop,
         isShopSetup,
         saveShop,
+        submitKyc,
         verifyPayee,
         credits: user.credits,
         addCredits,
