@@ -81,7 +81,7 @@ export default function SellerListStep3Page() {
   return (
     <div className="flex flex-col min-h-screen bg-slate-50 select-none pb-32">
       <TopBar title="ตรวจสภาพหนังสือ" onBack={() => router.push('/seller/list/step-2')} />
-      <Stepper currentStep={3} />
+      <Stepper currentStep={4} />
 
       <div className="p-4 space-y-4">
         <p className="text-[11px] text-slate-500 leading-relaxed px-1">

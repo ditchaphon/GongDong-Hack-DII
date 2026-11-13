@@ -30,6 +30,8 @@ export const EMPTY_DRAFT: ListingDraft = {
   title: '',
   author: '',
   publisher: '',
+  description: '',
+  categories: [],
   originalPrice: 0,
   totalVolumes: 1,
   missingVolumes: [],

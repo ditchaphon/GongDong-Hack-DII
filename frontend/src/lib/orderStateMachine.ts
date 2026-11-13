@@ -25,44 +25,44 @@ export interface StatusMeta {
 
 export const STATUS_META: Record<V4OrderStatus, StatusMeta> = {
   REQUESTED: {
-    label: 'รอผู้ขายตอบรับ',
+    label: 'รอรับการยืนยัน',
     tone: 'amber',
     explanation: 'ส่งคำขอแล้ว · หนังสือยังไม่ถูกล็อก ผู้ซื้อคนอื่นขอได้',
     whoActs: 'SELLER',
     timerHours: 24,
   },
   ACCEPTED: {
-    label: 'รอชำระเงิน',
+    label: 'ยืนยันการส่ง',
     tone: 'blue',
-    explanation: 'ผู้ขายรับคำขอแล้ว · ชำระเงินเพื่อให้ผู้ขายเริ่มจัดส่ง',
-    whoActs: 'BOTH',
-    timerHours: 24,
+    explanation: 'ผู้ขายรับคำขอแล้ว · เตรียมส่งมอบและเก็บเงินปลายทาง',
+    whoActs: 'SELLER',
+    timerHours: 48,
   },
   SCHEDULED: {
     label: 'นัดรับแล้ว',
     tone: 'teal',
-    explanation: 'ผู้ขายรับคำขอแล้ว · เจอกันตามนัด ตรวจหนังสือ จ่ายเงิน แล้วให้ผู้ขายสแกน QR',
+    explanation: 'นัดรับแล้ว · เจอกันตามนัด ตรวจหนังสือ และจ่ายเงินสดหน้างาน',
     whoActs: 'BOTH',
   },
   PAID: {
-    label: 'รอผู้ขายจัดส่ง',
-    tone: 'blue',
-    explanation: 'ชำระเงินแล้ว (ระบบพักเงินไว้) · ผู้ขายกำลังเตรียมจัดส่ง',
-    whoActs: 'SELLER',
-    timerHours: 48,
+    label: 'เก็บเงินปลายทาง',
+    tone: 'violet',
+    explanation: 'ผู้ขายยืนยันการส่งแล้ว · ผู้ซื้อจ่ายเงินสดตอนรับของ',
+    whoActs: 'BUYER',
+    timerHours: 7 * 24,
   },
   SHIPPED: {
-    label: 'กำลังจัดส่ง',
+    label: 'จัดส่งแล้ว',
     tone: 'violet',
-    explanation: 'ผู้ขายส่งของแล้ว · ติดตามด้วยเลขพัสดุ',
+    explanation: 'ผู้ขายส่งของแล้ว · รอผู้ซื้อรับและจ่ายเงินปลายทาง',
     whoActs: 'BUYER',
     timerHours: 7 * 24,
   },
   COMPLETED: {
-    label: 'สำเร็จ',
+    label: 'รีวิว/ถ่ายรูป',
     tone: 'emerald',
-    explanation: 'ปิดออเดอร์แล้ว · แชทอ่านได้อย่างเดียว',
-    whoActs: 'NONE',
+    explanation: 'ปิดออเดอร์แล้ว · ถ่ายรูปและให้คะแนนร้านได้',
+    whoActs: 'BOTH',
   },
   REJECTED: {
     label: 'ถูกปฏิเสธ',
@@ -103,14 +103,14 @@ export const TIMER_HOURS = {
 
 export const MAIN_PATH: Record<V4Delivery, V4OrderStatus[]> = {
   MEETUP: ['REQUESTED', 'SCHEDULED', 'COMPLETED'],
-  PARCEL: ['REQUESTED', 'ACCEPTED', 'PAID', 'SHIPPED', 'COMPLETED'],
+  PARCEL: ['REQUESTED', 'ACCEPTED', 'PAID', 'COMPLETED'],
 };
 
 const TRANSITIONS: Record<V4OrderStatus, V4OrderStatus[]> = {
   REQUESTED: ['ACCEPTED', 'SCHEDULED', 'REJECTED', 'EXPIRED', 'CANCELLED'],
   ACCEPTED: ['SCHEDULED', 'PAID', 'CANCELLED', 'DISPUTED'],
   SCHEDULED: ['COMPLETED', 'DISPUTED'],
-  PAID: ['SHIPPED', 'DISPUTED'],
+  PAID: ['COMPLETED', 'DISPUTED'],
   SHIPPED: ['COMPLETED', 'DISPUTED'],
   COMPLETED: [],
   REJECTED: [],
@@ -181,10 +181,8 @@ export function getTimerInfo(
       order.status === 'REQUESTED'
         ? 'ผู้ขายต้องตอบรับภายใน'
         : order.status === 'ACCEPTED'
-        ? 'ผู้ซื้อต้องชำระเงินภายใน'
-        : order.status === 'PAID'
-        ? 'ผู้ขายต้องจัดส่งภายใน'
-        : 'รอผู้ซื้อกดรับของ',
+        ? 'ผู้ขายต้องยืนยันการส่งภายใน'
+        : 'รอผู้ซื้อรับของและจ่ายเงินปลายทาง',
   };
 }
 
@@ -223,31 +221,30 @@ const sellerActions: Partial<Record<V4OrderStatus, OrderAction>> = {
     primaryLabel: 'ดูคำขอ',
   },
   ACCEPTED: {
-    key: 'PROPOSE_MEETUP',
-    title: 'นัดรับกับผู้ซื้อ',
-    description: 'เสนอวันเวลาและจุดนัดในแชทออเดอร์',
+    key: 'SHIP_PARCEL',
+    title: 'ยืนยันการส่ง',
+    description: 'เตรียมหนังสือและยืนยันการส่ง/นัดรับกับผู้ซื้อ',
     whoActs: 'SELLER',
-    primaryLabel: 'นัดรับ',
+    primaryLabel: 'ยืนยันการส่ง',
   },
   PAID: {
-    key: 'SHIP_PARCEL',
-    title: 'จัดส่งตามเวลาที่ตั้งไว้',
-    description: 'ส่งแล้วใส่เลขพัสดุให้ผู้ซื้อติดตาม',
-    whoActs: 'SELLER',
-    primaryLabel: 'ใส่เลขพัสดุ',
+    key: 'WAIT_PAYMENT',
+    title: 'รอผู้ซื้อรับของและจ่ายเงินปลายทาง',
+    description: 'ผู้ขายได้เงินสดตอนส่งมอบ · ระบบไม่พักเงิน',
+    whoActs: 'BUYER',
   },
   SHIPPED: {
-    key: 'WAIT_SHIPMENT',
-    title: 'รอผู้ซื้อถ่ายรูปยืนยันรับของ',
-    description: 'ได้รับเงินเมื่อผู้ซื้อยืนยัน · ครบ 7 วันระบบปิดให้อัตโนมัติ',
+    key: 'WAIT_PAYMENT',
+    title: 'รอผู้ซื้อรับของและจ่ายเงินปลายทาง',
+    description: 'ผู้ขายได้เงินสดตอนส่งมอบ · ระบบไม่พักเงิน',
     whoActs: 'BUYER',
   },
   SCHEDULED: {
     key: 'ENTER_HANDOVER_CODE',
-    title: 'ไปตามนัด แล้วสแกน QR ของผู้ซื้อ',
-    description: 'สแกนหลังผู้ซื้อตรวจหนังสือและจ่ายเงินแล้ว เพื่อปิดการขาย',
+    title: 'ไปตามนัด แล้วยืนยันการส่งมอบ',
+    description: 'หลังผู้ซื้อตรวจหนังสือและจ่ายเงินสดแล้ว กดยืนยันเพื่อปิดการขาย',
     whoActs: 'SELLER',
-    primaryLabel: 'สแกน QR ผู้ซื้อ',
+    primaryLabel: 'ยืนยันส่งมอบแล้ว',
   },
   COMPLETED: {
     key: 'NONE',
@@ -271,29 +268,29 @@ const buyerActions: Partial<Record<V4OrderStatus, OrderAction>> = {
     whoActs: 'SELLER',
   },
   ACCEPTED: {
-    key: 'PAY_ORDER',
-    title: 'ผู้ขายรับแล้ว · ชำระเงิน',
-    description: 'สแกน QR แล้วแนบสลิป · ระบบพักเงินไว้จนคุณได้รับของ',
-    whoActs: 'BUYER',
-    primaryLabel: 'ไปหน้าชำระเงิน',
+    key: 'WAIT',
+    title: 'รอผู้ขายยืนยันการส่ง',
+    description: 'ผู้ขายจะเตรียมนัดรับหรือจัดส่ง · จ่ายเงินสดตอนรับของ',
+    whoActs: 'SELLER',
   },
   SCHEDULED: {
-    key: 'SHOW_HANDOVER_CODE',
-    title: 'นัดรับแล้ว · เปิด QR ตอนรับของ',
-    description: 'ตรวจหนังสือและจ่ายเงินก่อน แล้วให้ผู้ขายสแกน QR',
+    key: 'CONFIRM_RECEIVED',
+    title: 'นัดรับแล้ว · รับหนังสือและจ่ายเงินสด',
+    description: 'ตรวจหนังสือและจ่ายเงินให้ผู้ขาย แล้วถ่ายรูปยืนยันรับของ',
     whoActs: 'BUYER',
-    primaryLabel: 'แสดง QR รับของ',
+    primaryLabel: 'ได้รับหนังสือแล้ว',
   },
   PAID: {
-    key: 'WAIT_SHIPMENT',
-    title: 'รอผู้ขายจัดส่ง',
-    description: 'ผู้ขายกำลังเตรียมส่งตามเวลาที่ร้านตั้งไว้',
-    whoActs: 'SELLER',
+    key: 'CONFIRM_RECEIVED',
+    title: 'รอรับของ · จ่ายเงินปลายทาง',
+    description: 'ผู้ขายยืนยันการส่งแล้ว · จ่ายเงินสดเมื่อได้รับของ',
+    whoActs: 'BUYER',
+    primaryLabel: 'ได้รับของแล้ว',
   },
   SHIPPED: {
     key: 'CONFIRM_RECEIVED',
-    title: 'กำลังจัดส่ง · ได้รับแล้วถ่ายรูปยืนยัน',
-    description: 'ติดตามด้วยเลขพัสดุ · ได้รับแล้วถ่ายรูปและรีวิว',
+    title: 'รอรับของ · จ่ายเงินปลายทาง',
+    description: 'ผู้ขายยืนยันการส่งแล้ว · จ่ายเงินสดเมื่อได้รับของ',
     whoActs: 'BUYER',
     primaryLabel: 'ได้รับของแล้ว',
   },
@@ -317,14 +314,6 @@ export function getNextAction(order: V4Order, role: ViewRole): OrderAction {
   const action = map[order.status];
 
   if (order.status === 'ACCEPTED') {
-    if (role === 'SELLER' && order.delivery === 'PARCEL') {
-      return {
-        key: 'WAIT_PAYMENT',
-        title: 'รอผู้ซื้อชำระเงิน',
-        description: 'เมื่อตรวจสลิปผ่านแล้ว ระบบจะให้คุณกรอกเลขพัสดุ',
-        whoActs: 'BUYER',
-      };
-    }
     if (role === 'BUYER' && order.delivery === 'MEETUP') {
       return order.schedule && !order.schedule.confirmedByBuyer
         ? {

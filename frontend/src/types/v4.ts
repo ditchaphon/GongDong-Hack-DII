@@ -112,8 +112,6 @@ export interface V4Order {
   updatedAtISO: string;
   schedule?: V4Schedule;
   shipping?: V4Shipping;
-  slipCheck: SlipCheckState;
-  slipUploadedAtISO?: string;
   /**
    * Buyer-side secret. Never pass this to a seller view.
    * In production it is stored server-side and shown only to the buyer.
@@ -132,8 +130,6 @@ export interface V4Order {
   shipWithinDays?: number;
   /** Parcel: deadline for the seller to hand the box to the carrier. */
   shipByISO?: string;
-  /** Parcel: buyer's transfer slip (seller + admin can view). */
-  slipImage?: string;
   /** Parcel: photo the buyer took when the box arrived. */
   receivedPhoto?: string;
   receivedAtISO?: string;

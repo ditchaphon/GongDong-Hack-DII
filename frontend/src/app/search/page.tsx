@@ -198,9 +198,7 @@ export default function SearchPage() {
           <div className="bg-white rounded-2xl border border-slate-200 p-6 mt-4">
             <EmptyState
               title="ไม่พบหนังสือที่ตรงกับเงื่อนไข"
-              description="ลองค้นหาด้วยคำอื่น หรือกด 'ฝากตามหา' เพื่อให้ระบบแจ้งเตือนเมื่อมีคนลงขาย"
-              actionText="🔔 ฝากตามหาเล่มนี้ (Wishlist)"
-              onAction={() => router.push('/wishlist')}
+              description="ลองค้นหาด้วยคำอื่น หรือปรับตัวกรองให้กว้างขึ้น"
             />
           </div>
         )}

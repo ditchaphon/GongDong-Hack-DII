@@ -8,16 +8,16 @@ import { V4Order } from '@/types/v4';
 type StepDef = { title: string; icon: React.ComponentType<{ className?: string }> };
 
 const MEETUP_STEPS: StepDef[] = [
-  { title: 'ส่งคำขอ', icon: Send },
+  { title: 'รอยืนยัน', icon: Send },
   { title: 'นัดรับ', icon: MapPin },
-  { title: 'สำเร็จ', icon: Star },
+  { title: 'รีวิว', icon: Star },
 ];
 
 const PARCEL_STEPS: StepDef[] = [
-  { title: 'ส่งคำขอ', icon: Send },
-  { title: 'รอจัดส่ง', icon: Package },
-  { title: 'กำลังส่ง', icon: Truck },
-  { title: 'ได้รับของ', icon: PackageCheck },
+  { title: 'รอยืนยัน', icon: Send },
+  { title: 'ยืนยันส่ง', icon: Package },
+  { title: 'เก็บเงินปลายทาง', icon: Truck },
+  { title: 'รีวิว', icon: PackageCheck },
 ];
 
 /** 0-based active step; equals steps.length when everything is done. */
@@ -30,8 +30,8 @@ export function orderStepIndex(order: Pick<V4Order, 'status' | 'delivery'>): num
     return 0;
   }
   if (status === 'REQUESTED') return 0;
-  if (status === 'ACCEPTED' || status === 'PAID') return 1;
-  if (status === 'SHIPPED' || status === 'DISPUTED') return 2;
+  if (status === 'ACCEPTED' || status === 'DISPUTED') return 1;
+  if (status === 'PAID' || status === 'SHIPPED') return 2;
   if (status === 'COMPLETED') return 4;
   return 0;
 }

@@ -13,7 +13,7 @@ import {
 } from '@/components/ui';
 import { useListing } from '@/hooks/useListing';
 import { useSeller } from '@/hooks/useSeller';
-import { useLiff } from '@/hooks/useLiff';
+import { IsbnScanner } from '@/components/v4';
 import {
   ScanLine,
   BookOpen,
@@ -26,56 +26,33 @@ import {
   Info,
 } from 'lucide-react';
 
-const MOCK_LOOKUP = {
-  title: 'Atomic Habits เพราะชีวิตดีได้กว่าที่เป็น',
-  author: 'James Clear',
-  publisher: 'บิงโก',
-  originalPrice: 295,
-};
-
 export default function SellerListStep1Page() {
   const router = useRouter();
-  const { scanCode, isMock } = useLiff();
   const { isShopSetup } = useSeller();
   const { draft, update, toggleMissingVolume, resetDraft } = useListing();
 
   const [isManualIsbnOpen, setIsManualIsbnOpen] = useState(false);
-  const [isManualInfoOpen, setIsManualInfoOpen] = useState(false);
+  const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [isMissingOpen, setIsMissingOpen] = useState(false);
   const [manualIsbn, setManualIsbn] = useState('');
-  const [manualTitle, setManualTitle] = useState('');
-  const [manualAuthor, setManualAuthor] = useState('');
-  const [manualPublisher, setManualPublisher] = useState('');
-  const [manualPrice, setManualPrice] = useState('');
   const [volumes, setVolumes] = useState<{ volume: number; isbn: string }[]>([]);
-  const [isScanning, setIsScanning] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const isSet = draft.mode === 'SET';
 
+  // The book lookup service is owned by the backend team. The frontend only
+  // captures the ISBN here and never fills in fake metadata.
   const applyLookup = (isbn: string) => {
-    update({
-      isbn,
-      title: MOCK_LOOKUP.title,
-      author: MOCK_LOOKUP.author,
-      publisher: MOCK_LOOKUP.publisher,
-      originalPrice: MOCK_LOOKUP.originalPrice,
-    });
-    setToastMessage(`พบข้อมูลหนังสือจากเลข ISBN ${isbn}`);
+    update({ isbn, title: '', author: '', publisher: '', originalPrice: 0 });
+    setManualIsbn(isbn);
+    setToastMessage(`อ่านเลข ISBN ${isbn} แล้ว`);
+    router.push('/seller/list/details');
   };
 
-  const handleScan = async () => {
-    setIsScanning(true);
+  const handleScan = () => {
     setError(null);
-    const scanned = await scanCode();
-    setIsScanning(false);
-    if (scanned) {
-      applyLookup(scanned);
-      return;
-    }
-    // Fallback when outside LINE or when scanCodeV2 is not available
-    setIsManualIsbnOpen(true);
+    setIsScannerOpen(true);
   };
 
   const handleAddVolume = () => {
@@ -92,11 +69,13 @@ export default function SellerListStep1Page() {
       setError('ตั้งชื่อร้านก่อนลงขายหนังสือ');
       return;
     }
-    if (!draft.title.trim()) {
-      setError('กรุณาสแกนหรือกรอกข้อมูลหนังสือก่อนไปขั้นตอนต่อไป');
-      return;
-    }
-    router.push('/seller/list/step-2');
+    router.push('/seller/list/details');
+  };
+
+  const handleNoIsbn = () => {
+    update({ isbn: '', title: '', author: '', publisher: '', originalPrice: 0 });
+    setIsScannerOpen(false);
+    router.push('/seller/list/details');
   };
 
   if (!isShopSetup) {
@@ -181,27 +160,21 @@ export default function SellerListStep1Page() {
             <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
               {isSet ? 'ขั้นที่ 1 · สแกนบาร์โค้ดทุกเล่ม' : 'ขั้นที่ 1 · สแกนบาร์โค้ด ISBN'}
             </h3>
-            {isMock && (
-              <span className="text-[10px] font-bold text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded">
-                โหมดจำลอง
-              </span>
-            )}
           </div>
 
           <button
             type="button"
             onClick={handleScan}
-            disabled={isScanning}
             className="w-full aspect-[16/9] rounded-2xl border-2 border-dashed border-emerald-300 bg-emerald-50/40 hover:bg-emerald-50 flex flex-col items-center justify-center gap-2 transition active:scale-[0.99]"
           >
             <div className="w-12 h-12 rounded-full bg-white border border-emerald-200 flex items-center justify-center text-emerald-600 shadow-xs">
               <ScanLine className="w-6 h-6" />
             </div>
             <span className="text-sm font-bold text-emerald-800">
-              {isScanning ? 'กำลังเปิดกล้อง...' : 'สแกนบาร์โค้ดหลังปก'}
+              สแกนบาร์โค้ดหลังปก
             </span>
             <span className="text-[11px] text-emerald-700/80">
-              ใช้กล้องของ LINE · ถ้าสแกนไม่ได้ให้พิมพ์เลขเอง
+              เปิดกล้องอ่านบาร์โค้ด · ถ้าสแกนไม่ได้ให้พิมพ์เลขเอง
             </span>
           </button>
 
@@ -218,7 +191,7 @@ export default function SellerListStep1Page() {
               variant="outline"
               size="sm"
               fullWidth
-              onClick={() => setIsManualInfoOpen(true)}
+              onClick={handleNoIsbn}
             >
               ไม่มี ISBN · กรอกเอง
             </Button>
@@ -249,6 +222,12 @@ export default function SellerListStep1Page() {
                 </p>
               </div>
             </div>
+            <Input
+              label={isSet ? 'ชื่อชุดหนังสือ (แก้ได้)' : 'ชื่อหนังสือ (แก้ได้)'}
+              value={draft.title}
+              onChange={(event) => update({ title: event.target.value })}
+              helperText="ข้อมูลจาก ISBN ถูกล็อก · แก้ได้เฉพาะชื่อหนังสือ"
+            />
             <button
               type="button"
               onClick={() => update({ title: '', author: '', publisher: '', isbn: '', originalPrice: 0 })}
@@ -261,7 +240,8 @@ export default function SellerListStep1Page() {
           <div className="flex items-start gap-2 p-3 rounded-xl bg-sky-50 border border-sky-200 text-[11px] text-sky-800">
             <Info className="w-4 h-4 shrink-0 mt-0.5" />
             <span>
-              ระบบจะดึงชื่อหนังสือ ปก และราคาปกให้อัตโนมัติ เมื่อสแกนหรือกรอกเลข ISBN 13 หลัก
+              ระบบจะดึงชื่อหนังสือ ผู้แต่ง สำนักพิมพ์ และราคาปกให้อัตโนมัติเมื่อสแกน ISBN
+              · หลังพบข้อมูลแล้ว ช่องเหล่านั้นจะถูกล็อก แก้ได้เฉพาะชื่อหนังสือ
             </span>
           </div>
         )}
@@ -285,6 +265,7 @@ export default function SellerListStep1Page() {
             {volumes.length === 0 ? (
               <p className="text-xs text-slate-500 leading-relaxed">
                 สแกนบาร์โค้ดทีละเล่ม ระบบจะนับจำนวนเล่มและตรวจเล่มที่ขาดให้อัตโนมัติ
+                · ชื่อเล่มแก้ได้ทีละเล่มตามเลขเล่ม
               </p>
             ) : (
               <div className="divide-y divide-slate-100">
@@ -347,7 +328,7 @@ export default function SellerListStep1Page() {
             onClick={handleNext}
             rightIcon={<ChevronRight className="w-4 h-4" />}
           >
-            ถัดไป · ถ่ายรูปหนังสือ
+            ถัดไป · รายละเอียดหนังสือ
           </Button>
         </div>
       </div>
@@ -382,65 +363,8 @@ export default function SellerListStep1Page() {
             helperText="ดูเลข ISBN ได้ที่ด้านหลังปก ใต้บาร์โค้ด"
           />
           <p className="text-[11px] text-slate-400 leading-relaxed">
-            ใน LINE ให้ใช้ปุ่มสแกนบาร์โค้ดก่อน ถ้ากล้องอ่านไม่ชัดจึงพิมพ์เลขเอง
+            ใช้ปุ่มสแกนบาร์โค้ดก่อน ถ้ากล้องอ่านไม่ชัดจึงพิมพ์เลขเอง
           </p>
-        </div>
-      </BottomSheet>
-
-      {/* S2N — enter book info manually (no ISBN) */}
-      <BottomSheet
-        isOpen={isManualInfoOpen}
-        onClose={() => setIsManualInfoOpen(false)}
-        title="กรอกข้อมูลหนังสือเอง (S2N)"
-        footer={
-          <Button
-            fullWidth
-            size="lg"
-            disabled={!manualTitle.trim() || !manualAuthor.trim()}
-            onClick={() => {
-              update({
-                isbn: '',
-                title: manualTitle.trim(),
-                author: manualAuthor.trim(),
-                publisher: manualPublisher.trim(),
-                originalPrice: Number(manualPrice) || 0,
-              });
-              setIsManualInfoOpen(false);
-              setToastMessage('บันทึกข้อมูลหนังสือแล้ว');
-            }}
-          >
-            ใช้ข้อมูลนี้
-          </Button>
-        }
-      >
-        <div className="space-y-3 py-1">
-          <Input
-            label="ชื่อหนังสือ"
-            placeholder="เช่น หนังสือที่ไม่มีเลข ISBN"
-            value={manualTitle}
-            onChange={(e) => setManualTitle(e.target.value)}
-          />
-          <Input
-            label="ผู้แต่ง"
-            placeholder="ชื่อผู้แต่ง"
-            value={manualAuthor}
-            onChange={(e) => setManualAuthor(e.target.value)}
-          />
-          <Input
-            label="สำนักพิมพ์"
-            placeholder="เช่น สำนักพิมพ์ผีเสื้อ"
-            value={manualPublisher}
-            onChange={(e) => setManualPublisher(e.target.value)}
-          />
-          <Input
-            label="ราคาปก (บาท)"
-            type="number"
-            inputMode="numeric"
-            placeholder="0"
-            value={manualPrice}
-            onChange={(e) => setManualPrice(e.target.value)}
-            helperText="ใช้คำนวณราคาแนะนำในขั้นตอนสุดท้าย"
-          />
         </div>
       </BottomSheet>
 
@@ -481,6 +405,20 @@ export default function SellerListStep1Page() {
           </div>
         </div>
       </BottomSheet>
+
+      <IsbnScanner
+        isOpen={isScannerOpen}
+        onClose={() => setIsScannerOpen(false)}
+        onDetected={(isbn) => {
+          setIsScannerOpen(false);
+          applyLookup(isbn);
+        }}
+        onManual={() => {
+          setIsScannerOpen(false);
+          setIsManualIsbnOpen(true);
+        }}
+        onNoIsbn={handleNoIsbn}
+      />
 
       <Toast
         isOpen={!!toastMessage}

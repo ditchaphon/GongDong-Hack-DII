@@ -23,8 +23,7 @@ import {
   Store,
   CreditCard,
   ShieldAlert,
-  Eye,
-  Heart,
+  Bell,
   ChevronRight,
   Package,
   Clock,
@@ -61,14 +60,27 @@ export default function SellerShopPage() {
   const [tab, setTab] = useState<Tab>('LISTINGS');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
+  const pendingRequestTitles = new Set(
+    sales
+      .filter((order) => order.status === 'REQUESTED')
+      .flatMap((order) => order.books.map((book) => book.title))
+  );
+  const hasPendingRequest = (title: string) => pendingRequestTitles.has(title);
   const activeListings = listings.filter(
-    (l) => l.status === 'ACTIVE' || l.status === 'WAITING_PAYMENT'
+    (l) =>
+      (l.status === 'ACTIVE' || l.status === 'WAITING_PAYMENT') &&
+      !hasPendingRequest(l.title)
+  );
+  const pendingRequestListings = listings.filter(
+    (l) => l.status !== 'HIDDEN' && hasPendingRequest(l.title)
   );
   const hiddenListings = listings.filter((l) => l.status === 'HIDDEN');
   const completedSales = sales.filter((o) => o.status === 'COMPLETED');
   const completedCount = completedSales.length;
-  // Orders where money is still on its way: waiting for the slip, or paid and not yet closed.
-  const waitingOrders = sales.filter((o) => ['ACCEPTED', 'PAID', 'SHIPPED', 'SCHEDULED'].includes(o.status));
+  // Orders still in progress: awaiting confirmation, shipping, or cash on delivery.
+  const waitingOrders = sales.filter((o) =>
+    ['REQUESTED', 'ACCEPTED', 'PAID', 'SHIPPED', 'SCHEDULED'].includes(o.status)
+  );
   const newOrderCount = sales.filter((o) => o.status === 'REQUESTED').length;
 
   return (
@@ -77,19 +89,34 @@ export default function SellerShopPage() {
         title="ร้านของฉัน"
         showBack={false}
         rightAction={
-          <button
-            type="button"
-            aria-label="ออเดอร์"
-            onClick={() => router.push('/orders')}
-            className="relative flex items-center justify-center w-10 h-10 rounded-full hover:bg-slate-100"
-          >
-            <Package className="w-5 h-5 text-slate-700" />
-            {newOrderCount > 0 && (
-              <span className="absolute top-1 right-1 min-w-4 h-4 px-1 rounded-full bg-rose-500 text-white text-[10px] font-bold flex items-center justify-center">
-                {newOrderCount}
-              </span>
-            )}
-          </button>
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              aria-label="แจ้งเตือนผู้ขาย"
+              onClick={() => router.push('/notifications')}
+              className="relative flex items-center justify-center w-10 h-10 rounded-full hover:bg-slate-100"
+            >
+              <Bell className="w-5 h-5 text-slate-700" />
+              {newOrderCount > 0 && (
+                <span className="absolute top-1 right-1 min-w-4 h-4 px-1 rounded-full bg-rose-500 text-white text-[10px] font-bold flex items-center justify-center">
+                  {newOrderCount}
+                </span>
+              )}
+            </button>
+            <button
+              type="button"
+              aria-label="ออเดอร์"
+              onClick={() => router.push('/orders')}
+              className="relative flex items-center justify-center w-10 h-10 rounded-full hover:bg-slate-100"
+            >
+              <Package className="w-5 h-5 text-slate-700" />
+              {newOrderCount > 0 && (
+                <span className="absolute top-1 right-1 min-w-4 h-4 px-1 rounded-full bg-rose-500 text-white text-[10px] font-bold flex items-center justify-center">
+                  {newOrderCount}
+                </span>
+              )}
+            </button>
+          </div>
         }
       />
 
@@ -135,10 +162,6 @@ export default function SellerShopPage() {
               >
                 <Settings className="w-4 h-4" />
               </button>
-              <div className="text-right pl-1">
-                <div className="text-[10px] text-slate-400">เครดิต</div>
-                <div className="text-lg font-black text-emerald-700">{credits}</div>
-              </div>
             </div>
           </div>
 
@@ -183,51 +206,41 @@ export default function SellerShopPage() {
             >
               <ShieldAlert className="w-4 h-4 text-amber-600 shrink-0" />
               <span className="flex-1 text-[11px] text-amber-900 leading-snug">
-                ยังไม่ยืนยันตัวตน (KYC) · กดเพื่อกรอกบัตรประชาชนและพร้อมเพย์
+                ยังไม่ยืนยันตัวตน (KYC) · กดเพื่อกรอกเลขบัตรประชาชนและชื่อจริง
               </span>
               <ChevronRight className="w-4 h-4 text-amber-600" />
             </button>
           ) : null}
 
-          <div className="grid grid-cols-2 gap-2">
-            <Button
-              size="sm"
-              fullWidth
-              leftIcon={<Plus className="w-4 h-4" />}
-              onClick={() => router.push('/seller/list')}
-            >
-              ลงขายหนังสือ
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              fullWidth
-              leftIcon={<CreditCard className="w-4 h-4" />}
-              onClick={() => router.push('/seller/credits')}
-            >
-              เติมเครดิต
-            </Button>
-          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            fullWidth
+            leftIcon={<CreditCard className="w-4 h-4" />}
+            onClick={() => router.push('/seller/credits')}
+          >
+            เติมเครดิต · เหลือ {credits}
+          </Button>
         </div>
 
         {/* Tabs */}
         <div className="flex gap-2">
           <Chip
-            label="ประกาศของฉัน"
+            label="หนังสือที่ลงขาย"
             selected={tab === 'LISTINGS'}
             count={activeListings.length}
             onClick={() => setTab('LISTINGS')}
             size="sm"
           />
           <Chip
-            label="รอรับเงิน"
+            label="ระหว่างทำการ"
             selected={tab === 'WAITING'}
             count={waitingOrders.length}
             onClick={() => setTab('WAITING')}
             size="sm"
           />
           <Chip
-            label="ปิดการขาย"
+            label="ประวัติการขาย"
             selected={tab === 'CLOSED'}
             count={completedCount}
             onClick={() => setTab('CLOSED')}
@@ -274,17 +287,11 @@ export default function SellerShopPage() {
                     <p className="text-sm font-black text-[#8B5E3C]">
                       ฿{listing.price.toLocaleString()}
                     </p>
-                    <div className="flex items-center gap-3 text-[10px] text-slate-400 pt-0.5">
-                      <span className="inline-flex items-center gap-1">
-                        <Eye className="w-3 h-3" /> {listing.views}
-                      </span>
-                      <span className="inline-flex items-center gap-1">
-                        <Heart className="w-3 h-3" /> {listing.savedCount}
-                      </span>
-                      {listing.status === 'WAITING_PAYMENT' && (
-                        <span className="text-amber-600 font-semibold">มีคนขอซื้อ</span>
-                      )}
-                    </div>
+                    {listing.status === 'WAITING_PAYMENT' && (
+                      <div className="text-[10px] text-amber-600 font-semibold pt-0.5">
+                        มีคนขอซื้อ · ล็อกการแก้ไข
+                      </div>
+                    )}
                     <div className="flex items-center gap-2 pt-1">
                       <button
                         type="button"
@@ -312,6 +319,43 @@ export default function SellerShopPage() {
                   </div>
                 </div>
               ))
+            )}
+
+            {pendingRequestListings.length > 0 && (
+              <div className="space-y-2 pt-1">
+                <h3 className="text-[11px] font-bold text-amber-600 uppercase tracking-wider px-1">
+                  ซ่อนชั่วคราว · มีคนขอซื้อ ({pendingRequestListings.length})
+                </h3>
+                {pendingRequestListings.map((listing) => (
+                  <div
+                    key={listing.id}
+                    className="bg-white rounded-2xl border border-dashed border-amber-300 p-3 flex items-center gap-3"
+                  >
+                    <div className="w-12 h-16 rounded-lg bg-slate-100 overflow-hidden shrink-0">
+                      <img
+                        src={listing.photos.cover}
+                        alt={listing.title}
+                        className="w-full h-full object-cover opacity-70"
+                      />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h4 className="text-xs font-semibold text-slate-700 line-clamp-1">
+                        {listing.title}
+                      </h4>
+                      <p className="text-[11px] text-amber-700 mt-0.5">
+                        ไม่แสดงให้ผู้ซื้อเห็นจนกว่าจะปิดคำขอ
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => router.push('/orders')}
+                      className="text-[11px] font-semibold text-[var(--color-primary-dark)]"
+                    >
+                      ดูคำขอ
+                    </button>
+                  </div>
+                ))}
+              </div>
             )}
 
             {hiddenListings.length > 0 && (
@@ -353,15 +397,15 @@ export default function SellerShopPage() {
           </div>
         )}
 
-        {/* Waiting for money: each card opens the order (slip, shipping, QR) */}
+        {/* In-progress orders: each card opens the order detail */}
         {tab === 'WAITING' && (
           <div className="space-y-3">
             {waitingOrders.length === 0 ? (
               <div className="bg-white rounded-2xl border border-slate-200">
                 <EmptyState
                   icon={<Clock className="w-8 h-8 text-slate-400" />}
-                  title="ไม่มีออเดอร์ที่รอรับเงิน"
-                  description="ออเดอร์ที่คุณรับแล้วแต่ยังไม่ปิดการขายจะแสดงที่นี่"
+                  title="ไม่มีงานระหว่างทำ"
+                  description="คำขอซื้อและออเดอร์ที่ยังไม่ปิดการขายจะแสดงที่นี่"
                 />
               </div>
             ) : (
@@ -387,16 +431,18 @@ export default function SellerShopPage() {
                   </div>
                   <div className="flex items-center justify-between gap-2 p-2 rounded-xl bg-slate-50 border border-slate-200 text-[11px]">
                     <span className="text-slate-600">
-                      {order.status === 'ACCEPTED'
-                        ? 'รอผู้ซื้อแนบสลิป'
+                      {order.status === 'REQUESTED'
+                        ? 'มีคนขอซื้อ · รอคุณตอบรับ'
+                        : order.status === 'ACCEPTED'
+                        ? 'ยืนยันการส่ง/นัดรับ'
                         : order.status === 'PAID'
-                        ? 'ได้สลิปแล้ว · รอคุณจัดส่ง'
+                        ? 'ส่งแล้ว · รอเก็บเงินปลายทาง'
                         : order.status === 'SHIPPED'
-                        ? 'ส่งแล้ว · รอผู้ซื้อยืนยันรับของ'
-                        : 'นัดรับ · สแกน QR ผู้ซื้อเพื่อรับเงิน'}
+                        ? 'ส่งแล้ว · รอเก็บเงินปลายทาง'
+                        : 'นัดรับ · เก็บเงินสดหน้างาน'}
                     </span>
                     <span className="inline-flex items-center gap-0.5 font-semibold text-[var(--color-primary-dark)] shrink-0">
-                      {order.slipImage ? 'ดูสลิป' : 'ดูรายละเอียด'}
+                      ดูรายละเอียด
                       <ChevronRight className="w-3.5 h-3.5" />
                     </span>
                   </div>

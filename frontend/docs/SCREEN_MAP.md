@@ -18,7 +18,6 @@ Mobile-first LIFF app. Width target 390px, max 430px. All routes open as
 | `/addresses/edit` | Address form (buyer's own phone only) | 2 |
 | `/orders` | Tabs ที่ซื้อ / ที่ขาย, action badges, timers | 4 |
 | `/orders/[id]` | Order detail for every status, next action, chat inline | 4 |
-| `/orders/[id]/pay` | QR pay + slip result states | 4 |
 | `/orders/[id]/schedule` | Meetup time + map pin confirm | 4 |
 | `/orders/[id]/handover` | Buyer code / seller code input | 4 |
 | `/orders/[id]/tracking` | Parcel tracking (buyer read-only) | 4 |
@@ -32,11 +31,12 @@ Mobile-first LIFF app. Width target 390px, max 430px. All routes open as
 | Route | Purpose | Phase |
 |---|---|---|
 | `/seller` | Shop hub (header, credits, tabs, reviews, settings) | 3 |
-| `/seller/setup` | Light shop setup (name, avatar, zones, parcel) | 3 |
-| `/seller/list` | Listing wizard step 1 (single/set, ISBN/manual) | 3 |
-| `/seller/list/step-2` | 4 watermarked photos with shop-name tag | 3 |
-| `/seller/list/step-3` | 5-point checklist → grade | 3 |
-| `/seller/list/step-4` | Price 75/60/45/30% + delivery | 3 |
+| `/seller/setup` | Shop setup (shop info, schedule, national-ID KYC) | 3 |
+| `/seller/list` | Listing wizard step 1 (single/set, ISBN scan/manual) | 3 |
+| `/seller/list/details` | Step 2: title, author, description, categories | 3 |
+| `/seller/list/step-2` | Step 3: 4 photos (camera or gallery) + defects | 3 |
+| `/seller/list/step-3` | Step 4: 5-point checklist → grade | 3 |
+| `/seller/list/step-4` | Step 5: price + delivery | 3 |
 | `/seller/list/success` | Listing success + share | 3 |
 | `/seller/listings/[id]/edit` | Edit / hide listing | 3 |
 | `/seller/credits` | Credit packs + history | 3 |
@@ -67,6 +67,8 @@ not implemented.
 - Legacy phone-number routes `/seller/orders`, `/seller/orders/[id]/accepted`,
   and `/seller/meetup/*` were deleted in Phase 4.
 - `/seller/verify` (heavy KYC) was deleted; verification moved to first order.
-- No `tel:` links, phone numbers, LINE IDs, or bank account numbers are shown to
-  the other party anywhere in the app. Seller payout bank details are entered by
-  the seller only.
+- No `tel:` links, phone numbers, LINE IDs, bank account numbers, QR codes, or
+  payment slips are shown to the other party anywhere in the app. Orders use cash
+  on delivery only.
+- Seller KYC collects national ID number and legal name only; it is never shown
+  on the public shop page.

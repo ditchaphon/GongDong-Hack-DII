@@ -29,11 +29,14 @@ export default function ReceiveParcelPage({ params }: { params: Promise<{ id: st
   const [toast, setToast] = useState<string | null>(null);
   const [done, setDone] = useState(false);
 
-  if (!order || (order.status !== 'SHIPPED' && !done)) {
+  if (
+    !order ||
+    (!done && !['PAID', 'SHIPPED', 'SCHEDULED'].includes(order.status))
+  ) {
     return (
       <div className="flex flex-col min-h-screen bg-slate-50">
         <TopBar title="ยืนยันรับของ" onBack={() => router.push(order ? `/orders/${order.id}` : '/orders')} />
-        <p className="p-6 text-center text-xs text-slate-500">ออเดอร์นี้ยังไม่อยู่ในขั้นจัดส่ง หรือยืนยันไปแล้ว</p>
+        <p className="p-6 text-center text-xs text-slate-500">ออเดอร์นี้ยังไม่พร้อมยืนยันรับของ หรือยืนยันไปแล้ว</p>
       </div>
     );
   }
@@ -44,7 +47,7 @@ export default function ReceiveParcelPage({ params }: { params: Promise<{ id: st
     if (gradeMatched === null) return setError('บอกเราว่าสภาพหนังสือตรงเกรดไหม');
     setDone(true);
     confirmReceived(order.id, photo, { rating, isGradeMatched: gradeMatched, tags, comment: comment.trim() });
-    setToast('ยืนยันรับของแล้ว · โอนเงินให้ผู้ขายเรียบร้อย');
+    setToast('ยืนยันรับของแล้ว · ชำระเงินปลายทางเรียบร้อย');
     setTimeout(() => router.push(`/orders/${order.id}`), 900);
   };
 
@@ -55,7 +58,7 @@ export default function ReceiveParcelPage({ params }: { params: Promise<{ id: st
       <div className="p-4 space-y-4">
         <section className="bg-white rounded-2xl border border-slate-200 p-4 space-y-3">
           <h2 className="text-sm font-bold text-slate-900">1. ถ่ายรูปหนังสือที่ได้รับ</h2>
-          <p className="text-[11px] text-slate-500">ใช้เป็นหลักฐานว่าได้รับของในสภาพไหน · ถ่ายจากกล้องเท่านั้น</p>
+          <p className="text-[11px] text-slate-500">ใช้เป็นหลักฐานว่าได้รับของในสภาพไหน · ถ่ายจากกล้องหรือเลือกจากแกลอรี่</p>
           {photo ? (
             <div className="relative">
               <img src={photo} alt="รูปหนังสือที่ได้รับ" className="w-full h-52 object-cover rounded-xl bg-slate-100" />
@@ -137,7 +140,7 @@ export default function ReceiveParcelPage({ params }: { params: Promise<{ id: st
 
         <p className="flex items-start gap-1.5 text-[11px] text-slate-500 px-1">
           <ShieldCheck className="w-3.5 h-3.5 shrink-0 mt-0.5 text-emerald-600" />
-          กดยืนยันแล้วระบบจะโอนเงิน ฿{order.amount.toLocaleString()} ให้ผู้ขาย · ถ้าของมีปัญหาให้แจ้งปัญหาแทน
+          กดยืนยันหลังจ่ายเงินสด ฿{order.amount.toLocaleString()} ให้ผู้ขายแล้ว · ถ้าของมีปัญหาให้แจ้งปัญหาแทน
         </p>
         {error && <p role="alert" className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-700">{error}</p>}
       </div>

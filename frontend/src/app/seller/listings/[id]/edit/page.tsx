@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { TopBar } from '@/components/layout/TopBar';
 import { Button, GradeBadge, Toast } from '@/components/ui';
 import { useSeller } from '@/hooks/useSeller';
+import { useV4Orders } from '@/hooks/useV4Orders';
 import {
   MapPin,
   Truck,
@@ -22,8 +23,17 @@ export default function EditListingPage({
   const resolvedParams = use(params);
   const router = useRouter();
   const { listings, updateListing, setListingStatus } = useSeller();
+  const { orders, isMineAsBuyer } = useV4Orders();
 
   const listing = listings.find((item) => item.id === resolvedParams.id);
+  const hasActiveOrder = listing
+    ? orders.some(
+        (order) =>
+          !isMineAsBuyer(order) &&
+          ['REQUESTED', 'ACCEPTED', 'PAID', 'SHIPPED', 'SCHEDULED'].includes(order.status) &&
+          order.books.some((book) => book.title === listing.title)
+      )
+    : false;
 
   const [price, setPrice] = useState(listing ? String(listing.price) : '');
   const [meetup, setMeetup] = useState(listing?.deliveryMethods.includes('MEETUP') ?? true);
@@ -40,9 +50,13 @@ export default function EditListingPage({
     );
   }
 
-  const locked = listing.status === 'WAITING_PAYMENT';
+  const locked = listing.status === 'WAITING_PAYMENT' || hasActiveOrder;
 
   const handleSave = () => {
+    if (locked) {
+      setError('ออเดอร์นี้ถูกยืนยันแล้ว · แก้ไขประกาศไม่ได้จนกว่าจะปิดออเดอร์');
+      return;
+    }
     const nextPrice = Number(price) || 0;
     if (nextPrice < 1) {
       setError('กรุณาตั้งราคาอย่างน้อย ฿1');
@@ -91,8 +105,8 @@ export default function EditListingPage({
         {locked && (
           <div className="flex items-start gap-2 p-3 rounded-xl bg-amber-50 border border-amber-200 text-[11px] text-amber-900 leading-relaxed">
             <Info className="w-4 h-4 shrink-0 mt-0.5" />
-            มีผู้ซื้อขอหนังสือเล่มนี้อยู่ · แก้ราคาและวิธีรับได้
-            แต่ยังซ่อนประกาศไม่ได้จนกว่าจะปิดคำขอ
+            มีคนขอซื้อหนังสือเล่มนี้ · ล็อกการแก้ไขและซ่อนประกาศชั่วคราว
+            จนกว่าจะปิดคำขอ
           </div>
         )}
 
@@ -107,6 +121,7 @@ export default function EditListingPage({
               inputMode="numeric"
               min={1}
               value={price}
+              disabled={locked}
               onChange={(event) => {
                 setPrice(event.target.value);
                 setError(null);
@@ -127,8 +142,9 @@ export default function EditListingPage({
 
           <button
             type="button"
+            disabled={locked}
             onClick={() => setMeetup((prev) => !prev)}
-            className={`w-full flex items-center gap-2.5 p-3 rounded-xl border text-left ${
+            className={`w-full flex items-center gap-2.5 p-3 rounded-xl border text-left disabled:opacity-50 ${
               meetup
                 ? 'border-[var(--color-primary)] bg-emerald-50/50'
                 : 'border-slate-200'
@@ -149,8 +165,9 @@ export default function EditListingPage({
 
           <button
             type="button"
+            disabled={locked}
             onClick={() => setParcel((prev) => !prev)}
-            className={`w-full flex items-center gap-2.5 p-3 rounded-xl border text-left ${
+            className={`w-full flex items-center gap-2.5 p-3 rounded-xl border text-left disabled:opacity-50 ${
               parcel
                 ? 'border-[var(--color-primary)] bg-emerald-50/50'
                 : 'border-slate-200'
@@ -212,8 +229,8 @@ export default function EditListingPage({
 
       <div className="fixed bottom-0 left-0 right-0 z-30 flex justify-center pointer-events-none">
         <div className="w-full max-w-[430px] bg-white border-t border-slate-200 p-3 pointer-events-auto safe-area-bottom shadow-lg">
-          <Button fullWidth size="lg" onClick={handleSave}>
-            บันทึกการแก้ไข
+          <Button fullWidth size="lg" onClick={handleSave} disabled={locked}>
+            {locked ? 'ล็อกอยู่ · ปิดออเดอร์ก่อน' : 'บันทึกการแก้ไข'}
           </Button>
         </div>
       </div>

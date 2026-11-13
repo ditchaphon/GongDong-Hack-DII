@@ -9,6 +9,7 @@ export * from './QrPayCard';
 export * from './SlipUploader';
 export * from './SlipResult';
 export * from './HandoverCode';
+export * from './IsbnScanner';
 export * from './CodeInput';
 export * from './TrackingForm';
 export * from './PhotoGallery';

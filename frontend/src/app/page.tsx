@@ -7,7 +7,7 @@ import { SearchBar, Chip, BookCard, BottomSheet } from '@/components/ui';
 import { BottomTab } from '@/components/layout/BottomTab';
 import { MOCK_BOOKS } from '@/mocks/books';
 import { Book } from '@/types';
-import { Bell, MoreHorizontal, X, MapPin, Sparkles, ShoppingBag } from 'lucide-react';
+import { Bell, MoreHorizontal, X, BookOpen, ChevronRight, Sparkles, ShoppingBag } from 'lucide-react';
 import { useCart } from '@/hooks/useCart';
 
 export default function HomePage() {
@@ -30,6 +30,11 @@ export default function HomePage() {
     if (activeCategory === 'manga') return b.isSet;
     return true;
   });
+
+  // Placeholder recommendation until the personalised feed API is available.
+  const spotlightBook = filteredBooks[0] ?? MOCK_BOOKS[0];
+  const activeCategoryLabel =
+    categories.find((category) => category.id === activeCategory)?.label ?? 'ทั้งหมด';
 
   return (
     <div className="flex flex-col min-h-screen bg-slate-50 pb-20 select-none">
@@ -114,21 +119,35 @@ export default function HomePage() {
 
       {/* Feed Content */}
       <div className="p-4 space-y-6">
-        {/* Banner: Meetup Trust Highlight */}
-        <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-xs flex items-center justify-between">
-          <div className="space-y-1">
-            <span className="text-[11px] font-bold uppercase tracking-wider bg-white/20 px-2 py-0.5 rounded-full inline-block">
-              Free Meetup
+        {/* Recommendation banner — template fed by mock data for now. */}
+        <button
+          type="button"
+          onClick={() => router.push(`/book/${spotlightBook.id}`)}
+          className="w-full text-left p-4 rounded-2xl bg-gradient-to-r from-[#8B5E3C] to-[#B07A50] text-white shadow-xs flex items-center gap-3"
+        >
+          <div className="flex-1 min-w-0 space-y-1">
+            <span className="text-[10px] font-bold uppercase tracking-wider bg-white/20 px-2 py-0.5 rounded-full inline-block">
+              แนะนำสำหรับคุณ
             </span>
-            <h3 className="font-bold text-base">นัดรับใน มช. ฿0 บาท</h3>
-            <p className="text-xs text-white/90">
-              ปักหมุดจุดนัดเองได้ • ดูของจริงก่อนจ่าย • ไม่ต้องให้เบอร์โทร
+            <h3 className="font-bold text-base">เรื่องนี้คุณอาจสนใจ</h3>
+            <p className="text-xs text-white/90 line-clamp-1">{spotlightBook.title}</p>
+            <p className="text-[11px] text-white/75 line-clamp-1">
+              {spotlightBook.grade} · ฿{spotlightBook.price.toLocaleString()} · {activeCategoryLabel}
             </p>
           </div>
-          <div className="p-3 bg-white/10 backdrop-blur-xs rounded-2xl shrink-0">
-            <MapPin className="w-7 h-7 text-white" />
+          <div className="w-14 h-16 rounded-xl bg-white/15 backdrop-blur-xs flex items-center justify-center shrink-0 overflow-hidden">
+            {spotlightBook.photos?.cover ? (
+              <img
+                src={spotlightBook.photos.cover}
+                alt=""
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <BookOpen className="w-6 h-6 text-white" />
+            )}
           </div>
-        </div>
+          <ChevronRight className="w-4 h-4 text-white/70 shrink-0" />
+        </button>
 
         {/* Book Feed Grid */}
         <div className="space-y-3">

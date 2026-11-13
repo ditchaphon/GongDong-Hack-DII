@@ -5,7 +5,7 @@ import clsx from 'clsx';
 import { useRouter } from 'next/navigation';
 import { TopBar } from '@/components/layout/TopBar';
 import { Button, Input, Toast } from '@/components/ui';
-import { NicknameAvatarPicker, MapPinPicker } from '@/components/v4';
+import { MapPinPicker } from '@/components/v4';
 import { useSeller } from '@/hooks/useSeller';
 import { useProfile } from '@/hooks/useProfile';
 import { useLiff } from '@/hooks/useLiff';
@@ -13,16 +13,13 @@ import { useAppMode } from '@/hooks/useAppMode';
 import { MeetupPoint, ShipMode, THAI_PROVINCES, provinceCentre } from '@/lib/delivery';
 import { findContactLeaks } from '@/lib/masking';
 import {
-  detectPromptPay,
   formatThaiId,
   isValidPersonName,
   isValidThaiId,
-  maskPromptPay,
   maskThaiId,
   onlyDigits,
 } from '@/lib/kyc';
 import {
-  UserRound,
   Store,
   Truck,
   FileText,
@@ -37,8 +34,6 @@ import {
   Package,
   Calculator,
 } from 'lucide-react';
-
-const BANKS = ['กสิกรไทย', 'ไทยพาณิชย์', 'กรุงเทพ', 'กรุงไทย', 'กรุงศรีอยุธยา', 'ทหารไทยธนชาต', 'ออมสิน', 'อื่น ๆ'];
 
 const DEFAULT_POINT: MeetupPoint = {
   id: 'mp-default',
@@ -63,17 +58,12 @@ const DAYS = ['จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส', 'อา'];
 const SLOTS = ['เช้า 9–12 น.', 'บ่าย 12–16 น.', 'เย็น 16–20 น.'];
 
 const STEPS = [
-  { id: 1, title: 'ข้อมูลที่จำเป็น', icon: UserRound },
   { id: 2, title: 'ข้อมูลร้านค้า', icon: Store },
   { id: 3, title: 'ตารางจัดส่ง', icon: Truck },
   { id: 4, title: 'ข้อมูล KYC', icon: FileText },
 ];
 
 const STEP_HEADINGS: Record<number, { title: string; subtitle: string }> = {
-  1: {
-    title: 'ข้อมูลที่จำเป็น',
-    subtitle: 'ชื่อเล่นและรูปที่ใช้ในกองดอง · ไม่มีเบอร์โทรให้ใครเห็น',
-  },
   2: {
     title: 'ตั้งค่าร้านค้าของคุณ',
     subtitle: 'บอกเราเกี่ยวกับร้านของคุณเพื่อให้ผู้ซื้อค้นหาคุณได้',
@@ -84,7 +74,7 @@ const STEP_HEADINGS: Record<number, { title: string; subtitle: string }> = {
   },
   4: {
     title: 'ยืนยันตัวตน (KYC)',
-    subtitle: 'ยืนยันตัวตนและบัญชีพร้อมเพย์ที่ใช้รับเงินจากการขาย · แอดมินเห็นเท่านั้น',
+    subtitle: 'ยืนยันตัวตนด้วยเลขบัตรประชาชนและชื่อจริง · แอดมินเห็นเท่านั้น',
   },
 };
 
@@ -95,14 +85,9 @@ export default function ShopSetupWizardPage() {
   const profile = useProfile();
   const { shop, saveShop, submitKyc } = useSeller();
 
-  const [step, setStep] = useState(1);
+  const [step, setStep] = useState(2);
   const [error, setError] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
-
-  // Step 1 — required account info
-  const [nickname, setNickname] = useState(profile.nickname);
-  const [avatar, setAvatar] = useState(profile.avatar || user.pictureUrl || DEFAULT_PROFILE_AVATAR);
-  const [consent, setConsent] = useState(profile.consent);
 
   // Step 2 — shop info
   const [shopName, setShopName] = useState(shop?.shopName || '');
@@ -121,16 +106,13 @@ export default function ShopSetupWizardPage() {
   const [days, setDays] = useState<string[]>(shop?.availableDays ?? ['จ', 'อ', 'พ', 'พฤ', 'ศ']);
   const [slots, setSlots] = useState<string[]>(shop?.availableSlots ?? [SLOTS[1]]);
   const [supportsParcel, setSupportsParcel] = useState(shop?.supportsParcel ?? false);
-  const [shipMode, setShipMode] = useState<ShipMode>(shop?.shipMode ?? 'DAILY');
-  const [shipWithinDays, setShipWithinDays] = useState(shop?.shipWithinDays ?? 2);
+  const shipMode: ShipMode = 'AFTER_ACCEPT';
+  const shipWithinDays = 2;
 
   // Step 4 — KYC (raw values live only in this form)
   const [nationalId, setNationalId] = useState('');
   const [firstName, setFirstName] = useState(shop?.kyc?.firstName || '');
   const [lastName, setLastName] = useState(shop?.kyc?.lastName || '');
-  const [promptPay, setPromptPay] = useState('');
-  const [promptPayName, setPromptPayName] = useState(shop?.kyc?.promptPayAccountName || '');
-  const [promptPayBank, setPromptPayBank] = useState(shop?.kyc?.promptPayBank || BANKS[0]);
   const [kycConsent, setKycConsent] = useState(false);
   const [editKyc, setEditKyc] = useState(!shop?.kyc);
 
@@ -143,12 +125,6 @@ export default function ShopSetupWizardPage() {
     list.includes(value) ? list.filter((v) => v !== value) : [...list, value];
 
   const validateStep = (current: number): string | null => {
-    if (current === 1) {
-      const clean = nickname.trim();
-      if (clean.length < 2) return 'ตั้งชื่อเล่นอย่างน้อย 2 ตัวอักษร';
-      if (findContactLeaks(clean).length > 0) return 'ชื่อห้ามมีเบอร์โทร ไลน์ หรือช่องทางติดต่อ';
-      if (!consent) return 'กรุณายอมรับนโยบาย PDPA ก่อนเปิดร้าน';
-    }
     if (current === 2) {
       const clean = shopName.trim();
       if (clean.length < 2) return 'ตั้งชื่อร้านอย่างน้อย 2 ตัวอักษร';
@@ -167,12 +143,6 @@ export default function ShopSetupWizardPage() {
       if (!isValidThaiId(nationalId)) return 'เลขบัตรประชาชนไม่ถูกต้อง (13 หลัก ตรวจหลักสุดท้ายไม่ผ่าน)';
       if (!isValidPersonName(firstName)) return 'กรอกชื่อจริงเป็นภาษาไทยหรืออังกฤษ';
       if (!isValidPersonName(lastName)) return 'กรอกนามสกุลเป็นภาษาไทยหรืออังกฤษ';
-      if (!detectPromptPay(promptPay))
-        return 'พร้อมเพย์ต้องเป็นเบอร์มือถือ 10 หลัก หรือเลขบัตรประชาชน 13 หลัก';
-      if (!isValidPersonName(promptPayName)) return 'กรอกชื่อบัญชีพร้อมเพย์ตามที่แสดงในแอปธนาคาร';
-      const holder = promptPayName.replace(/\s+/g, '');
-      if (!holder.includes(firstName.trim().replace(/\s+/g, '')))
-        return 'ชื่อบัญชีพร้อมเพย์ต้องเป็นชื่อเดียวกับบัตรประชาชน';
       if (!kycConsent) return 'กรุณายืนยันว่าข้อมูลเป็นของคุณ';
     }
     return null;
@@ -195,7 +165,7 @@ export default function ShopSetupWizardPage() {
 
   const goBack = () => {
     setError(null);
-    if (step === 1) {
+    if (step === 2) {
       router.back();
       return;
     }
@@ -209,7 +179,11 @@ export default function ShopSetupWizardPage() {
   };
 
   const finish = () => {
-    profile.saveProfile({ nickname: nickname.trim(), avatar, consent });
+    profile.saveProfile({
+      nickname: user.displayName,
+      avatar: user.pictureUrl || DEFAULT_PROFILE_AVATAR,
+      consent: true,
+    });
     saveShop({
       shopName: shopName.trim(),
       description: description.trim(),
@@ -223,20 +197,14 @@ export default function ShopSetupWizardPage() {
       shipWithinDays,
     });
     if (editKyc) {
-      const type = detectPromptPay(promptPay)!;
       submitKyc({
         firstName: firstName.trim(),
         lastName: lastName.trim(),
         nationalIdMasked: maskThaiId(nationalId),
-        promptPayMasked: maskPromptPay(promptPay),
-        promptPayType: type,
-        promptPayAccountName: promptPayName.trim(),
-        promptPayBank,
         verifiedAt: new Date().toISOString(),
       });
     }
     setNationalId('');
-    setPromptPay('');
     setMode('SELLER');
     setToastMessage(shop?.setupComplete ? 'บันทึกข้อมูลร้านแล้ว' : 'เปิดร้านสำเร็จ · ยืนยันตัวตนแล้ว');
     setTimeout(() => router.push('/seller'), 600);
@@ -244,7 +212,6 @@ export default function ShopSetupWizardPage() {
 
   const heading = STEP_HEADINGS[step];
   const nationalIdDigits = onlyDigits(nationalId);
-  const promptPayType = detectPromptPay(promptPay);
 
   return (
     <div className="flex flex-col min-h-screen bg-slate-50 select-none pb-32">
@@ -305,23 +272,6 @@ export default function ShopSetupWizardPage() {
             <h1 className="text-xl font-extrabold text-slate-900">{heading.title}</h1>
             <p className="text-xs text-slate-500 mt-1 leading-relaxed">{heading.subtitle}</p>
           </div>
-
-          {step === 1 && (
-            <NicknameAvatarPicker
-              nickname={nickname}
-              onNicknameChange={(value) => {
-                setNickname(value);
-                setError(null);
-              }}
-              avatar={avatar}
-              onAvatarChange={setAvatar}
-              consent={consent}
-              onConsentChange={(value) => {
-                setConsent(value);
-                setError(null);
-              }}
-            />
-          )}
 
           {step === 2 && (
             <div className="space-y-4">
@@ -596,51 +546,11 @@ export default function ShopSetupWizardPage() {
                 </div>
 
                 {supportsParcel ? (
-                  <div className="space-y-2">
-                    <span className="text-xs text-slate-600">รอบการส่งของ</span>
-                    {([
-                      { id: 'DAILY', title: 'ส่งได้ทุกวัน', note: 'ส่งภายใน 1 วันหลังผู้ซื้อชำระเงิน' },
-                      { id: 'AFTER_ACCEPT', title: 'ส่งหลังตอบรับคำขอ', note: `ส่งภายใน ${shipWithinDays} วันหลังผู้ซื้อชำระเงิน` },
-                    ] as const).map((option) => {
-                      const selected = shipMode === option.id;
-                      return (
-                        <button
-                          key={option.id}
-                          type="button"
-                          onClick={() => setShipMode(option.id)}
-                          aria-pressed={selected}
-                          className={clsx(
-                            'w-full flex items-start gap-2.5 p-3 rounded-xl border text-left',
-                            selected ? 'border-teal-400 bg-teal-50' : 'border-slate-200 bg-white'
-                          )}
-                        >
-                          <span className={clsx('mt-0.5 w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0', selected ? 'border-teal-600' : 'border-slate-300')}>
-                            {selected && <span className="w-2 h-2 rounded-full bg-teal-600" />}
-                          </span>
-                          <span className="text-xs">
-                            <span className="font-bold text-slate-800">{option.title}</span>
-                            <span className="block text-[11px] text-slate-500">{option.note}</span>
-                          </span>
-                        </button>
-                      );
-                    })}
-                    {shipMode === 'AFTER_ACCEPT' && (
-                      <div className="flex items-center gap-2 pl-1">
-                        <span className="text-[11px] text-slate-600">ส่งภายใน</span>
-                        <div className="flex gap-1.5 ml-auto">
-                          {[1, 2, 3, 5].map((n) => (
-                            <ChoiceChip key={n} selected={shipWithinDays === n} onClick={() => setShipWithinDays(n)}>
-                              {n} วัน
-                            </ChoiceChip>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                    <p className="flex items-start gap-1.5 p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-[11px] text-slate-600">
-                      <Calculator className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                      ไม่ต้องตั้งค่าส่ง · กองดองคำนวณให้อัตโนมัติตามจำนวนเล่มและจังหวัดปลายทาง
-                    </p>
-                  </div>
+                  <p className="flex items-start gap-1.5 p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-[11px] text-slate-600 leading-relaxed">
+                    <Calculator className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                    เปิดรับส่งพัสดุแล้ว · ค่าส่งแยกจากค่าหนังสือและให้ผู้ซื้อ-ผู้ขายตกลงกันเอง
+                    · ไม่ต้องตั้งรอบส่งหรือจำนวนวัน
+                  </p>
                 ) : (
                   <p className="text-[11px] text-slate-500 leading-relaxed">
                     ปิดอยู่ · ร้านจะรับเฉพาะนัดรับ เปิดได้ทุกเมื่อ
@@ -661,17 +571,10 @@ export default function ShopSetupWizardPage() {
                       {shop.kyc.firstName} {shop.kyc.lastName}
                     </p>
                     <p>บัตรประชาชน {shop.kyc.nationalIdMasked}</p>
-                    <p>
-                      รับเงินทางพร้อมเพย์ ({shop.kyc.promptPayType === 'PHONE' ? 'เบอร์มือถือ' : 'เลขบัตร'}){' '}
-                      {shop.kyc.promptPayMasked}
-                    </p>
-                    <p>
-                      ชื่อบัญชี {shop.kyc.promptPayAccountName} · {shop.kyc.promptPayBank}
-                    </p>
                   </div>
                 </div>
                 <Button variant="outline" size="sm" fullWidth onClick={() => setEditKyc(true)}>
-                  เปลี่ยนข้อมูลรับเงิน
+                  แก้ไขข้อมูลยืนยันตัวตน
                 </Button>
               </div>
             ) : (
@@ -722,60 +625,6 @@ export default function ShopSetupWizardPage() {
                     }}
                   />
                 </div>
-                <Input
-                  id="kyc-promptpay"
-                  label="เบอร์มือถือ / เลขบัตรที่ผูกพร้อมเพย์ *"
-                  inputMode="numeric"
-                  autoComplete="off"
-                  placeholder="เช่น 0812345678"
-                  value={promptPay}
-                  onChange={(event) => {
-                    setPromptPay(onlyDigits(event.target.value).slice(0, 13));
-                    setError(null);
-                  }}
-                  helperText={
-                    promptPayType === 'PHONE'
-                      ? '✓ พร้อมเพย์แบบเบอร์มือถือ'
-                      : promptPayType === 'NATIONAL_ID'
-                      ? '✓ พร้อมเพย์แบบเลขบัตรประชาชน'
-                      : 'กองดองโอนเงินค่าหนังสือเข้าพร้อมเพย์นี้หลังปิดการขาย'
-                  }
-                />
-                <div className="grid grid-cols-2 gap-3">
-                  <Input
-                    id="kyc-promptpay-name"
-                    label="ชื่อบัญชีพร้อมเพย์ *"
-                    placeholder="ตามที่แสดงในแอปธนาคาร"
-                    value={promptPayName}
-                    onChange={(event) => {
-                      setPromptPayName(event.target.value);
-                      setError(null);
-                    }}
-                  />
-                  <div className="flex flex-col gap-1.5">
-                    <label htmlFor="kyc-bank" className="text-xs font-semibold text-slate-700">ธนาคารที่ผูก *</label>
-                    <select
-                      id="kyc-bank"
-                      value={promptPayBank}
-                      onChange={(event) => setPromptPayBank(event.target.value)}
-                      className="min-h-[44px] px-3 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:border-teal-500"
-                    >
-                      {BANKS.map((bank) => (
-                        <option key={bank} value={bank}>{bank}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-                {nationalIdDigits.length === 13 && (
-                  <button
-                    type="button"
-                    onClick={() => setPromptPay(nationalIdDigits)}
-                    className="text-[11px] font-semibold text-teal-700 underline"
-                  >
-                    ใช้เลขบัตรประชาชนเป็นพร้อมเพย์
-                  </button>
-                )}
-
                 <label className="flex items-start gap-2.5 p-3 rounded-xl bg-slate-50 border border-slate-200 cursor-pointer">
                   <input
                     type="checkbox"
@@ -787,14 +636,14 @@ export default function ShopSetupWizardPage() {
                     className="mt-0.5 w-4 h-4 accent-teal-600"
                   />
                   <span className="text-[11px] text-slate-600 leading-relaxed">
-                    ข้าพเจ้ายืนยันว่าข้อมูลเป็นของข้าพเจ้าจริง และยินยอมให้กองดองใช้เพื่อยืนยันตัวตนและโอนเงินค่าหนังสือ
+                    ข้าพเจ้ายืนยันว่าข้อมูลเป็นของข้าพเจ้าจริง และยินยอมให้กองดองใช้เพื่อยืนยันตัวตน
                     ตาม พ.ร.บ.คุ้มครองข้อมูลส่วนบุคคล (PDPA)
                   </span>
                 </label>
 
                 <div className="flex items-start gap-2 p-3 rounded-xl bg-sky-50 border border-sky-200 text-[11px] text-sky-800 leading-relaxed">
                   <Lock className="w-4 h-4 shrink-0 mt-0.5" />
-                  ผู้ซื้อเห็นแค่ป้าย “ยืนยันตัวตนแล้ว” · เราเก็บเลขบัตรแบบปิดบัง ไม่แสดงชื่อจริงหรือพร้อมเพย์บนหน้าร้าน
+                  ผู้ซื้อเห็นแค่ป้าย “ยืนยันตัวตนแล้ว” · เราเก็บเลขบัตรแบบปิดบัง ไม่แสดงชื่อจริงบนหน้าร้าน
                 </div>
               </div>
             ))}
@@ -809,7 +658,7 @@ export default function ShopSetupWizardPage() {
 
       <div className="fixed bottom-0 left-0 right-0 z-30 flex justify-center pointer-events-none">
         <div className="w-full max-w-[430px] bg-white border-t border-slate-200 p-3 pointer-events-auto safe-area-bottom shadow-lg flex gap-2">
-          {step > 1 && (
+          {step > 2 && (
             <Button variant="outline" size="lg" onClick={goBack} className="shrink-0">
               ย้อนกลับ
             </Button>

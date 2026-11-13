@@ -1,17 +1,50 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { TopBar } from '@/components/layout/TopBar';
 import { MOCK_NOTIFICATIONS, NotificationItem } from '@/mocks/books';
-import { Package, Bell, Sparkles, ChevronRight, Check } from 'lucide-react';
+import { useV4Orders } from '@/hooks/useV4Orders';
+import { useSeller } from '@/hooks/useSeller';
+import { Package, Bell, Sparkles, Store, ShoppingBag } from 'lucide-react';
 
 export default function NotificationsPage() {
   const router = useRouter();
   const [notifications, setNotifications] = useState<NotificationItem[]>(MOCK_NOTIFICATIONS);
+  const [view, setView] = useState<'BUYER' | 'SELLER'>('BUYER');
+  const { orders } = useV4Orders();
+  const { shop } = useSeller();
+
+  const sellerNotifications = useMemo(
+    () =>
+      orders
+        .filter(
+          (order) =>
+            !!shop &&
+            order.shop.shopName === shop.shopName &&
+            ['REQUESTED', 'ACCEPTED'].includes(order.status)
+        )
+        .map<NotificationItem>((order) => ({
+          id: `seller-${order.id}`,
+          type: 'order',
+          title:
+            order.status === 'REQUESTED'
+              ? 'มีคำขอซื้อใหม่'
+              : 'ผู้ซื้อยืนยันคำขอแล้ว',
+          message: `${order.books[0]?.title ?? 'หนังสือ'} · ฿${order.total.toLocaleString()} · ${order.buyer.nickname}`,
+          createdAt: new Date(order.createdAtISO).toLocaleDateString('th-TH', {
+            day: 'numeric',
+            month: 'short',
+          }),
+          linkUrl: `/orders/${order.id}`,
+          isRead: false,
+        })),
+    [orders, shop]
+  );
 
   const markAllAsRead = () => {
+    if (view === 'SELLER') return;
     setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
   };
 
@@ -29,7 +62,7 @@ export default function NotificationsPage() {
   return (
     <div className="flex flex-col min-h-screen bg-slate-50 select-none pb-12">
       <TopBar
-        title="ศูนย์แจ้งเตือน (B6)"
+        title={view === 'SELLER' ? 'แจ้งเตือนผู้ขาย' : 'ศูนย์แจ้งเตือน'}
         rightAction={
           <button
             type="button"
@@ -41,8 +74,42 @@ export default function NotificationsPage() {
         }
       />
 
+      <div className="px-4 pt-3">
+        <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-slate-100 border border-slate-200">
+          <button
+            type="button"
+            onClick={() => setView('BUYER')}
+            aria-pressed={view === 'BUYER'}
+            className={`min-h-[38px] rounded-lg text-xs font-bold inline-flex items-center justify-center gap-1.5 ${
+              view === 'BUYER' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'
+            }`}
+          >
+            <ShoppingBag className="w-3.5 h-3.5" /> ผู้ซื้อ
+          </button>
+          <button
+            type="button"
+            onClick={() => setView('SELLER')}
+            aria-pressed={view === 'SELLER'}
+            className={`min-h-[38px] rounded-lg text-xs font-bold inline-flex items-center justify-center gap-1.5 ${
+              view === 'SELLER' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'
+            }`}
+          >
+            <Store className="w-3.5 h-3.5" /> ผู้ขาย
+          </button>
+        </div>
+      </div>
+
       <div className="p-4 space-y-2.5 flex-1">
-        {notifications.map((n) => (
+        {view === 'SELLER' && sellerNotifications.length === 0 && (
+          <div className="p-6 rounded-2xl bg-white border border-slate-200 text-center space-y-1.5">
+            <Store className="w-7 h-7 text-slate-300 mx-auto" />
+            <p className="text-sm font-bold text-slate-700">ยังไม่มีคำขอซื้อใหม่</p>
+            <p className="text-[11px] text-slate-500">
+              เมื่อมีผู้ขอซื้อหนังสือของ {shop?.shopName ?? 'ร้านคุณ'} จะแจ้งที่นี่
+            </p>
+          </div>
+        )}
+        {(view === 'SELLER' ? sellerNotifications : notifications).map((n) => (
           <Link
             key={n.id}
             href={n.linkUrl}

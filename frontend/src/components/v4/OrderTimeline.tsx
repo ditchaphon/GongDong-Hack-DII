@@ -17,12 +17,12 @@ export interface OrderTimelineProps {
 }
 
 const STEP_LABEL: Record<V4OrderStatus, string> = {
-  REQUESTED: 'ส่งคำขอ',
-  ACCEPTED: 'ผู้ขายรับ',
+  REQUESTED: 'รอยืนยัน',
+  ACCEPTED: 'ยืนยันส่ง',
   SCHEDULED: 'นัดรับ',
-  PAID: 'ชำระเงิน',
-  SHIPPED: 'จัดส่ง',
-  COMPLETED: 'สำเร็จ',
+  PAID: 'เก็บเงินปลายทาง',
+  SHIPPED: 'จัดส่งแล้ว',
+  COMPLETED: 'รีวิว',
   REJECTED: 'ถูกปฏิเสธ',
   EXPIRED: 'หมดเวลา',
   CANCELLED: 'ยกเลิก',

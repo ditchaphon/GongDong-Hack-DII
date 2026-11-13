@@ -190,7 +190,7 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
           <div className="flex items-center justify-between px-3 pt-2 text-[10px] text-slate-400">
             <span className="inline-flex items-center gap-1">
               <ImageOff className="w-3 h-3" />
-              ส่งรูปในแชทไม่ได้ · ใช้แบบฟอร์มสลิป/รายงานแทน
+              ส่งรูปในแชทไม่ได้ · ใช้แบบฟอร์มรายงานปัญหาแทน
             </span>
             {onProposeSchedule && (
               <button

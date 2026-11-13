@@ -18,6 +18,8 @@ export interface Book {
   author: string;
   publisher?: string;
   isbn?: string;
+  description?: string;
+  categories?: string[];
   isSet: boolean;
   totalVolumes?: number;
   price: number;
@@ -71,7 +73,6 @@ export interface Order {
     note?: string;
   };
   shippingAddress?: Address;
-  slipUrl?: string;
   trackingNumber?: string;
   status: OrderStatus;
   createdAt: string;
@@ -164,6 +165,8 @@ export interface ListingDraft {
   title: string;
   author: string;
   publisher: string;
+  description: string;
+  categories: string[];
   originalPrice: number;
   totalVolumes: number;
   missingVolumes: number[];

@@ -10,8 +10,6 @@ import {
   ChatRoom,
   ConfirmSheet,
   OrderSteps,
-  MockQr,
-  CameraCapture,
 } from '@/components/v4';
 import { useV4Orders } from '@/hooks/useV4Orders';
 import { useSeller } from '@/hooks/useSeller';
@@ -27,17 +25,12 @@ import {
   CheckCircle2,
   AlertTriangle,
   ExternalLink,
-  QrCode,
-  ScanLine,
   Hourglass,
-  Wallet,
   Copy,
   Package,
-  EyeOff,
   Camera,
   ShieldCheck,
   Coins,
-  X,
 } from 'lucide-react';
 
 const GRADE_LABEL: Record<string, string> = {
@@ -46,8 +39,6 @@ const GRADE_LABEL: Record<string, string> = {
   WELL_LOVED: 'อ่านทั่วไป',
   WORN_BUT_READABLE: 'เน้นอ่าน',
 };
-
-const CARRIERS = ['Flash Express', 'Kerry Express', 'ไปรษณีย์ไทย', 'J&T Express', 'SPX Express'];
 
 function trackingUrl(carrier: string | undefined, number: string) {
   const n = encodeURIComponent(number);
@@ -65,9 +56,6 @@ function trackingUrl(carrier: string | undefined, number: string) {
   }
 }
 
-const fmtDateTime = (iso: string) =>
-  new Date(iso).toLocaleString('th-TH', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
-
 const buyerAlias = (order: V4Order) => `ผู้ซื้อ #${order.id.slice(-4)}`;
 
 export default function OrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -80,9 +68,8 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
     acceptOrder,
     rejectOrder,
     cancelOrder,
-    markShipped,
+    complete,
     openDispute,
-    verifyHandover,
     isMineAsBuyer,
   } = useV4Orders();
   const { credits } = useSeller();
@@ -94,11 +81,6 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
   const [rejectOpen, setRejectOpen] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [disputeOpen, setDisputeOpen] = useState(false);
-  const [qrOpen, setQrOpen] = useState(false);
-  const [scanOpen, setScanOpen] = useState(false);
-  const [slipOpen, setSlipOpen] = useState(false);
-  const [carrier, setCarrier] = useState(CARRIERS[0]);
-  const [tracking, setTracking] = useState('');
 
   if (!order) {
     return (
@@ -119,10 +101,10 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
   const headline = (() => {
     const s = order.status;
     if (s === 'REQUESTED') return isBuyer ? 'รอผู้ขายตอบรับคำขอ' : 'มีคำขอซื้อใหม่ · ตอบรับเพื่อเริ่มขาย';
-    if (s === 'SCHEDULED') return isBuyer ? 'นัดรับแล้ว · เปิด QR ตอนรับของ' : 'นัดรับแล้ว · สแกน QR ผู้ซื้อเพื่อปิดการขาย';
-    if (s === 'ACCEPTED') return isBuyer ? 'ผู้ขายรับคำขอแล้ว · ชำระเงิน' : 'รอผู้ซื้อชำระเงิน';
-    if (s === 'PAID') return isBuyer ? 'ผู้ขายกำลังเตรียมจัดส่ง' : 'ผู้ซื้อชำระเงินแล้ว · จัดส่งได้เลย';
-    if (s === 'SHIPPED') return isBuyer ? 'ขนส่งกำลังนำส่ง' : 'ส่งแล้ว · รอผู้ซื้อยืนยันรับของ';
+    if (s === 'SCHEDULED') return isBuyer ? 'นัดรับแล้ว · จ่ายเงินสดหน้างาน' : 'นัดรับแล้ว · เก็บเงินสดและยืนยันส่งมอบ';
+    if (s === 'ACCEPTED') return isBuyer ? 'ผู้ขายรับคำขอแล้ว · รอยืนยันการส่ง' : 'ยืนยันการส่งหนังสือ';
+    if (s === 'PAID') return isBuyer ? 'รอรับของ · จ่ายเงินปลายทาง' : 'ส่งแล้ว · รอเก็บเงินปลายทาง';
+    if (s === 'SHIPPED') return isBuyer ? 'รอรับของ · จ่ายเงินปลายทาง' : 'ส่งแล้ว · รอเก็บเงินปลายทาง';
     if (s === 'COMPLETED') return isBuyer ? 'ได้รับหนังสือแล้ว' : 'ปิดการขายสำเร็จ';
     return meta.label;
   })();
@@ -131,15 +113,6 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
     const result = acceptOrder(order.id);
     setAcceptOpen(false);
     setToast(result.ok ? 'รับออเดอร์แล้ว · ใช้ 1 เครดิต แชทเปิดแล้ว' : result.error || 'รับออเดอร์ไม่สำเร็จ');
-  };
-
-  const handleShip = () => {
-    if (tracking.trim().length < 6) {
-      setToast('กรอกเลขพัสดุให้ถูกต้อง');
-      return;
-    }
-    markShipped(order.id, { ...order.shipping, carrier, trackingNumber: tracking.trim().toUpperCase() });
-    setToast('แจ้งเลขพัสดุแล้ว · ผู้ซื้อติดตามได้ทันที');
   };
 
   const copy = async (text: string) => {
@@ -251,9 +224,13 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
             <p className="text-[11px] text-slate-500 leading-relaxed">
               ผู้ขายต้องตอบรับก่อนจึงจะไปขั้นต่อไปได้ · แชทจะเปิดเมื่อผู้ขายรับคำขอ · ยังไม่ต้องจ่ายเงิน
             </p>
-            {order.delivery === 'MEETUP' ? meetupCard : (
-              <AddressBlock order={order} />
-            )}
+            <div className="flex items-start gap-2 p-3 rounded-xl bg-slate-50 border border-dashed border-slate-300 text-[11px] text-slate-500 leading-relaxed">
+              <MapPin className="w-4 h-4 shrink-0 mt-0.5 text-slate-400" />
+              <span>
+                สถานที่และเวลารับหนังสือจะแสดงหลังผู้ขายยืนยันคำขอ
+                (ผู้ขายใช้ 1 เครดิตเพื่อยืนยัน)
+              </span>
+            </div>
             <button type="button" onClick={() => setCancelOpen(true)} className="w-full text-[11px] font-medium text-slate-400 hover:text-rose-500 pt-1">
               ยกเลิกคำขอนี้
             </button>
@@ -262,24 +239,14 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 
         {isBuyer && order.status === 'SCHEDULED' && (
           <>
-            <Panel icon={<QrCode className="w-4 h-4 text-emerald-700" />} title="QR รับของของคุณ">
+            <Panel icon={<Package className="w-4 h-4 text-emerald-700" />} title="จ่ายเงินสดเมื่อรับหนังสือ">
               <p className="text-[11px] text-slate-500 leading-relaxed">
-                ตรวจหนังสือให้ตรงเกรดและจ่ายเงินก่อน แล้วเปิด QR ให้ผู้ขายสแกนเพื่อปิดการขาย
+                ตรวจหนังสือให้ตรงเกรด แล้วจ่ายเงินสดให้ผู้ขายหน้างาน
+                · ระบบไม่มี QR หรือสลิปในออเดอร์นี้
               </p>
-              <button
-                type="button"
-                onClick={() => setQrOpen(true)}
-                className="w-full flex items-center gap-3 p-3 rounded-2xl bg-emerald-50 border border-emerald-200 text-left hover:bg-emerald-100/60"
-              >
-                <div className="relative w-16 h-16 rounded-xl bg-white border border-emerald-200 overflow-hidden flex items-center justify-center">
-                  <MockQr value={order.handoverCode ?? order.id} size={56} className="blur-[3px] opacity-60" />
-                  <EyeOff className="absolute w-5 h-5 text-emerald-800" />
-                </div>
-                <div className="flex-1">
-                  <p className="text-sm font-bold text-emerald-900">แตะเพื่อแสดง QR</p>
-                  <p className="text-[11px] text-emerald-700">ใช้ตอนเจอผู้ขายเท่านั้น · ห้ามส่งในแชท</p>
-                </div>
-              </button>
+              <p className="text-xs font-bold text-slate-800">
+                ยอดที่ต้องจ่าย ฿{order.total.toLocaleString()}
+              </p>
             </Panel>
             <Panel icon={<MapPin className="w-4 h-4 text-teal-600" />} title="รายละเอียดการนัดรับ">
               {meetupCard}
@@ -288,34 +255,23 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
         )}
 
         {isBuyer && order.status === 'ACCEPTED' && order.delivery === 'PARCEL' && (
-          <Panel icon={<Wallet className="w-4 h-4 text-sky-600" />} title="ชำระเงินเพื่อให้ผู้ขายเริ่มจัดส่ง">
+          <Panel icon={<Hourglass className="w-4 h-4 text-sky-600" />} title="รอผู้ขายยืนยันการส่ง">
             <p className="text-[11px] text-slate-500 leading-relaxed">
-              สแกน QR พร้อมเพย์ของระบบและแนบสลิป · กองดองพักเงินไว้ และโอนให้ผู้ขายหลังคุณยืนยันรับของ
+              ผู้ขายกำลังเตรียมหนังสือและจัดส่ง · จ่ายเงินสดตอนรับพัสดุ
+              · ระบบไม่มีการโอนเงินออนไลน์
             </p>
-            <Button fullWidth onClick={() => router.push(`/orders/${order.id}/pay`)}>
-              ชำระเงิน ฿{order.total.toLocaleString()}
-            </Button>
           </Panel>
         )}
 
-        {isBuyer && order.status === 'PAID' && (
-          <Panel icon={<Package className="w-4 h-4 text-sky-600" />} title="ผู้ขายกำลังเตรียมจัดส่ง">
-            <p className="text-[11px] text-slate-600 leading-relaxed">
-              ผู้ขายต้องส่งภายใน{' '}
-              <strong>{order.shipByISO ? fmtDateTime(order.shipByISO) : `${order.shipWithinDays ?? 2} วัน`}</strong>{' '}
-              · เมื่อส่งแล้วคุณจะได้เลขพัสดุไว้ติดตาม
-            </p>
-            <AddressBlock order={order} />
-          </Panel>
-        )}
-
-        {isBuyer && order.status === 'SHIPPED' && (
-          <Panel icon={<Truck className="w-4 h-4 text-violet-600" />} title="ขนส่งกำลังนำส่ง">
+        {isBuyer && (order.status === 'PAID' || order.status === 'SHIPPED') && (
+          <Panel icon={<Truck className="w-4 h-4 text-violet-600" />} title="รอรับของ · จ่ายเงินปลายทาง">
             {trackingCard}
             <Button fullWidth leftIcon={<Camera className="w-4 h-4" />} onClick={() => router.push(`/orders/${order.id}/receive`)}>
               ได้รับของแล้ว · ถ่ายรูปยืนยัน
             </Button>
-            <p className="text-[10px] text-slate-400 text-center">ถ่ายรูปหนังสือที่ได้รับ + ให้คะแนน แล้วระบบจะโอนเงินให้ผู้ขาย</p>
+            <p className="text-[10px] text-slate-400 text-center">
+              จ่ายเงินสดให้ผู้ขาย/ขนส่งเมื่อรับของ แล้วถ่ายรูปและให้คะแนน
+            </p>
           </Panel>
         )}
 
@@ -339,17 +295,17 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
           <Panel icon={<Hourglass className="w-4 h-4 text-amber-600" />} title="ตอบรับคำขอนี้?">
             <div className="grid grid-cols-2 gap-2 text-[11px]">
               <InfoTile label="ผู้ซื้อเลือก" value={order.delivery === 'MEETUP' ? 'นัดรับ' : 'ส่งพัสดุ'} />
-              <InfoTile label="ค่าส่ง (ระบบคำนวณ)" value={order.shippingFee ? `฿${order.shippingFee}` : 'ไม่มี'} />
+              <InfoTile label="ค่าส่ง (แยกจากค่าหนังสือ)" value={order.shippingFee ? `฿${order.shippingFee}` : 'ไม่มี'} />
             </div>
-            {order.delivery === 'MEETUP' && order.schedule ? (
-              meetupCard
-            ) : (
-              <p className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-[11px] text-slate-600">
-                ส่งภายใน {order.shipWithinDays ?? 2} วันหลังผู้ซื้อชำระเงิน · ที่อยู่จัดส่งจะแสดงหลังชำระเงิน
-              </p>
-            )}
+            <div className="flex items-start gap-2 p-3 rounded-xl bg-slate-50 border border-dashed border-slate-300 text-[11px] text-slate-500 leading-relaxed">
+              <MapPin className="w-4 h-4 shrink-0 mt-0.5 text-slate-400" />
+              <span>
+                สถานที่และเวลารับหนังสือจะแสดงหลังกดรับออเดอร์
+                (ใช้ 1 เครดิต) · ตรวจสอบก่อนตัดสินใจได้จากประเภทการรับ
+              </span>
+            </div>
             <p className="flex items-start gap-1.5 p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-[10px] text-slate-500">
-              <EyeOff className="w-3.5 h-3.5 shrink-0" />
+              <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
               ระบบซ่อนตัวตนผู้ซื้อ เพื่อป้องกันการนัดซื้อขายนอกแอป
             </p>
             <div className="flex items-center justify-between text-[11px] text-slate-500">
@@ -367,12 +323,13 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 
         {!isBuyer && order.status === 'SCHEDULED' && (
           <>
-            <Panel icon={<ScanLine className="w-4 h-4 text-teal-700" />} title="ปิดการขายด้วย QR ผู้ซื้อ">
+            <Panel icon={<Package className="w-4 h-4 text-teal-700" />} title="เก็บเงินสดและยืนยันส่งมอบ">
               <p className="text-[11px] text-slate-500 leading-relaxed">
-                ให้ผู้ซื้อตรวจหนังสือและจ่ายเงินก่อน แล้วสแกน QR บนมือถือของผู้ซื้อเพื่อยืนยันว่าส่งมอบแล้ว
+                ให้ผู้ซื้อตรวจหนังสือและจ่ายเงินสดก่อน แล้วกดยืนยันเพื่อปิดการขาย
+                · ระบบไม่มีการโอนเงินออนไลน์
               </p>
-              <Button fullWidth leftIcon={<ScanLine className="w-4 h-4" />} onClick={() => setScanOpen(true)}>
-                สแกน QR ผู้ซื้อ
+              <Button fullWidth onClick={() => complete(order.id)}>
+                ยืนยันส่งมอบแล้ว
               </Button>
               <button
                 type="button"
@@ -389,59 +346,22 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
         )}
 
         {!isBuyer && order.status === 'ACCEPTED' && order.delivery === 'PARCEL' && (
-          <Panel icon={<Wallet className="w-4 h-4 text-sky-600" />} title="รอผู้ซื้อชำระเงิน">
+          <Panel icon={<Truck className="w-4 h-4 text-sky-600" />} title="ยืนยันการส่ง">
             <p className="text-[11px] text-slate-500 leading-relaxed">
-              เมื่อผู้ซื้อแนบสลิปและระบบตรวจผ่าน จะเห็นที่อยู่จัดส่งและเริ่มนับเวลาส่ง {order.shipWithinDays ?? 2} วัน
-            </p>
-            <SlipRow order={order} onOpen={() => setSlipOpen(true)} />
-          </Panel>
-        )}
-
-        {!isBuyer && order.status === 'PAID' && (
-          <Panel icon={<Package className="w-4 h-4 text-sky-600" />} title="จัดส่งหนังสือ">
-            <SlipRow order={order} onOpen={() => setSlipOpen(true)} />
-            <p className="flex items-center gap-1.5 p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-[11px] text-amber-900">
-              <Clock className="w-3.5 h-3.5 shrink-0" />
-              ต้องส่งภายใน {order.shipByISO ? fmtDateTime(order.shipByISO) : `${order.shipWithinDays ?? 2} วัน`}
+              เตรียมหนังสือและจัดส่ง · ผู้ซื้อจ่ายเงินสดตอนรับพัสดุ
             </p>
             <AddressBlock order={order} />
-            <div className="space-y-2 pt-1">
-              <span className="text-xs font-bold text-slate-700">ส่งแล้ว? ใส่เลขพัสดุ</span>
-              <div className="flex flex-wrap gap-1.5">
-                {CARRIERS.map((c) => (
-                  <button
-                    key={c}
-                    type="button"
-                    onClick={() => setCarrier(c)}
-                    aria-pressed={carrier === c}
-                    className={clsx(
-                      'px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border',
-                      carrier === c ? 'bg-[var(--color-primary)] border-[var(--color-primary)] text-white' : 'bg-white border-slate-200 text-slate-600'
-                    )}
-                  >
-                    {c}
-                  </button>
-                ))}
-              </div>
-              <input
-                value={tracking}
-                onChange={(event) => setTracking(event.target.value)}
-                placeholder="เลขพัสดุ เช่น TH0123456789"
-                aria-label="เลขพัสดุ"
-                className="w-full min-h-[46px] px-3 rounded-xl border border-slate-200 font-mono text-sm uppercase focus:outline-none focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
-              />
-              <Button fullWidth leftIcon={<Truck className="w-4 h-4" />} onClick={handleShip}>
-                ยืนยันการจัดส่ง
-              </Button>
-            </div>
+            <Button fullWidth onClick={() => router.push(`/orders/${order.id}/tracking?role=seller`)}>
+              ยืนยันการส่งและใส่เลขพัสดุ
+            </Button>
           </Panel>
         )}
 
-        {!isBuyer && order.status === 'SHIPPED' && (
-          <Panel icon={<Truck className="w-4 h-4 text-violet-600" />} title="รอผู้ซื้อยืนยันรับของ">
+        {!isBuyer && (order.status === 'PAID' || order.status === 'SHIPPED') && (
+          <Panel icon={<Package className="w-4 h-4 text-violet-600" />} title="รอเก็บเงินปลายทาง">
             {trackingCard}
             <p className="text-[11px] text-slate-500 leading-relaxed">
-              เมื่อผู้ซื้อถ่ายรูปยืนยันรับของ ระบบจะโอนเงินให้คุณทันที · ครบ 7 วันปิดให้อัตโนมัติ
+              ส่งแล้ว · รอผู้ซื้อรับของและจ่ายเงินสด · ระบบไม่พักเงิน
             </p>
           </Panel>
         )}
@@ -449,7 +369,7 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
         {!isBuyer && order.status === 'COMPLETED' && (
           <Panel icon={<CheckCircle2 className="w-4 h-4 text-emerald-600" />} title="ปิดการขายแล้ว">
             <div className="flex items-center justify-between p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-[11px] text-emerald-900">
-              <span className="inline-flex items-center gap-1.5 font-bold"><Wallet className="w-4 h-4" />ได้รับเงินแล้ว</span>
+              <span className="inline-flex items-center gap-1.5 font-bold"><Coins className="w-4 h-4" />เก็บเงินปลายทางแล้ว</span>
               <span className="font-black text-sm">฿{order.amount.toLocaleString()}</span>
             </div>
             {order.receivedPhoto && (
@@ -507,52 +427,6 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
           </button>
         )}
       </div>
-
-      {/* Buyer QR full screen */}
-      {qrOpen && order.handoverCode && (
-        <div className="fixed inset-0 z-50 bg-slate-900/80 flex items-center justify-center p-6" role="dialog" aria-modal="true" aria-label="QR รับของ">
-          <div className="w-full max-w-[340px] bg-white rounded-3xl p-6 text-center space-y-4 animate-pop">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-slate-500">ออเดอร์ #{order.id}</span>
-              <button type="button" onClick={() => setQrOpen(false)} aria-label="ปิด" className="p-1.5 rounded-full hover:bg-slate-100">
-                <X className="w-4 h-4 text-slate-500" />
-              </button>
-            </div>
-            <h2 className="text-lg font-extrabold text-slate-900">ให้ผู้ขายสแกน QR นี้</h2>
-            <div className="mx-auto w-fit p-3 rounded-2xl border-4 border-[var(--color-primary)]">
-              <MockQr value={order.handoverCode} size={210} />
-            </div>
-            <p className="text-[11px] text-slate-500 leading-relaxed">
-              สแกนแล้วออเดอร์ปิดทันที · เปิดเฉพาะเมื่อได้รับหนังสือและจ่ายเงินแล้ว
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* Slip viewer */}
-      {slipOpen && order.slipImage && (
-        <button
-          type="button"
-          onClick={() => setSlipOpen(false)}
-          className="fixed inset-0 z-50 bg-slate-900/85 flex items-center justify-center p-6"
-          aria-label="ปิดสลิป"
-        >
-          <img src={order.slipImage} alt="สลิปการโอน" className="max-h-[80vh] rounded-2xl shadow-2xl" />
-        </button>
-      )}
-
-      <CameraCapture
-        isOpen={scanOpen}
-        mode="SCAN"
-        title="สแกน QR ผู้ซื้อ"
-        hint="เล็ง QR บนมือถือผู้ซื้อให้อยู่ในกรอบ"
-        onClose={() => setScanOpen(false)}
-        onScan={() => {
-          const ok = verifyHandover(order.id, order.handoverCode ?? '');
-          setScanOpen(false);
-          setToast(ok ? 'สแกนสำเร็จ · ปิดการขายแล้ว' : 'QR ไม่ถูกต้อง ลองอีกครั้ง');
-        }}
-      />
 
       <ConfirmSheet
         isOpen={acceptOpen}
@@ -667,26 +541,6 @@ function AddressBlock({ order }: { order: V4Order }) {
       {order.shipping.receiverAddress && <p className="leading-snug">{order.shipping.receiverAddress}</p>}
       <p className="text-[10px] text-slate-400">ไม่มีเบอร์โทรให้อีกฝ่ายเห็น · ติดต่อผ่านแชทในออเดอร์</p>
     </div>
-  );
-}
-
-function SlipRow({ order, onOpen }: { order: V4Order; onOpen: () => void }) {
-  if (!order.slipImage) {
-    return (
-      <p className="p-2.5 rounded-xl bg-slate-50 border border-dashed border-slate-300 text-[11px] text-slate-500 text-center">
-        ยังไม่มีสลิป
-      </p>
-    );
-  }
-  return (
-    <button type="button" onClick={onOpen} className="w-full flex items-center gap-3 p-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-left">
-      <img src={order.slipImage} alt="สลิป" className="w-12 h-16 rounded-lg object-cover bg-slate-100" />
-      <div className="flex-1 text-[11px]">
-        <p className="font-bold text-slate-800">สลิปการชำระเงิน</p>
-        <p className="text-emerald-700">ตรวจผ่านแล้ว · ระบบพักเงินไว้ ฿{order.total.toLocaleString()}</p>
-      </div>
-      <span className="text-[11px] font-semibold text-[var(--color-primary-dark)]">ดูสลิป</span>
-    </button>
   );
 }
 

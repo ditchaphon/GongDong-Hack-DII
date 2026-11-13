@@ -18,7 +18,6 @@ import {
   mapDirectionsUrl,
   mapEmbedUrl,
   shipDeadlineDays,
-  shipModeLabel,
   upcomingDates,
 } from '@/lib/delivery';
 import {
@@ -312,8 +311,8 @@ export default function CartPage() {
               <div className="flex items-start gap-2 p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-[11px] text-slate-600 leading-relaxed">
                 <Truck className="w-3.5 h-3.5 shrink-0 mt-0.5 text-slate-400" />
                 <span>
-                  {shop ? shipModeLabel(shop.shipMode, shop.shipWithinDays) : 'ผู้ขายส่งภายใน 2 วันหลังชำระเงิน'}
-                  {shop ? ` · ส่งจาก${shop.province}` : ''} · ค่าส่ง ฿{parcelFee} คำนวณโดยระบบ
+                  ผู้ขายยืนยันการส่ง · เก็บเงินปลายทาง
+                  {shop ? ` · ส่งจาก${shop.province}` : ''} · ค่าส่ง ฿{parcelFee} แยกจากค่าหนังสือ
                 </span>
               </div>
             </div>
@@ -327,13 +326,13 @@ export default function CartPage() {
             <li className="flex gap-2"><Hourglass className="w-3.5 h-3.5 text-amber-500 shrink-0 mt-0.5" />ผู้ขายต้องตอบรับคำขอก่อน (ภายใน 24 ชม.)</li>
             {delivery === 'MEETUP' ? (
               <>
-                <li className="flex gap-2"><Check className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />รับแล้ว → แชทในออเดอร์เปิด และคุณได้ QR รับของ</li>
-                <li className="flex gap-2"><Check className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />เจอกัน ตรวจหนังสือ จ่ายเงิน แล้วให้ผู้ขายสแกน QR</li>
+                <li className="flex gap-2"><Check className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />รับแล้ว → แชทในออเดอร์เปิด และนัดวันรับ</li>
+                <li className="flex gap-2"><Check className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />เจอกัน ตรวจหนังสือ แล้วจ่ายเงินสดหน้างาน</li>
               </>
             ) : (
               <>
-                <li className="flex gap-2"><Check className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />รับแล้ว → ชำระเงิน (ระบบพักเงินไว้ให้)</li>
-                <li className="flex gap-2"><Check className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />ผู้ขายส่งของพร้อมเลขพัสดุ → ถ่ายรูปยืนยันเมื่อได้รับ</li>
+                <li className="flex gap-2"><Check className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />ผู้ขายยืนยันการส่ง (ค่าส่งตกลงกันเอง)</li>
+                <li className="flex gap-2"><Check className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />รับของ จ่ายเงินปลายทาง → ถ่ายรูปยืนยัน</li>
               </>
             )}
           </ol>

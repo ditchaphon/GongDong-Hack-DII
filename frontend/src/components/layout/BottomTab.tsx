@@ -4,7 +4,7 @@ import React from 'react';
 import clsx from 'clsx';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Home, Bell, Package, Store, PlusCircle, UserRound } from 'lucide-react';
+import { Home, Package, Store, PlusCircle, UserRound } from 'lucide-react';
 import { useAppMode } from '@/hooks/useAppMode';
 
 export interface BottomTabProps {
@@ -32,7 +32,6 @@ export const BottomTab: React.FC<BottomTabProps> = ({
 
   const buyerTabs: Tab[] = [
     { id: 'home', label: 'หน้าแรก', href: '/', icon: Home, exact: true },
-    { id: 'wishlist', label: 'ฝากตามหา', href: '/wishlist', icon: Bell },
     { id: 'orders', label: 'ออเดอร์', href: '/orders', icon: Package, badge: orderBadge },
     { id: 'profile', label: 'โปรไฟล์', href: '/profile', icon: UserRound },
   ];

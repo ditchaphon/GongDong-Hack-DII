@@ -43,15 +43,15 @@ export default function OrderTrackingPage({
   }
 
   const isParcel = order.delivery === 'PARCEL';
-  const shipped = order.status === 'SHIPPED' || order.status === 'COMPLETED';
+  const shipped = order.status === 'PAID' || order.status === 'SHIPPED' || order.status === 'COMPLETED';
 
   const handleSubmit = () => {
     if (!isParcel) {
       setError('ออเดอร์นี้เป็นการนัดรับ ไม่ต้องกรอกพัสดุ');
       return;
     }
-    if (order.status !== 'PAID') {
-      setError('ต้องรอสลิปผ่านก่อนจึงแจ้งจัดส่งได้');
+    if (order.status !== 'ACCEPTED' && order.status !== 'PAID') {
+      setError('ต้องรอผู้ขายกดรับคำขอก่อนจึงแจ้งจัดส่งได้');
       return;
     }
     if (value.trackingNumber.trim().length < 8) {
@@ -69,7 +69,7 @@ export default function OrderTrackingPage({
       boxPhoto: value.boxPhoto,
       receiverName: order.shipping?.receiverName,
     });
-    setToastMessage('แจ้งจัดส่งแล้ว · รอผู้ซื้อกดรับของ');
+    setToastMessage('ยืนยันการส่งแล้ว · รอผู้ซื้อรับของและจ่ายเงินปลายทาง');
     setTimeout(() => router.push(`/orders/${order.id}?role=seller`), 800);
   };
 
@@ -83,13 +83,13 @@ export default function OrderTrackingPage({
       <div className="p-4 space-y-4">
         {!isParcel ? (
           <div className="rounded-2xl border border-teal-200 bg-teal-50 p-4 text-[11px] text-teal-900 leading-relaxed">
-            ออเดอร์นี้เป็นนัดรับ · ใช้หน้าจอนัดรับและรหัสรับของแทนการจัดส่ง
+            ออเดอร์นี้เป็นนัดรับ · ใช้หน้าจอนัดรับและยืนยันส่งมอบแทนการจัดส่ง
           </div>
         ) : role === 'SELLER' ? (
           <>
             <div className="rounded-2xl border border-slate-200 bg-white p-4 text-[11px] text-slate-600 flex items-start gap-2 leading-relaxed">
               <Info className="w-4 h-4 shrink-0 mt-0.5 text-slate-400" />
-              ส่งภายใน 48 ชม. หลังสลิปผ่าน · กรอกขนส่ง เลขพัสดุ และแนบรูปกล่อง
+              กรอกขนส่ง เลขพัสดุ และแนบรูปกล่อง · ผู้ซื้อจ่ายเงินปลายทาง
               (ไม่ต้องใช้เบอร์โทรผู้รับในแชท)
             </div>
 
@@ -103,7 +103,7 @@ export default function OrderTrackingPage({
                   {order.shipping?.carrier} · {order.shipping?.trackingNumber}
                 </p>
                 <p className="text-[11px] text-slate-500">
-                  รอผู้ซื้อกดรับของ · ระบบปิดออเดอร์อัตโนมัติใน 7 วัน
+                  รอผู้ซื้อรับของและจ่ายเงินปลายทาง · ระบบปิดออเดอร์อัตโนมัติใน 7 วัน
                 </p>
               </div>
             ) : (
@@ -128,7 +128,7 @@ export default function OrderTrackingPage({
 
             {!shipped && (
               <Button fullWidth size="lg" onClick={handleSubmit}>
-                แจ้งจัดส่ง
+                ยืนยันการส่ง
               </Button>
             )}
           </>
@@ -156,8 +156,7 @@ export default function OrderTrackingPage({
               </>
             ) : (
               <p className="text-[11px] text-slate-500 leading-relaxed">
-                ผู้ขายต้องส่งภายใน 48 ชม. หลังตรวจสลิปผ่าน ·
-                ระบบจะแจ้งเตือนเมื่อมีเลขพัสดุ
+                รอผู้ขายยืนยันการส่ง · จ่ายเงินสดเมื่อรับพัสดุ
               </p>
             )}
           </div>

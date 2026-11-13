@@ -90,7 +90,6 @@ const MEET_GATE = {
   landmark: 'ประตูหน้า มช. ข้างป้ายมหาวิทยาลัย',
 };
 
-const SLIP = 'https://images.unsplash.com/photo-1554224155-6726b3ff858f?w=500';
 const BOX = 'https://images.unsplash.com/photo-1607166452427-7e4477079cb9?w=600';
 
 /**
@@ -120,7 +119,6 @@ export const MOCK_V4_ORDERS: V4Order[] = [
       proposedBy: 'BUYER',
       confirmedByBuyer: true,
     },
-    slipCheck: 'NONE',
     creditSpent: false,
   },
   {
@@ -137,7 +135,6 @@ export const MOCK_V4_ORDERS: V4Order[] = [
     createdAtISO: hoursAgo(5),
     updatedAtISO: hoursAgo(4),
     shipWithinDays: 2,
-    slipCheck: 'NONE',
     creditSpent: true,
     shipping: {
       receiverName: 'สกาย',
@@ -164,13 +161,12 @@ export const MOCK_V4_ORDERS: V4Order[] = [
       proposedBy: 'BUYER',
       confirmedByBuyer: true,
     },
-    slipCheck: 'NONE',
     handoverCode: '482913',
     creditSpent: true,
   },
   {
     id: 'ORD-V4-1011',
-    status: 'SHIPPED',
+    status: 'PAID',
     delivery: 'PARCEL',
     buyer: MOCK_BUYER,
     shop: SHOP_OTAKU,
@@ -182,8 +178,6 @@ export const MOCK_V4_ORDERS: V4Order[] = [
     createdAtISO: hoursAgo(80),
     updatedAtISO: hoursAgo(18),
     shipWithinDays: 2,
-    slipCheck: 'PASSED',
-    slipImage: SLIP,
     creditSpent: true,
     shipping: {
       carrier: 'Flash Express',
@@ -214,7 +208,6 @@ export const MOCK_V4_ORDERS: V4Order[] = [
       confirmedByBuyer: true,
     },
     handoverCodeVerifiedAtISO: hoursAgo(150),
-    slipCheck: 'NONE',
     creditSpent: true,
   },
   {
@@ -230,7 +223,6 @@ export const MOCK_V4_ORDERS: V4Order[] = [
     total: 1850,
     createdAtISO: hoursAgo(50),
     updatedAtISO: hoursAgo(26),
-    slipCheck: 'NONE',
     creditSpent: false,
   },
 
@@ -254,7 +246,6 @@ export const MOCK_V4_ORDERS: V4Order[] = [
       proposedBy: 'BUYER',
       confirmedByBuyer: true,
     },
-    slipCheck: 'NONE',
     creditSpent: false,
   },
   {
@@ -270,7 +261,6 @@ export const MOCK_V4_ORDERS: V4Order[] = [
     createdAtISO: hoursAgo(20),
     updatedAtISO: hoursAgo(20),
     shipWithinDays: 1,
-    slipCheck: 'NONE',
     creditSpent: false,
     shipping: {
       receiverName: 'ธาม',
@@ -290,7 +280,6 @@ export const MOCK_V4_ORDERS: V4Order[] = [
     createdAtISO: hoursAgo(3),
     updatedAtISO: hoursAgo(2),
     shipWithinDays: 1,
-    slipCheck: 'NONE',
     creditSpent: true,
     shipping: {
       receiverName: 'ธาม',
@@ -312,9 +301,6 @@ export const MOCK_V4_ORDERS: V4Order[] = [
     shipWithinDays: 1,
     // Rounded to the hour so server and client render the same text.
     shipByISO: new Date(Math.ceil(Date.now() / 3600000) * 3600000 + 21 * 3600000).toISOString(),
-    slipCheck: 'PASSED',
-    slipUploadedAtISO: hoursAgo(2),
-    slipImage: SLIP,
     creditSpent: true,
     shipping: {
       receiverName: 'ธาม',
@@ -341,12 +327,11 @@ export const MOCK_V4_ORDERS: V4Order[] = [
       confirmedByBuyer: true,
     },
     handoverCode: '730215',
-    slipCheck: 'NONE',
     creditSpent: true,
   },
   {
     id: 'ORD-V4-1007',
-    status: 'SHIPPED',
+    status: 'PAID',
     delivery: 'PARCEL',
     buyer: MOCK_BUYER_2,
     shop: MOCK_SHOP,
@@ -356,8 +341,6 @@ export const MOCK_V4_ORDERS: V4Order[] = [
     total: 1900,
     createdAtISO: hoursAgo(72),
     updatedAtISO: hoursAgo(20),
-    slipCheck: 'PASSED',
-    slipImage: SLIP,
     creditSpent: true,
     shipping: {
       carrier: 'Flash Express',
@@ -379,8 +362,6 @@ export const MOCK_V4_ORDERS: V4Order[] = [
     total: 165,
     createdAtISO: hoursAgo(220),
     updatedAtISO: hoursAgo(120),
-    slipCheck: 'PASSED',
-    slipImage: SLIP,
     creditSpent: true,
     shipping: {
       carrier: 'Kerry Express',
@@ -410,7 +391,6 @@ export const MOCK_V4_ORDERS: V4Order[] = [
     total: 175,
     createdAtISO: hoursAgo(60),
     updatedAtISO: hoursAgo(10),
-    slipCheck: 'NONE',
     creditSpent: true,
     dispute: {
       reason: 'ผู้ซื้อไม่มาตามนัด',

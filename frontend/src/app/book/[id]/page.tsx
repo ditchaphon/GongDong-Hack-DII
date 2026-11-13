@@ -12,7 +12,7 @@ import {
   Toast,
 } from '@/components/ui';
 import { PhotoGallery, ConfirmSheet, CartAddedSheet, CartAddedState } from '@/components/v4';
-import { calcParcelFee, shipModeLabel } from '@/lib/delivery';
+import { calcParcelFee } from '@/lib/delivery';
 import { MOCK_BOOKS } from '@/mocks/books';
 import { getShopById } from '@/mocks/shops';
 import { useCart } from '@/hooks/useCart';
@@ -175,6 +175,19 @@ export default function BookDetailPage({
 
         <h1 className="text-xl font-bold text-slate-900 leading-snug">{book.title}</h1>
 
+        {book.categories && book.categories.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {book.categories.map((category) => (
+              <span
+                key={category}
+                className="px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-[10px] font-semibold text-emerald-800"
+              >
+                {category}
+              </span>
+            ))}
+          </div>
+        )}
+
         <div className="text-xs text-slate-500 space-y-0.5">
           <p>
             ผู้แต่ง: <span className="font-medium text-slate-800">{book.author}</span>
@@ -216,6 +229,11 @@ export default function BookDetailPage({
           ราคาปก {book.originalPrice ? `฿${book.originalPrice.toLocaleString()}` : 'ไม่ระบุ'} ·
           เทียบกับร้านอื่นได้จากหน้าแรก
         </p>
+        {book.description && (
+          <p className="text-xs text-slate-600 leading-relaxed pt-2 border-t border-slate-50 whitespace-pre-line">
+            {book.description}
+          </p>
+        )}
       </div>
 
       {/* Delivery options — shown before the condition report */}
@@ -269,11 +287,11 @@ export default function BookDetailPage({
               </span>
             </div>
             <p className="text-[11px] text-slate-500 leading-relaxed">
-              {shop ? shipModeLabel(shop.shipMode, shop.shipWithinDays) : 'ผู้ขายส่งภายใน 2 วันหลังชำระเงิน'}
+              ผู้ขายยืนยันการส่ง · เก็บเงินปลายทาง
               {shop ? ` · ส่งจาก${shop.province}` : ''}
             </p>
             <p className="text-[10px] text-slate-400">
-              ค่าส่งคำนวณโดยระบบตามจำนวนเล่มและจังหวัดปลายทาง · เงินถูกพักไว้จนคุณได้รับของ
+              ค่าส่งแยกจากค่าหนังสือ · จ่ายเงินสดตอนรับพัสดุ
             </p>
           </div>
         )}

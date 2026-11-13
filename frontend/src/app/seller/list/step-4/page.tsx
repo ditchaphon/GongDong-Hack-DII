@@ -57,14 +57,14 @@ export default function SellerListStep4Page() {
     <div className="flex flex-col min-h-screen bg-slate-50 select-none pb-32">
       <TopBar title="ตั้งราคาและวิธีรับ" onBack={() => router.push('/seller/list/step-3')} />
 
-      <Stepper currentStep={4} />
+      <Stepper currentStep={5} />
 
       <div className="p-4 space-y-4">
         {/* Price */}
         <div className="bg-white rounded-2xl border border-slate-200 p-4 space-y-3">
           <div className="flex items-center justify-between">
             <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-              {isSet ? 'ขั้นที่ 4 · ราคาขายทั้งชุด (S3B)' : 'ขั้นที่ 4 · ราคาขาย (S3)'}
+              {isSet ? 'ขั้นที่ 5 · ราคาขายทั้งชุด' : 'ขั้นที่ 5 · ราคาขาย'}
             </h3>
             <GradeBadge grade={grade} size="sm" />
           </div>
@@ -146,7 +146,7 @@ export default function SellerListStep4Page() {
                 นัดรับ
               </span>
               <span className="block text-[11px] text-slate-500 mt-0.5">
-                ผู้ซื้อเลือกจากจุดนัดของร้าน ({pointCount} จุด) · ตรวจหนังสือก่อนจ่าย · สแกน QR ปิดการขาย
+                ผู้ซื้อเลือกจากจุดนัดของร้าน ({pointCount} จุด) · ตรวจหนังสือก่อนจ่ายเงินสด
               </span>
             </span>
             <span className="text-xs font-bold text-emerald-700">ฟรี</span>
@@ -178,7 +178,7 @@ export default function SellerListStep4Page() {
               </span>
               <span className="block text-[11px] text-slate-500 mt-0.5">
                 {canParcel
-                  ? `ค่าส่งระบบคำนวณให้ผู้ซื้อ · ${shop?.shipMode === 'DAILY' ? 'ส่งภายใน 1 วัน' : `ส่งภายใน ${shop?.shipWithinDays ?? 2} วัน`}หลังชำระเงิน`
+                  ? 'ค่าส่งแยกจากค่าหนังสือ · เก็บเงินปลายทางเมื่อรับพัสดุ'
                   : 'ต้องยืนยันตัวตน (KYC) ก่อนเปิดส่งพัสดุ'}
               </span>
             </span>
@@ -205,7 +205,7 @@ export default function SellerListStep4Page() {
           </div>
           <div className="flex justify-between text-slate-500">
             <span>ค่าส่ง</span>
-            <span className="font-semibold text-slate-800">ระบบคำนวณตอนผู้ซื้อสั่ง</span>
+            <span className="font-semibold text-slate-800">แยกจากค่าหนังสือ · ตกลงกันเอง</span>
           </div>
           <div className="pt-2 border-t border-slate-100 flex justify-between items-baseline text-sm">
             <span className="font-bold text-slate-900">คุณได้รับ</span>

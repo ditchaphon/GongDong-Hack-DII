@@ -39,7 +39,7 @@ export default function SellerListStep2Page() {
 
   const handleNext = () => {
     if (taken < slots.length) {
-      setError(`ถ่ายรูปให้ครบ ${slots.length} มุมก่อน (ถ่ายแล้ว ${taken})`);
+      setError(`เพิ่มรูปให้ครบ ${slots.length} มุมก่อน (มีแล้ว ${taken})`);
       return;
     }
     router.push('/seller/list/step-3');
@@ -47,16 +47,16 @@ export default function SellerListStep2Page() {
 
   return (
     <div className="flex flex-col min-h-screen bg-slate-50 select-none pb-32">
-      <TopBar title="ถ่ายรูปหนังสือ" onBack={() => router.push('/seller/list')} />
-      <Stepper currentStep={2} />
+      <TopBar title="ถ่ายรูปหนังสือ" onBack={() => router.push('/seller/list/details')} />
+      <Stepper currentStep={3} />
 
       <div className="p-4 space-y-4">
         <section className="bg-white rounded-2xl border border-slate-200 p-4 space-y-3">
           <div className="flex items-start justify-between gap-2">
             <div>
-              <h3 className="text-sm font-bold text-slate-800">ถ่ายรูปจากกล้อง {slots.length} มุม</h3>
+              <h3 className="text-sm font-bold text-slate-800">เพิ่มรูปหนังสือ {slots.length} มุม</h3>
               <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
-                ถ่ายในที่แสงธรรมชาติ ให้เห็นสภาพจริง · ขั้นต่อไปจะใช้รูปเหล่านี้ตรวจสภาพ
+                ถ่ายจากกล้องหรือเลือกจากแกลอรี่ · ให้เห็นสภาพจริง · ขั้นต่อไปจะใช้รูปเหล่านี้ตรวจสภาพ
               </p>
             </div>
             <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full shrink-0">
@@ -73,7 +73,7 @@ export default function SellerListStep2Page() {
                   type="button"
                   onClick={() => setCamera({ key: slot.key, label: slot.label })}
                   className="text-left"
-                  aria-label={url ? `ถ่ายใหม่: ${slot.label}` : `ถ่าย: ${slot.label}`}
+                  aria-label={url ? `เปลี่ยนรูป: ${slot.label}` : `เพิ่มรูป: ${slot.label}`}
                 >
                   <span className="flex items-center justify-between text-xs font-semibold text-slate-700 mb-1.5">
                     {slot.label} <span className="text-rose-500">*</span>
@@ -86,7 +86,7 @@ export default function SellerListStep2Page() {
                           <Check className="w-3.5 h-3.5 stroke-[3]" />
                         </span>
                         <span className="absolute bottom-0 inset-x-0 py-1.5 bg-black/55 text-white text-[10px] font-semibold flex items-center justify-center gap-1">
-                          <RefreshCcw className="w-3 h-3" /> ถ่ายใหม่
+                          <RefreshCcw className="w-3 h-3" /> เปลี่ยนรูป
                         </span>
                       </>
                     ) : (
@@ -94,7 +94,7 @@ export default function SellerListStep2Page() {
                         <span className="w-10 h-10 rounded-full bg-white border border-slate-200 flex items-center justify-center">
                           <Camera className="w-5 h-5 text-slate-600" />
                         </span>
-                        <span className="text-[11px] font-semibold text-slate-600">แตะเพื่อเปิดกล้อง</span>
+                        <span className="text-[11px] font-semibold text-slate-600">แตะเพื่อถ่าย/แกลอรี่</span>
                         <span className="text-[10px] text-slate-400 leading-tight">{slot.hint}</span>
                       </span>
                     )}
@@ -106,7 +106,7 @@ export default function SellerListStep2Page() {
 
           <p className="flex items-start gap-2 p-2.5 rounded-lg bg-slate-50 border border-slate-200 text-[11px] text-slate-600">
             <ShieldCheck className="w-3.5 h-3.5 shrink-0 mt-0.5 text-emerald-600" />
-            ถ่ายจากกล้องได้อย่างเดียว ไม่รับรูปจากอัลบั้ม · ป้องกันการใช้รูปจากอินเทอร์เน็ต
+            ถ่ายจากกล้องหรือเลือกจากแกลอรี่ได้ · โปรดใช้รูปหนังสือเล่มจริงของคุณ
           </p>
         </section>
 
@@ -139,7 +139,7 @@ export default function SellerListStep2Page() {
             leftIcon={<Plus className="w-4 h-4" />}
             onClick={() => setCamera({ key: 'defect', label: 'รูปตำหนิ' })}
           >
-            ถ่ายรูปตำหนิ
+            เพิ่มรูปตำหนิ
           </Button>
         </section>
 

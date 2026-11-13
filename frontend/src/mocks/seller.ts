@@ -95,7 +95,6 @@ export const MOCK_SELLER_ORDERS: SellerOrder[] = [
     shippingFee: 40,
     deliveryMethod: 'PARCEL',
     shippingAddress: MOCK_ADDRESSES[1],
-    slipUrl: 'https://images.unsplash.com/photo-1554224155-6726b3ff858f?w=600',
     status: 'PAYMENT_SUBMITTED',
     createdAt: '10 พ.ย. 2569, 13:12',
     acceptedAt: '10 พ.ย. 2569, 13:30',

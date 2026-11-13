@@ -2,11 +2,11 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import clsx from 'clsx';
-import { Camera, X, RefreshCcw, ScanLine, Loader2, CameraOff } from 'lucide-react';
+import { Camera, X, RefreshCcw, ScanLine, Loader2, CameraOff, ImageIcon } from 'lucide-react';
 
 export interface CameraCaptureProps {
   isOpen: boolean;
-  /** PHOTO = take a picture (no gallery); SCAN = read a buyer's QR. */
+  /** PHOTO = take a picture or pick from the gallery; SCAN = read a buyer's QR. */
   mode: 'PHOTO' | 'SCAN';
   title: string;
   hint?: string;
@@ -17,10 +17,7 @@ export interface CameraCaptureProps {
   demoImage?: string;
 }
 
-/**
- * Live camera only — there is deliberately no "choose from album" option so
- * sellers can't upload pictures taken from the internet.
- */
+/** Camera sheet: capture with the device camera or choose an existing photo. */
 export const CameraCapture: React.FC<CameraCaptureProps> = ({
   isOpen,
   mode,
@@ -32,6 +29,7 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({
   demoImage,
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const [state, setState] = useState<'LOADING' | 'LIVE' | 'NO_CAMERA'>('LOADING');
   const [shot, setShot] = useState<string | null>(null);
@@ -89,6 +87,15 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({
     if (demoImage) setShot(demoImage);
   };
 
+  const pickFromGallery = (file?: File | null) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') setShot(reader.result);
+    };
+    reader.readAsDataURL(file);
+  };
+
   const simulateScan = () => {
     setScanning(true);
     setTimeout(() => {
@@ -133,7 +140,7 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({
               <p className="text-sm font-semibold">เปิดกล้องไม่ได้</p>
               <p className="text-[11px] text-white/60 leading-relaxed">
                 อนุญาตการใช้กล้องในเบราว์เซอร์ หรือเปิดผ่านแอป LINE บนมือถือ
-                {mode === 'PHOTO' ? ' · ระบบรับเฉพาะรูปถ่ายจากกล้องเท่านั้น' : ''}
+                {mode === 'PHOTO' ? ' · หรือเลือกรูปจากแกลอรี่ด้านล่าง' : ''}
               </p>
             </div>
           )}
@@ -174,16 +181,28 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({
                 </button>
               </div>
             ) : (
-              <div className="flex flex-col items-center gap-2">
-                <button
-                  type="button"
-                  onClick={takePhoto}
-                  disabled={state === 'LOADING' || (state === 'NO_CAMERA' && !demoImage)}
-                  aria-label="ถ่ายรูป"
-                  className="w-16 h-16 rounded-full bg-white border-4 border-white/40 ring-4 ring-white/20 flex items-center justify-center disabled:opacity-40 active:scale-95 transition"
-                >
-                  <Camera className="w-6 h-6 text-slate-900" />
-                </button>
+              <div className="flex flex-col items-center gap-3">
+                <div className="flex items-center gap-8">
+                  <button
+                    type="button"
+                    onClick={() => fileRef.current?.click()}
+                    aria-label="เลือกจากแกลอรี่"
+                    className="w-12 h-12 rounded-xl border border-white/30 flex items-center justify-center text-white active:scale-95 transition"
+                  >
+                    <ImageIcon className="w-5 h-5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={takePhoto}
+                    disabled={state === 'LOADING' || (state === 'NO_CAMERA' && !demoImage)}
+                    aria-label="ถ่ายรูป"
+                    className="w-16 h-16 rounded-full bg-white border-4 border-white/40 ring-4 ring-white/20 flex items-center justify-center disabled:opacity-40 active:scale-95 transition"
+                  >
+                    <Camera className="w-6 h-6 text-slate-900" />
+                  </button>
+                  <span className="w-12 h-12" />
+                </div>
+                <span className="text-[10px] text-white/60">แกลอรี่ · ถ่ายรูป</span>
                 {state === 'NO_CAMERA' && demoImage && (
                   <span className="text-[10px] text-white/50">โหมดทดลอง: กดปุ่มเพื่อใช้รูปตัวอย่าง</span>
                 )}
@@ -199,6 +218,18 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({
               {scanning ? <Loader2 className="w-4 h-4 animate-spin" /> : <ScanLine className="w-4 h-4" />}
               {scanning ? 'กำลังอ่าน QR…' : 'สแกน QR ของผู้ซื้อ'}
             </button>
+          )}
+          {mode === 'PHOTO' && (
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(event) => {
+                pickFromGallery(event.target.files?.[0]);
+                event.target.value = '';
+              }}
+            />
           )}
         </footer>
       </div>

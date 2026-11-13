@@ -13,11 +13,6 @@ export interface ShopKyc {
   firstName: string;
   lastName: string;
   nationalIdMasked: string;
-  promptPayMasked: string;
-  promptPayType: 'PHONE' | 'NATIONAL_ID';
-  /** Account holder name shown in the banking app for this PromptPay. */
-  promptPayAccountName: string;
-  promptPayBank: string;
   verifiedAt: string;
 }
 
@@ -173,6 +168,8 @@ export const SellerProvider: React.FC<{ children: ReactNode }> = ({
       title: draft.title,
       author: draft.author,
       publisher: draft.publisher || undefined,
+      description: draft.description || undefined,
+      categories: draft.categories,
       isbn: draft.isbn || undefined,
       isSet: draft.mode === 'SET',
       totalVolumes: draft.mode === 'SET' ? draft.totalVolumes : undefined,

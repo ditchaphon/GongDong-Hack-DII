@@ -15,7 +15,6 @@ import {
   Store,
   ChevronRight,
   MapPin,
-  Bell,
   BookOpen,
   Headphones,
   Settings,
@@ -71,7 +70,6 @@ export default function ProfilePage() {
       ]
     : [
         { href: '/addresses', label: 'ที่อยู่จัดส่ง', icon: MapPin },
-        { href: '/wishlist', label: 'หนังสือที่ฝากตามหา', icon: Bell },
       ];
 
   return (
@@ -150,7 +148,7 @@ export default function ProfilePage() {
               )}
             >
               {shop.payeeVerified && shop.kyc
-                ? `ยืนยันตัวตนแล้ว · พร้อมเพย์ ${shop.kyc.promptPayMasked}`
+                ? `ยืนยันตัวตนแล้ว · บัตร ${shop.kyc.nationalIdMasked}`
                 : 'ยังไม่ยืนยันตัวตน (KYC) · กดเพื่อยืนยัน'}
             </span>
             <ChevronRight className="w-4 h-4 text-slate-400" />
