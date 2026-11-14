@@ -40,6 +40,9 @@ export function getApiAuthToken(): string | null {
 }
 
 export function getApiBaseUrl(): string {
+  // On Vercel / behind a tunnel the browser calls same-origin /api/* and
+  // Next.js proxies it to the backend (no mixed content, no localhost on phones).
+  if (process.env.NEXT_PUBLIC_USE_API_PROXY === 'true') return '';
   const configured = process.env.NEXT_PUBLIC_API_URL?.trim();
   const base = configured || 'http://localhost:8000';
   return base.replace(/\/+$/, '');

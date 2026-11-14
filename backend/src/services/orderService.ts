@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { prisma as defaultPrisma } from '../config/prisma';
+import { env } from '../config/env';
 import { calcParcelFee } from './shippingService';
 import { createSystemOrderMessage } from './messageService';
 import { maskAccountHolderName, maskSensitiveData } from './dataMaskingService';
@@ -1297,12 +1298,39 @@ export async function verifyOrderPaymentSlip(
   orderId: string,
   buyerId: string,
   input: PaymentSlipInput,
-  prismaClient?: any
+  prismaClient?: any,
+  slipVerifier?: (
+    slipImageUrl: string,
+    options: { amount?: number; log?: boolean }
+  ) => Promise<{ transRef: string; amount: number; receiverName?: string }>
 ): Promise<{ status: 'PAID'; verificationStatus: string; transRef: string }> {
   const db = prismaClient || defaultPrisma;
 
   if (!input.slipImageUrl) {
     throw new AppError('กรุณาแนบรูปลิงก์สลิปโอนเงิน (slipImageUrl)', 400, 'MISSING_SLIP_IMAGE');
+  }
+
+  // Real verification (SlipOK) runs before the DB transaction so a slow
+  // network call never holds row locks. Its results replace client claims.
+  if (slipVerifier) {
+    const pending = await db.order.findUnique({ where: { id: orderId }, select: { totalPrice: true } });
+    if (!pending) throw new AppError('ไม่พบคำสั่งซื้อ', 404, 'ORDER_NOT_FOUND');
+    const verified = await slipVerifier(input.slipImageUrl, {
+      amount: Number(pending.totalPrice),
+      log: true,
+    });
+    input = {
+      ...input,
+      transRef: verified.transRef,
+      amount: verified.amount,
+      receiverName: verified.receiverName ?? input.receiverName,
+    };
+  } else if (env.NODE_ENV === 'production') {
+    throw new AppError(
+      'ระบบตรวจสลิปอัตโนมัติยังไม่ได้เปิดใช้งานใน Production (Missing SLIPOK_API_KEY)',
+      503,
+      'SLIP_VERIFIER_NOT_CONFIGURED'
+    );
   }
 
   const transRef = input.transRef || `REF_${Date.now()}_${Math.floor(Math.random() * 1000)}`;

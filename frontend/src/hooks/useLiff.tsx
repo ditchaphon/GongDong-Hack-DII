@@ -178,6 +178,30 @@ export const LiffProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         setLanguage(clientLang);
         setLiffVersion(version);
 
+        // Outside the LINE app the user may not be logged in yet: redirect to
+        // LINE Login once. The sessionStorage guard + ?error= check stop a loop
+        // when the user cancels the consent screen.
+        if (!loggedIn) {
+          const params = new URLSearchParams(window.location.search);
+          let tried = false;
+          try {
+            tried = sessionStorage.getItem('gongdong.liffLoginTried') === '1';
+            if (!tried && !params.get('error')) sessionStorage.setItem('gongdong.liffLoginTried', '1');
+          } catch {
+            /* storage blocked */
+          }
+          if (!tried && !params.get('error')) {
+            liff.login({ redirectUri: window.location.href });
+            return;
+          }
+        } else {
+          try {
+            sessionStorage.removeItem('gongdong.liffLoginTried');
+          } catch {
+            /* ignore */
+          }
+        }
+
         if (loggedIn) {
           const profile = await liff.getProfile();
           const rawToken = liff.getIDToken();

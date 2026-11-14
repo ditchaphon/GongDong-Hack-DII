@@ -19,7 +19,11 @@ export async function verifyLineToken(
   channelId?: string,
   fetchFn: typeof fetch = fetch
 ): Promise<LineTokenPayload> {
-  const liffChannelId = channelId || process.env.LINE_LIFF_CHANNEL_ID || process.env.LINE_CHANNEL_ID;
+  const liffChannelId =
+    channelId ||
+    process.env.LINE_LIFF_CHANNEL_ID ||
+    process.env.LINE_LOGIN_CHANNEL_ID ||
+    process.env.LINE_CHANNEL_ID;
 
   const bodyParams = new URLSearchParams();
   bodyParams.append('id_token', idToken);

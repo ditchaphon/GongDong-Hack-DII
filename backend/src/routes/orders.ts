@@ -1,5 +1,6 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { authMiddleware } from '../middlewares/auth';
+import { isSlipOkConfigured, verifySlipWithSlipOk } from '../services/slipokService';
 import { maskAccountHolderName } from '../services/dataMaskingService';
 import { getOrderMessages, sendOrderMessage } from '../services/messageService';
 import {
@@ -491,13 +492,19 @@ orderRouter.post(
       const buyerId = getUserIdFromRequest(req);
       const { slip_image_url, storage_path, trans_ref, amount, receiver_name } = req.body;
 
-      const result = await verifyOrderPaymentSlip(orderId, buyerId, {
-        slipImageUrl: slip_image_url,
-        storagePath: storage_path,
-        transRef: trans_ref,
-        amount: amount ? Number(amount) : undefined,
-        receiverName: receiver_name,
-      });
+      const result = await verifyOrderPaymentSlip(
+        orderId,
+        buyerId,
+        {
+          slipImageUrl: slip_image_url,
+          storagePath: storage_path,
+          transRef: trans_ref,
+          amount: amount ? Number(amount) : undefined,
+          receiverName: receiver_name,
+        },
+        undefined,
+        isSlipOkConfigured() ? verifySlipWithSlipOk : undefined
+      );
 
       res.status(200).json({
         success: true,

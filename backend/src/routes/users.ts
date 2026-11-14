@@ -17,6 +17,7 @@ import {
   updateUserProfile,
 } from '../services/userService';
 import { getUserIdFromRequest } from '../utils/requestUser';
+import { isSlipOkConfigured, verifySlipWithSlipOk } from '../services/slipokService';
 
 export const userRouter = Router();
 
@@ -105,7 +106,22 @@ userRouter.post(
   async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const userId = getUserIdFromRequest(req);
-      const result = await processTopupSlip(userId, req.body);
+      // Real slip check via SlipOK when configured; otherwise dev auto-verify.
+      const result = await processTopupSlip(
+        userId,
+        req.body,
+        undefined,
+        isSlipOkConfigured()
+          ? async (url, options) => {
+              const verified = await verifySlipWithSlipOk(url, { log: options?.log ?? true });
+              return {
+                transRef: verified.transRef,
+                amount: verified.amount,
+                senderName: verified.senderName,
+              };
+            }
+          : undefined
+      );
 
       res.status(200).json({
         success: true,

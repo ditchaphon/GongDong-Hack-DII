@@ -62,7 +62,11 @@ export async function POST(req: NextRequest) {
     await lineResponse.json();
 
     // 3. Forward to Express Backend (/api/users/me) so user is persisted/synced in PostgreSQL
-    const backendUrl = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/+$/, '');
+    const backendUrl = (
+      process.env.BACKEND_INTERNAL_URL ||
+      process.env.NEXT_PUBLIC_API_URL ||
+      'http://127.0.0.1:8000'
+    ).replace(/\/+$/, '');
     const backendRes = await fetch(`${backendUrl}/api/users/me`, {
       method: 'GET',
       headers: {
