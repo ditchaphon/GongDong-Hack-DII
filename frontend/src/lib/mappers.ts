@@ -204,6 +204,7 @@ export interface BackendOrderDetail {
     title: string;
     price: number;
     cover_image_url: string;
+    grade?: string;
   }>;
   buyer: {
     id: string;
@@ -323,6 +324,7 @@ export function mapBackendBookToBook(item: BackendBookFeedItem): Book {
     meetupZones: item.pickupLocationName ? [item.pickupLocationName] : [],
     createdAt: '',
     shopPayeeVerified: Boolean(item.seller.isVerifiedSeller),
+    codEnabled: item.codEnabled !== false,
   };
 }
 
@@ -365,6 +367,8 @@ export function mapBackendBookDetailToBook(detail: BackendBookDetail): Book {
       defects: defectUrls.length ? defectUrls : mappedDefects.map((d) => d.photo),
     },
     defects: mappedDefects,
+    status: detail.status,
+    codEnabled: detail.codEnabled !== false,
   };
 }
 
@@ -582,7 +586,7 @@ export function mapBackendOrderDetailToV4Order(
       id: item.book_id,
       title: item.title,
       cover: item.cover_image_url || FALLBACK_BOOK_COVER,
-      grade: toV4Grade('LIKE_NEW'),
+      grade: toV4Grade(item.grade || 'LIKE_NEW'),
       price: Number(item.price),
     })),
     amount,

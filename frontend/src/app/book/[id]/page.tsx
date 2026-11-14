@@ -46,7 +46,7 @@ export default function BookDetailPage({
 }) {
   const resolvedParams = use(params);
   const router = useRouter();
-  const { addToCart, replaceCart, items: cartItems } = useCart();
+  const { addToCart, items: cartItems, shopGroups } = useCart();
 
   const [book, setBook] = useState<Book | null>(null);
   const [shop, setShop] = useState<ShopProfile | null>(null);
@@ -59,7 +59,6 @@ export default function BookDetailPage({
   const [isReportOpen, setIsReportOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [cartSheet, setCartSheet] = useState<CartAddedState | null>(null);
-  const [buyAfterReplace, setBuyAfterReplace] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -140,27 +139,42 @@ export default function BookDetailPage({
   ];
 
   const sameShopCount = cartItems.filter((item) => item.sellerId === book.sellerId).length;
+  const isBookAvailable = !book.status || book.status === 'AVAILABLE';
 
   const handleAddToCart = () => {
+    if (!isBookAvailable) {
+      setToastMessage('หนังสือเล่มนี้ถูกจองหรือขายไปแล้ว');
+      return;
+    }
     const res = addToCart(book);
     if (res.success) {
-      setCartSheet({ kind: 'ADDED', book, count: sameShopCount + 1 });
-    } else if (res.reason === 'OTHER_SHOP') {
-      setBuyAfterReplace(false);
-      setCartSheet({ kind: 'OTHER_SHOP', book, currentShop: cartItems[0]?.sellerName ?? 'ร้านอื่น' });
+      const nextShopCount = shopGroups.some((g) => g.sellerId === book.sellerId)
+        ? shopGroups.length
+        : shopGroups.length + 1;
+      setCartSheet({
+        kind: 'ADDED',
+        book,
+        count: sameShopCount + 1,
+        totalCount: cartItems.length + 1,
+        shopCount: nextShopCount,
+      });
     } else {
-      setCartSheet({ kind: 'DUPLICATE', book, count: sameShopCount });
+      setCartSheet({
+        kind: 'DUPLICATE',
+        book,
+        count: sameShopCount,
+        totalCount: cartItems.length,
+        shopCount: shopGroups.length,
+      });
     }
   };
 
   const handleBuyNow = () => {
-    const res = addToCart(book);
-    if (!res.success && res.reason === 'OTHER_SHOP') {
-      setBuyAfterReplace(true);
-      setCartSheet({ kind: 'OTHER_SHOP', book, currentShop: cartItems[0]?.sellerName ?? 'ร้านอื่น' });
+    if (!isBookAvailable) {
+      setToastMessage('หนังสือเล่มนี้ถูกจองหรือขายไปแล้ว');
       return;
     }
-    router.push('/cart');
+    router.push(`/cart?buyNow=${encodeURIComponent(book.id)}`);
   };
 
   const offersMeetup = book.deliveryMethods.includes('MEETUP') && (shop ? shop.meetupPoints.length > 0 : (book.meetupZones?.length ?? 0) > 0);
@@ -560,11 +574,22 @@ export default function BookDetailPage({
       {/* Bottom actions */}
       <div className="fixed bottom-0 left-0 right-0 z-30 flex justify-center pointer-events-none">
         <div className="w-full max-w-[430px] bg-white border-t border-slate-200 p-3 flex gap-2.5 pointer-events-auto safe-area-bottom shadow-lg">
-          <Button variant="outline" fullWidth onClick={handleAddToCart} className="flex-1">
-            ใส่ตะกร้า
+          <Button
+            variant="outline"
+            fullWidth
+            disabled={!isBookAvailable}
+            onClick={handleAddToCart}
+            className="flex-1"
+          >
+            {isBookAvailable ? 'ใส่ตะกร้า' : 'ไม่พร้อมขาย'}
           </Button>
-          <Button fullWidth onClick={handleBuyNow} className="flex-1">
-            ส่งคำขอซื้อ
+          <Button
+            fullWidth
+            disabled={!isBookAvailable}
+            onClick={handleBuyNow}
+            className="flex-1"
+          >
+            {isBookAvailable ? 'ส่งคำขอซื้อ' : 'ถูกจอง/ขายแล้ว'}
           </Button>
         </div>
       </div>
@@ -575,15 +600,6 @@ export default function BookDetailPage({
         onViewCart={() => {
           setCartSheet(null);
           router.push('/cart');
-        }}
-        onReplace={() => {
-          replaceCart(book);
-          if (buyAfterReplace) {
-            setCartSheet(null);
-            router.push('/cart');
-            return;
-          }
-          setCartSheet({ kind: 'ADDED', book, count: 1 });
         }}
       />
 

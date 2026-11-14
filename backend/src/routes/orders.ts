@@ -7,6 +7,7 @@ import {
   cancelOrder,
   completeDeliveryOrder,
   completeMeetupCodOrder,
+  createBatchOrders,
   createOrder,
   disputeMissedMeeting,
   getOrderDetail,
@@ -22,12 +23,80 @@ import {
   verifyOrderPaymentSlip,
 } from '../services/orderService';
 import { createOrderReview } from '../services/reviewService';
-import { AppError } from '../types';
+import { AppError, CreateOrderInput, CreateOrderResult } from '../types';
 import { getUserIdFromRequest } from '../utils/requestUser';
 
 export const orderRouter = Router();
 
 orderRouter.use(authMiddleware);
+
+const UUID_REGEX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function parseCreateOrderBody(raw: Record<string, any>): CreateOrderInput {
+  const sellerId = raw?.seller_id ?? raw?.sellerId;
+  const bookIds = raw?.book_ids ?? raw?.bookIds;
+  const shippingMethod = raw?.shipping_method ?? raw?.shippingMethod;
+
+  if (!sellerId || !bookIds || !shippingMethod) {
+    throw new AppError('ข้อมูลคำสั่งซื้อไม่ครบถ้วน', 400, 'MISSING_REQUIRED_FIELDS');
+  }
+
+  if (typeof sellerId !== 'string' || !UUID_REGEX.test(sellerId)) {
+    throw new AppError('รหัสร้านค้าไม่ถูกต้อง', 400, 'INVALID_SELLER_ID');
+  }
+
+  if (!Array.isArray(bookIds) || bookIds.length === 0) {
+    throw new AppError('กรุณาเลือกหนังสืออย่างน้อย 1 เล่ม', 400, 'EMPTY_CART', { sellerId });
+  }
+
+  const invalidIds = bookIds.filter((id) => typeof id !== 'string' || !UUID_REGEX.test(id));
+  if (invalidIds.length > 0) {
+    throw new AppError('รหัสหนังสือไม่ถูกต้อง', 400, 'INVALID_BOOK_ID', {
+      sellerId,
+      invalidBookIds: invalidIds,
+    });
+  }
+
+  const expectedTotalRaw = raw.expected_total ?? raw.expectedTotal;
+  const expectedTotal =
+    expectedTotalRaw !== undefined && expectedTotalRaw !== null
+      ? Number(expectedTotalRaw)
+      : undefined;
+
+  return {
+    sellerId,
+    bookIds,
+    shippingMethod,
+    paymentMethod: raw.payment_method || raw.paymentMethod,
+    recipientName: raw.recipient_name || raw.recipientName,
+    recipientPhone: raw.recipient_phone ?? raw.recipientPhone,
+    buyerProvince: raw.buyer_province || raw.buyerProvince,
+    deliveryAddress: raw.delivery_address || raw.deliveryAddress,
+    pickupLat: raw.pickup_lat !== undefined ? Number(raw.pickup_lat) : undefined,
+    pickupLng: raw.pickup_lng !== undefined ? Number(raw.pickup_lng) : undefined,
+    pickupLocationName: raw.pickup_location_name || raw.pickupLocationName,
+    scheduledAt: raw.scheduled_at || raw.scheduledAt,
+    scheduleDateIso: raw.schedule_date_iso || raw.scheduleDateIso,
+    scheduleTimeLabel: raw.schedule_time_label || raw.scheduleTimeLabel,
+    shipWithinDays:
+      raw.ship_within_days !== undefined ? Number(raw.ship_within_days) : undefined,
+    expectedTotal:
+      expectedTotal !== undefined && Number.isFinite(expectedTotal) ? expectedTotal : undefined,
+    idempotencyKey: raw.idempotency_key || raw.idempotencyKey,
+  };
+}
+
+function serializeCreateOrderResult(result: CreateOrderResult) {
+  return {
+    order_id: result.orderId,
+    total_price: result.totalPrice,
+    shipping_fee: result.shippingFee,
+    payment_method: result.paymentMethod,
+    status: result.status,
+    created_at: result.createdAt,
+  };
+}
 
 /**
  * POST /api/orders
@@ -38,58 +107,54 @@ orderRouter.post(
   async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const buyerId = getUserIdFromRequest(req);
-      const {
-        seller_id,
-        book_ids,
-        shipping_method,
-        payment_method,
-        recipient_name,
-        recipient_phone,
-        buyer_province,
-        delivery_address,
-        pickup_lat,
-        pickup_lng,
-        pickup_location_name,
-        scheduled_at,
-        schedule_date_iso,
-        schedule_time_label,
-        ship_within_days,
-      } = req.body;
+      const parsed = parseCreateOrderBody(req.body);
+      const result = await createOrder(buyerId, parsed);
 
-      if (!seller_id || !book_ids || !shipping_method) {
-        throw new AppError('ข้อมูลคำสั่งซื้อไม่ครบถ้วน', 400, 'MISSING_REQUIRED_FIELDS');
+      res.status(201).json({
+        success: true,
+        data: serializeCreateOrderResult(result),
+        message: 'ส่งคำขอซื้อสำเร็จ แจ้งเตือนไปยังร้านค้าแล้ว',
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * POST /api/orders/batch
+ * ผู้ซื้อส่งคำขอซื้อหลายร้านค้าพร้อมกันแบบ All-or-Nothing
+ */
+orderRouter.post(
+  '/batch',
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const buyerId = getUserIdFromRequest(req);
+      const rawOrders = req.body?.orders;
+      if (!Array.isArray(rawOrders) || rawOrders.length === 0) {
+        throw new AppError(
+          'กรุณาระบุรายการคำสั่งซื้ออย่างน้อย 1 ร้านค้า',
+          400,
+          'MISSING_REQUIRED_FIELDS'
+        );
       }
 
-      const result = await createOrder(buyerId, {
-        sellerId: seller_id,
-        bookIds: book_ids,
-        shippingMethod: shipping_method,
-        paymentMethod: payment_method || req.body.paymentMethod,
-        recipientName: recipient_name || req.body.recipientName,
-        recipientPhone: recipient_phone ?? req.body.recipientPhone,
-        buyerProvince: buyer_province || req.body.buyerProvince,
-        deliveryAddress: delivery_address || req.body.deliveryAddress,
-        pickupLat: pickup_lat !== undefined ? Number(pickup_lat) : undefined,
-        pickupLng: pickup_lng !== undefined ? Number(pickup_lng) : undefined,
-        pickupLocationName: pickup_location_name || req.body.pickupLocationName,
-        scheduledAt: scheduled_at || req.body.scheduledAt,
-        scheduleDateIso: schedule_date_iso || req.body.scheduleDateIso,
-        scheduleTimeLabel: schedule_time_label || req.body.scheduleTimeLabel,
-        shipWithinDays:
-          ship_within_days !== undefined ? Number(ship_within_days) : undefined,
+      const parsedOrders = rawOrders.map((entry: Record<string, any>) =>
+        parseCreateOrderBody(entry)
+      );
+      const idempotencyKey = req.body?.idempotency_key || req.body?.idempotencyKey;
+
+      const result = await createBatchOrders(buyerId, {
+        orders: parsedOrders,
+        idempotencyKey: typeof idempotencyKey === 'string' ? idempotencyKey : undefined,
       });
 
       res.status(201).json({
         success: true,
         data: {
-          order_id: result.orderId,
-          total_price: result.totalPrice,
-          shipping_fee: result.shippingFee,
-          payment_method: result.paymentMethod,
-          status: result.status,
-          created_at: result.createdAt,
+          orders: result.orders.map(serializeCreateOrderResult),
         },
-        message: 'ส่งคำขอซื้อสำเร็จ แจ้งเตือนไปยังร้านค้าแล้ว',
+        message: `ส่งคำขอซื้อสำเร็จ ${result.orders.length} ร้านค้า แจ้งเตือนไปยังร้านค้าแล้ว`,
       });
     } catch (error) {
       next(error);
@@ -189,6 +254,7 @@ orderRouter.get(
             title: item.title,
             price: item.price,
             cover_image_url: item.coverImageUrl,
+            grade: item.grade,
           })),
           buyer: {
             id: orderDetail.buyer.id,
@@ -292,7 +358,14 @@ orderRouter.patch(
     try {
       const orderId = String(req.params.id);
       const userId = getUserIdFromRequest(req);
-      const { scheduled_at, pickup_lat, pickup_lng, pickup_location_name } = req.body;
+      const {
+        scheduled_at,
+        schedule_date_iso,
+        schedule_time_label,
+        pickup_lat,
+        pickup_lng,
+        pickup_location_name,
+      } = req.body;
 
       if (!scheduled_at) {
         throw new AppError('กรุณาระบุวันเวลานัดหมาย (scheduled_at)', 400, 'MISSING_REQUIRED_FIELDS');
@@ -304,6 +377,8 @@ orderRouter.patch(
 
       const result = await schedulePickupOrder(orderId, userId, {
         scheduledAt: scheduled_at,
+        scheduleDateIso: schedule_date_iso || req.body.scheduleDateIso,
+        scheduleTimeLabel: schedule_time_label || req.body.scheduleTimeLabel,
         pickupLat: Number(pickup_lat),
         pickupLng: Number(pickup_lng),
         pickupLocationName: pickup_location_name,

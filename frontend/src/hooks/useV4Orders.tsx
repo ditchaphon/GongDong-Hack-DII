@@ -18,6 +18,7 @@ import {
   ViewRole,
 } from '@/types/v4';
 import { api, ApiError } from '@/lib/api';
+import { scheduleToIso } from '@/lib/delivery';
 import {
   BackendOrderDetail,
   BackendOrderMessage,
@@ -35,6 +36,8 @@ export interface CreateOrderInput {
   schedule?: V4Schedule;
   shipping?: V4Shipping & { province?: string };
   shipWithinDays?: number;
+  expectedTotal?: number;
+  idempotencyKey?: string;
 }
 
 export interface V4OrdersContextValue {
@@ -44,6 +47,7 @@ export interface V4OrdersContextValue {
   refreshOrders: () => Promise<void>;
   fetchOrder: (id: string) => Promise<V4Order | undefined>;
   createOrder: (input: CreateOrderInput) => Promise<string>;
+  createBatchOrders: (inputs: CreateOrderInput[], idempotencyKey?: string) => Promise<string[]>;
   confirmReceived: (
     id: string,
     photo: string,
@@ -257,39 +261,62 @@ export const V4OrdersProvider: React.FC<{ children: ReactNode }> = ({
     [idToken]
   );
 
+  const buildOrderPayload = (input: CreateOrderInput) => {
+    if (!input.shopId) throw new Error('ไม่พบรหัสผู้ขาย');
+    const scheduledAtIso = input.schedule?.dateISO
+      ? scheduleToIso(input.schedule.dateISO, input.schedule.timeLabel)
+      : undefined;
+
+    return {
+      seller_id: input.shopId,
+      book_ids: input.books.map((b) => b.id),
+      shipping_method: input.delivery === 'MEETUP' ? 'PICKUP' : 'DELIVERY',
+      payment_method: 'COD',
+      recipient_name: input.shipping?.receiverName,
+      recipient_phone: input.shipping?.receiverPhone,
+      buyer_province: input.shipping?.province,
+      delivery_address: input.shipping?.receiverAddress,
+      pickup_lat: input.schedule?.lat,
+      pickup_lng: input.schedule?.lng,
+      pickup_location_name: input.schedule?.landmark,
+      scheduled_at: scheduledAtIso,
+      schedule_date_iso: input.schedule?.dateISO,
+      schedule_time_label: input.schedule?.timeLabel,
+      ship_within_days: input.shipWithinDays,
+      expected_total: input.expectedTotal,
+      idempotency_key: input.idempotencyKey,
+    };
+  };
+
   const createOrder = async (input: CreateOrderInput): Promise<string> => {
     if (!idToken) throw new Error('ยังไม่ได้เข้าสู่ระบบ');
-    if (!input.shopId) throw new Error('ไม่พบรหัสผู้ขาย');
-
-    const scheduledAtIso =
-      input.schedule?.dateISO
-        ? `${input.schedule.dateISO}T16:00:00.000Z`
-        : undefined;
-
     const created = await api.post<{ order_id: string }>(
       '/api/orders',
-      {
-        seller_id: input.shopId,
-        book_ids: input.books.map((b) => b.id),
-        shipping_method: input.delivery === 'MEETUP' ? 'PICKUP' : 'DELIVERY',
-        payment_method: 'COD',
-        recipient_name: input.shipping?.receiverName,
-        recipient_phone: input.shipping?.receiverPhone,
-        buyer_province: input.shipping?.province,
-        delivery_address: input.shipping?.receiverAddress,
-        pickup_lat: input.schedule?.lat,
-        pickup_lng: input.schedule?.lng,
-        pickup_location_name: input.schedule?.landmark,
-        scheduled_at: scheduledAtIso,
-        schedule_date_iso: input.schedule?.dateISO,
-        schedule_time_label: input.schedule?.timeLabel,
-        ship_within_days: input.shipWithinDays,
-      },
+      buildOrderPayload(input),
       { token: idToken }
     );
 
     await fetchOrder(created.order_id);
     return created.order_id;
+  };
+
+  const createBatchOrders = async (
+    inputs: CreateOrderInput[],
+    idempotencyKey?: string
+  ): Promise<string[]> => {
+    if (!idToken) throw new Error('ยังไม่ได้เข้าสู่ระบบ');
+    const created = await api.post<{ orders: Array<{ order_id: string }> }>(
+      '/api/orders/batch',
+      {
+        orders: inputs.map(buildOrderPayload),
+        idempotency_key: idempotencyKey,
+      },
+      { token: idToken }
+    );
+
+    const ids = (created.orders ?? []).map((o) => o.order_id);
+    await Promise.all(ids.map((orderId) => fetchOrder(orderId)));
+    return ids;
   };
 
   const acceptOrder = async (id: string) => {
@@ -331,7 +358,9 @@ export const V4OrdersProvider: React.FC<{ children: ReactNode }> = ({
       await api.patch(
         `/api/orders/${id}/schedule`,
         {
-          scheduled_at: `${schedule.dateISO}T16:00:00.000Z`,
+          scheduled_at: scheduleToIso(schedule.dateISO, schedule.timeLabel),
+          schedule_date_iso: schedule.dateISO,
+          schedule_time_label: schedule.timeLabel,
           pickup_lat: schedule.lat,
           pickup_lng: schedule.lng,
           pickup_location_name: schedule.landmark,
@@ -521,6 +550,7 @@ export const V4OrdersProvider: React.FC<{ children: ReactNode }> = ({
         refreshOrders,
         fetchOrder,
         createOrder,
+        createBatchOrders,
         confirmReceived,
         getOrder,
         messagesFor,

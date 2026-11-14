@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   completeDeliveryOrder,
+  createBatchOrders,
   createOrder,
   getOrderDetail,
   rejectOrder,
@@ -173,12 +174,12 @@ describe('OrderService - Delivery Flow & PDPA Protection', () => {
       expect(result.shippingFee).toBe(35);
     });
 
-    it('ต้องปฏิเสธหากมีคำขอค้าง REQUESTED ครบ 3 ออเดอร์แล้ว (TOO_MANY_PENDING_REQUESTS)', async () => {
+    it('ต้องปฏิเสธหากมีคำขอค้าง REQUESTED ครบ 10 ออเดอร์แล้ว (TOO_MANY_PENDING_REQUESTS)', async () => {
       mockDb.user.findUnique.mockResolvedValue({ id: mockBuyerId, phoneNumber: '0812345678' });
-      mockDb.order.count.mockResolvedValue(3); // ค้างครบ 3 รายการแล้ว
+      mockDb.order.count.mockResolvedValue(10); // ค้างครบ 10 รายการแล้ว
 
       await expect(createOrder(mockBuyerId, baseInput, mockDb)).rejects.toThrow(
-        'คุณมีคำขอซื้อที่รอการตอบรับครบ 3 ออเดอร์แล้ว'
+        'เกินโควต้าสูงสุด 10 ออเดอร์แล้ว'
       );
     });
 
@@ -206,6 +207,239 @@ describe('OrderService - Delivery Flow & PDPA Protection', () => {
       await expect(createOrder(mockBuyerId, baseInput, mockDb)).rejects.toThrow(
         'หนังสือบางเล่มในตะกร้าถูกจองหรือขายไปแล้ว'
       );
+    });
+
+    it('ต้องปฏิเสธหากพบ bookIds ซ้ำซ้อนในคำขอเดียวกัน (DUPLICATE_BOOK_IDS)', async () => {
+      await expect(
+        createOrder(mockBuyerId, { ...baseInput, bookIds: ['bok_1', 'bok_1'] }, mockDb)
+      ).rejects.toMatchObject({
+        statusCode: 400,
+        code: 'DUPLICATE_BOOK_IDS',
+      });
+    });
+
+    it('ต้องปฏิเสธหากผู้ซื้อมีคำขอ REQUESTED ค้างอยู่กับร้านเดียวกันแล้ว (PENDING_ORDER_EXISTS_FOR_SELLER)', async () => {
+      mockDb.user.findUnique.mockResolvedValue({ id: mockBuyerId, phoneNumber: '0812345678' });
+      mockDb.order.count.mockResolvedValue(1);
+      mockDb.order.findFirst = vi.fn().mockResolvedValue({ id: 'ord_existing_1' });
+
+      await expect(createOrder(mockBuyerId, baseInput, mockDb)).rejects.toMatchObject({
+        statusCode: 400,
+        code: 'PENDING_ORDER_EXISTS_FOR_SELLER',
+        details: { sellerId: mockSellerId, existingOrderId: 'ord_existing_1' },
+      });
+    });
+
+    it('ต้องอ่าน shipWithinDays จาก ShopProfile บน Server แทนค่าที่ Client ส่งมา และเช็ก expectedTotal', async () => {
+      mockDb.user.findUnique.mockResolvedValue({ id: mockBuyerId, phoneNumber: '0812345678' });
+      mockDb.order.count.mockResolvedValue(0);
+      mockDb.bookListing.findMany.mockResolvedValue([mockBooks[0]]);
+      mockDb.shopProfile = {
+        findUnique: vi.fn().mockResolvedValue({ province: 'เชียงใหม่', shipWithinDays: 3 }),
+      };
+      mockTx.order.create.mockResolvedValue({
+        id: 'ord_ship_days',
+        totalPrice: 185,
+        shippingFee: 35,
+        paymentMethod: 'COD',
+        status: 'REQUESTED',
+        createdAt: new Date(),
+      });
+
+      await createOrder(
+        mockBuyerId,
+        {
+          sellerId: mockSellerId,
+          bookIds: ['bok_1'],
+          shippingMethod: 'DELIVERY',
+          recipientName: 'สมชาย',
+          buyerProvince: 'เชียงใหม่',
+          deliveryAddress: 'มช.',
+          shipWithinDays: 99, // พยายามปลอมแปลงจาก client
+          expectedTotal: 185,
+        },
+        mockDb
+      );
+
+      expect(mockTx.order.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          shipWithinDays: 3,
+        }),
+      });
+    });
+
+    it('ต้องปฏิเสธ 409 PRICE_CHANGED หาก expectedTotal ไม่ตรงกับยอดคำนวณจริงบน Server', async () => {
+      mockDb.user.findUnique.mockResolvedValue({ id: mockBuyerId, phoneNumber: '0812345678' });
+      mockDb.order.count.mockResolvedValue(0);
+      mockDb.bookListing.findMany.mockResolvedValue([mockBooks[0]]);
+
+      await expect(
+        createOrder(
+          mockBuyerId,
+          {
+            sellerId: mockSellerId,
+            bookIds: ['bok_1'],
+            shippingMethod: 'PICKUP',
+            expectedTotal: 99,
+          },
+          mockDb
+        )
+      ).rejects.toMatchObject({
+        statusCode: 409,
+        code: 'PRICE_CHANGED',
+        details: { sellerId: mockSellerId, expectedTotal: 99, actualTotal: 150 },
+      });
+    });
+
+    it('ต้องคืนค่าผลลัพธ์เดิมเมื่อส่ง idempotencyKey ซ้ำ (ป้องกันการกดเบิ้ล)', async () => {
+      mockDb.user.findUnique.mockResolvedValue({ id: mockBuyerId, phoneNumber: '0812345678' });
+      mockDb.order.count.mockResolvedValue(0);
+      mockDb.bookListing.findMany.mockResolvedValue([mockBooks[0]]);
+      mockTx.order.create.mockResolvedValue({
+        id: 'ord_idem_1',
+        totalPrice: 150,
+        shippingFee: 0,
+        paymentMethod: 'COD',
+        status: 'REQUESTED',
+        createdAt: new Date(),
+      });
+
+      const payload: CreateOrderInput = {
+        sellerId: mockSellerId,
+        bookIds: ['bok_1'],
+        shippingMethod: 'PICKUP',
+        idempotencyKey: 'idem-key-test-001',
+      };
+
+      const first = await createOrder(mockBuyerId, payload, mockDb);
+      const second = await createOrder(mockBuyerId, payload, mockDb);
+
+      expect(first.orderId).toBe('ord_idem_1');
+      expect(second.orderId).toBe('ord_idem_1');
+      expect(mockTx.order.create).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('createBatchOrders (Multi-Seller All-or-Nothing)', () => {
+    const buyerId = 'usr_buyer_batch';
+    const sellerA = 'usr_seller_a';
+    const sellerB = 'usr_seller_b';
+
+    it('กรณีสำเร็จ: สร้างออเดอร์หลายร้านใน Transaction เดียวและคำนวณค่าส่งแยกตามร้าน', async () => {
+      mockDb.user.findUnique.mockResolvedValue({ id: buyerId, phoneNumber: null });
+      mockDb.order.count.mockResolvedValue(1);
+      mockDb.bookListing.findMany
+        .mockResolvedValueOnce([
+          { id: 'bok_a1', sellerId: sellerA, price: 120, status: 'AVAILABLE', allowDelivery: true, allowPickup: true, codEnabled: true },
+        ])
+        .mockResolvedValueOnce([
+          { id: 'bok_b1', sellerId: sellerB, price: 200, status: 'AVAILABLE', allowDelivery: true, allowPickup: true, codEnabled: true },
+        ]);
+      mockDb.shopProfile = {
+        findUnique: vi
+          .fn()
+          .mockResolvedValueOnce({ province: 'เชียงใหม่', shipWithinDays: 2 })
+          .mockResolvedValueOnce({ province: 'กรุงเทพมหานคร', shipWithinDays: 3 }),
+      };
+      mockTx.order.create
+        .mockResolvedValueOnce({
+          id: 'ord_batch_a',
+          totalPrice: 120,
+          shippingFee: 0,
+          paymentMethod: 'COD',
+          status: 'REQUESTED',
+          createdAt: new Date(),
+        })
+        .mockResolvedValueOnce({
+          id: 'ord_batch_b',
+          totalPrice: 250,
+          shippingFee: 50,
+          paymentMethod: 'COD',
+          status: 'REQUESTED',
+          createdAt: new Date(),
+        });
+
+      const res = await createBatchOrders(
+        buyerId,
+        {
+          idempotencyKey: 'batch-idem-1',
+          orders: [
+            { sellerId: sellerA, bookIds: ['bok_a1'], shippingMethod: 'PICKUP', expectedTotal: 120 },
+            {
+              sellerId: sellerB,
+              bookIds: ['bok_b1'],
+              shippingMethod: 'DELIVERY',
+              recipientName: 'สมชาย',
+              buyerProvince: 'เชียงใหม่',
+              deliveryAddress: 'มช.',
+              expectedTotal: 250,
+            },
+          ],
+        },
+        mockDb
+      );
+
+      expect(res.orders).toHaveLength(2);
+      expect(res.orders[0].orderId).toBe('ord_batch_a');
+      expect(res.orders[1].orderId).toBe('ord_batch_b');
+      expect(mockDb.$transaction).toHaveBeenCalledTimes(1);
+    });
+
+    it('All-or-Nothing Rollback: หากร้านที่ 2 มีหนังสือไม่พร้อมขาย ต้อง Error พร้อม details.invalidBookIds และ rollback ทั้งก้อน', async () => {
+      mockDb.user.findUnique.mockResolvedValue({ id: buyerId, phoneNumber: null });
+      mockDb.order.count.mockResolvedValue(0);
+      mockDb.bookListing.findMany
+        .mockResolvedValueOnce([
+          { id: 'bok_a1', sellerId: sellerA, price: 120, status: 'AVAILABLE', allowDelivery: true, allowPickup: true, codEnabled: true },
+        ])
+        .mockResolvedValueOnce([
+          { id: 'bok_b1', sellerId: sellerB, price: 200, status: 'RESERVED', allowDelivery: true, allowPickup: true, codEnabled: true },
+        ]);
+      mockTx.order.create.mockResolvedValue({
+        id: 'ord_batch_a',
+        totalPrice: 120,
+        shippingFee: 0,
+        paymentMethod: 'COD',
+        status: 'REQUESTED',
+        createdAt: new Date(),
+      });
+
+      await expect(
+        createBatchOrders(
+          buyerId,
+          {
+            orders: [
+              { sellerId: sellerA, bookIds: ['bok_a1'], shippingMethod: 'PICKUP' },
+              { sellerId: sellerB, bookIds: ['bok_b1'], shippingMethod: 'PICKUP' },
+            ],
+          },
+          mockDb
+        )
+      ).rejects.toMatchObject({
+        code: 'BOOK_NOT_AVAILABLE',
+        details: { sellerId: sellerB, invalidBookIds: ['bok_b1'] },
+      });
+    });
+
+    it('ต้องปฏิเสธหากจำนวนคำขอใน batch ทำให้ยอดค้างรวมเกิน 10 ออเดอร์', async () => {
+      mockDb.user.findUnique.mockResolvedValue({ id: buyerId, phoneNumber: null });
+      mockDb.order.count.mockResolvedValue(9);
+
+      await expect(
+        createBatchOrders(
+          buyerId,
+          {
+            orders: [
+              { sellerId: sellerA, bookIds: ['bok_a1'], shippingMethod: 'PICKUP' },
+              { sellerId: sellerB, bookIds: ['bok_b1'], shippingMethod: 'PICKUP' },
+            ],
+          },
+          mockDb
+        )
+      ).rejects.toMatchObject({
+        statusCode: 400,
+        code: 'TOO_MANY_PENDING_REQUESTS',
+      });
     });
   });
 
@@ -251,6 +485,7 @@ describe('OrderService - Delivery Flow & PDPA Protection', () => {
           bookListingId: 'bok_1',
           price: 175,
           bookListing: {
+            grade: 'GENTLY_READ',
             bookCatalog: { title: 'หนังสือทดสอบ', coverUrl: 'https://cover.webp' },
             images: [],
           },
@@ -258,7 +493,7 @@ describe('OrderService - Delivery Flow & PDPA Protection', () => {
       ],
     };
 
-    it('ผู้ซื้อดูออเดอร์: ต้องมองเห็นที่อยู่จัดส่งของตนเองได้เสมอทุกสถานะ', async () => {
+    it('ผู้ซื้อดูออเดอร์: ต้องมองเห็นที่อยู่จัดส่งของตนเองได้เสมอทุกสถานะ และได้ grade จริงของหนังสือ', async () => {
       mockDb.order.findUnique.mockResolvedValue(baseOrder);
 
       const result = await getOrderDetail(mockOrderId, mockBuyerId, mockDb);
@@ -266,6 +501,7 @@ describe('OrderService - Delivery Flow & PDPA Protection', () => {
       expect(result.deliveryDetails).not.toBeNull();
       expect(result.deliveryDetails?.deliveryAddress).toBe('หอ 4 มช.');
       expect(result.buyer.phoneNumber).toBe('0865554433');
+      expect(result.items[0].grade).toBe('GENTLY_READ');
     });
 
     it('ผู้ขายดูออเดอร์สถานะ REQUESTED: ต้องถูกซ่อนที่อยู่จัดส่งและเบอร์ผู้ซื้อตามกฎ PDPA', async () => {

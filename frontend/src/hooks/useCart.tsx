@@ -5,37 +5,31 @@ import React, {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
+  useRef,
   useState,
   ReactNode,
 } from 'react';
-import { Book, DeliveryMethod, Address } from '@/types';
+import { Book, Address } from '@/types';
 import { api } from '@/lib/api';
-import { calcParcelFee } from '@/lib/delivery';
 import { BackendAddress, mapBackendAddressToAddress } from '@/lib/mappers';
 import { useLiff } from '@/hooks/useLiff';
 
-const CART_STORAGE_KEY = 'gongdong.cart.v1';
+const CART_STORAGE_PREFIX = 'gongdong.cart.v2';
+
+export interface CartShopGroup {
+  sellerId: string;
+  sellerName: string;
+  items: Book[];
+}
 
 interface PersistedCart {
   items: Book[];
-  deliveryMethod: DeliveryMethod;
-  meetupZone: string;
-  meetupTime: string;
-  meetupNote: string;
 }
 
 export interface CartContextValue {
   items: Book[];
-  sellerId: string | null;
-  sellerName: string | null;
-  deliveryMethod: DeliveryMethod;
-  setDeliveryMethod: (method: DeliveryMethod) => void;
-  meetupZone: string;
-  setMeetupZone: (zone: string) => void;
-  meetupTime: string;
-  setMeetupTime: (time: string) => void;
-  meetupNote: string;
-  setMeetupNote: (note: string) => void;
+  shopGroups: CartShopGroup[];
   addresses: Address[];
   addressesLoading: boolean;
   selectedAddress: Address | null;
@@ -44,28 +38,26 @@ export interface CartContextValue {
   addToCart: (book: Book) => {
     success: boolean;
     message?: string;
-    reason?: 'OTHER_SHOP' | 'DUPLICATE';
+    reason?: 'DUPLICATE';
   };
-  /** Empty the cart and start over with this book (cart holds one shop). */
-  replaceCart: (book: Book) => void;
   removeFromCart: (bookId: string) => void;
+  removeSellerItems: (sellerId: string) => void;
+  removeManyFromCart: (bookIds: string[]) => void;
+  syncCartBooks: (freshById: Record<string, Book>) => void;
   clearCart: () => void;
   bookTotal: number;
-  shippingFee: number;
-  grandTotal: number;
 }
 
 const CartContext = createContext<CartContextValue | null>(null);
 
 export const CartProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const { isReady, isLoggedIn, idToken } = useLiff();
+  const { isReady, isLoggedIn, idToken, user } = useLiff();
 
-  const [hydrated, setHydrated] = useState(false);
+  const storageKey = user?.id
+    ? `${CART_STORAGE_PREFIX}.${user.id}`
+    : `${CART_STORAGE_PREFIX}.guest`;
+  const loadedKeyRef = useRef<string | null>(null);
   const [items, setItems] = useState<Book[]>([]);
-  const [deliveryMethod, setDeliveryMethod] = useState<DeliveryMethod>('MEETUP');
-  const [meetupZone, setMeetupZone] = useState<string>('');
-  const [meetupTime, setMeetupTime] = useState<string>('');
-  const [meetupNote, setMeetupNote] = useState<string>('');
 
   const [addresses, setAddresses] = useState<Address[]>([]);
   const [addressesLoading, setAddressesLoading] = useState(false);
@@ -73,39 +65,29 @@ export const CartProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   useEffect(() => {
     try {
-      const raw = window.localStorage.getItem(CART_STORAGE_KEY);
+      const raw = window.localStorage.getItem(storageKey);
       if (raw) {
         const parsed = JSON.parse(raw) as Partial<PersistedCart>;
-        if (Array.isArray(parsed.items)) setItems(parsed.items);
-        if (parsed.deliveryMethod === 'MEETUP' || parsed.deliveryMethod === 'PARCEL') {
-          setDeliveryMethod(parsed.deliveryMethod);
-        }
-        if (typeof parsed.meetupZone === 'string') setMeetupZone(parsed.meetupZone);
-        if (typeof parsed.meetupTime === 'string') setMeetupTime(parsed.meetupTime);
-        if (typeof parsed.meetupNote === 'string') setMeetupNote(parsed.meetupNote);
+        setItems(Array.isArray(parsed.items) ? parsed.items : []);
+      } else {
+        setItems([]);
       }
     } catch {
-      /* ignore corrupted storage */
+      setItems([]);
     } finally {
-      setHydrated(true);
+      loadedKeyRef.current = storageKey;
     }
-  }, []);
+  }, [storageKey]);
 
   useEffect(() => {
-    if (!hydrated) return;
+    if (loadedKeyRef.current !== storageKey) return;
     try {
-      const payload: PersistedCart = {
-        items,
-        deliveryMethod,
-        meetupZone,
-        meetupTime,
-        meetupNote,
-      };
-      window.localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(payload));
+      const payload: PersistedCart = { items };
+      window.localStorage.setItem(storageKey, JSON.stringify(payload));
     } catch {
       /* ignore storage errors */
     }
-  }, [hydrated, items, deliveryMethod, meetupZone, meetupTime, meetupNote]);
+  }, [storageKey, items]);
 
   const refreshAddresses = useCallback(async (): Promise<Address[]> => {
     if (!idToken) return [];
@@ -132,77 +114,95 @@ export const CartProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, [idToken]);
 
   useEffect(() => {
-    if (!isReady || !isLoggedIn || !idToken) return;
+    if (!isReady) return;
+    if (!isLoggedIn || !idToken) {
+      setAddresses([]);
+      setSelectedAddress(null);
+      return;
+    }
     refreshAddresses();
   }, [isReady, isLoggedIn, idToken, refreshAddresses]);
 
-  const sellerId = items.length > 0 ? items[0].sellerId : null;
-  const sellerName = items.length > 0 ? items[0].sellerName : null;
-
-  const addToCart = (book: Book) => {
-    if (items.length > 0 && items[0].sellerId !== book.sellerId) {
-      return {
-        success: false,
-        reason: 'OTHER_SHOP' as const,
-        message: `ตะกร้ามีหนังสือจาก "${items[0].sellerName}" อยู่ · สั่งรวมได้ทีละร้าน`,
-      };
+  const shopGroups = useMemo<CartShopGroup[]>(() => {
+    const map = new Map<string, CartShopGroup>();
+    for (const item of items) {
+      const existing = map.get(item.sellerId);
+      if (existing) {
+        existing.items.push(item);
+      } else {
+        map.set(item.sellerId, {
+          sellerId: item.sellerId,
+          sellerName: item.sellerName,
+          items: [item],
+        });
+      }
     }
-    if (items.some((i) => i.id === book.id)) {
-      return {
-        success: false,
-        reason: 'DUPLICATE' as const,
-        message: 'หนังสือเล่มนี้อยู่ในตะกร้าแล้ว',
-      };
-    }
-    setItems((prev) => [...prev, book]);
-    return { success: true };
-  };
+    return Array.from(map.values());
+  }, [items]);
 
-  const replaceCart = (book: Book) => setItems([book]);
+  const addToCart = useCallback(
+    (book: Book) => {
+      if (items.some((i) => i.id === book.id)) {
+        return {
+          success: false,
+          reason: 'DUPLICATE' as const,
+          message: 'หนังสือเล่มนี้อยู่ในตะกร้าแล้ว',
+        };
+      }
+      setItems((prev) => (prev.some((i) => i.id === book.id) ? prev : [...prev, book]));
+      return { success: true };
+    },
+    [items]
+  );
 
-  const removeFromCart = (bookId: string) => {
+  const removeFromCart = useCallback((bookId: string) => {
     setItems((prev) => prev.filter((i) => i.id !== bookId));
-  };
+  }, []);
 
-  const clearCart = () => {
+  const removeSellerItems = useCallback((sellerId: string) => {
+    setItems((prev) => prev.filter((i) => i.sellerId !== sellerId));
+  }, []);
+
+  const removeManyFromCart = useCallback((bookIds: string[]) => {
+    const removeSet = new Set(bookIds);
+    setItems((prev) => prev.filter((i) => !removeSet.has(i.id)));
+  }, []);
+
+  const syncCartBooks = useCallback((freshById: Record<string, Book>) => {
+    setItems((prev) =>
+      prev.map((item) => {
+        const fresh = freshById[item.id];
+        return fresh ? { ...item, ...fresh } : item;
+      })
+    );
+  }, []);
+
+  const clearCart = useCallback(() => {
     setItems([]);
-  };
+  }, []);
 
-  const bookTotal = items.reduce((sum, item) => sum + item.price, 0);
-
-  const shippingFee =
-    deliveryMethod === 'MEETUP'
-      ? 0
-      : calcParcelFee(items.length, undefined, selectedAddress?.province);
-
-  const grandTotal = bookTotal + shippingFee;
+  const bookTotal = useMemo(
+    () => items.reduce((sum, item) => sum + item.price, 0),
+    [items]
+  );
 
   return (
     <CartContext.Provider
       value={{
         items,
-        sellerId,
-        sellerName,
-        deliveryMethod,
-        setDeliveryMethod,
-        meetupZone,
-        setMeetupZone,
-        meetupTime,
-        setMeetupTime,
-        meetupNote,
-        setMeetupNote,
+        shopGroups,
         addresses,
         addressesLoading,
         selectedAddress,
         setSelectedAddress,
         refreshAddresses,
         addToCart,
-        replaceCart,
         removeFromCart,
+        removeSellerItems,
+        removeManyFromCart,
+        syncCartBooks,
         clearCart,
         bookTotal,
-        shippingFee,
-        grandTotal,
       }}
     >
       {children}

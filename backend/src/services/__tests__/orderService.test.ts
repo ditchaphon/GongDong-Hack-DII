@@ -81,8 +81,9 @@ describe('OrderService - State Machine & Core Transactions', () => {
     it('กรณีสำเร็จ: ต้องหัก 1 เครดิต, ล็อกหนังสือเป็น RESERVED, ตัดคำขออื่นเป็น REJECTED, และเปลี่ยนสถานะเป็น ACCEPTED', async () => {
       mockTx.order.findUnique.mockResolvedValue(baseOrder);
       mockTx.user.update.mockResolvedValue({ id: mockSellerId, credits: 2 });
+      mockTx.bookListing.updateMany.mockResolvedValue({ count: 1 });
       mockTx.orderItem.findMany.mockResolvedValue([
-        { orderId: 'ord_competing_888' },
+        { orderId: 'ord_competing_888', order: { buyerId: 'usr_competing_buyer' } },
       ]);
 
       const result = await acceptOrder(mockOrderId, mockSellerId, mockPrisma);
@@ -105,9 +106,9 @@ describe('OrderService - State Machine & Core Transactions', () => {
         }),
       });
 
-      // 3. ตรวจสอบการล็อกสต็อกหนังสือเป็น RESERVED
+      // 3. ตรวจสอบการล็อกสต็อกหนังสือเป็น RESERVED แบบมีเงื่อนไข status = AVAILABLE
       expect(mockTx.bookListing.updateMany).toHaveBeenCalledWith({
-        where: { id: { in: [mockBookId] } },
+        where: { id: { in: [mockBookId] }, status: 'AVAILABLE' },
         data: { status: 'RESERVED' },
       });
 
@@ -132,6 +133,17 @@ describe('OrderService - State Machine & Core Transactions', () => {
         remainingCredits: 2,
         lockedBookIds: [mockBookId],
         rejectedOrderIds: ['ord_competing_888'],
+      });
+    });
+
+    it('ต้องปฏิเสธด้วย 409 BOOK_NOT_AVAILABLE หากหนังสือถูกจองไปก่อนหน้าในเสี้ยววินาที (Conditional updateMany count ไม่ครบ)', async () => {
+      mockTx.order.findUnique.mockResolvedValue(baseOrder);
+      mockTx.user.update.mockResolvedValue({ id: mockSellerId, credits: 2 });
+      mockTx.bookListing.updateMany.mockResolvedValue({ count: 0 });
+
+      await expect(acceptOrder(mockOrderId, mockSellerId, mockPrisma)).rejects.toMatchObject({
+        statusCode: 409,
+        code: 'BOOK_NOT_AVAILABLE',
       });
     });
 

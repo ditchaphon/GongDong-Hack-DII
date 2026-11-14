@@ -8,6 +8,8 @@ import { generatePromptPayQR } from './promptPayService';
 import {
   AcceptOrderResult,
   AppError,
+  CreateBatchOrdersInput,
+  CreateBatchOrdersResult,
   CreateOrderInput,
   CreateOrderResult,
   OrderDetail,
@@ -20,6 +22,45 @@ import {
   ShipOrderInput,
   VerifyHandoverResult,
 } from '../types';
+
+const MAX_PENDING_REQUESTS = 10;
+const IDEMPOTENCY_TTL_MS = 5 * 60 * 1000;
+const idempotencyStore = new Map<string, { expiresAt: number; promise: Promise<any> }>();
+
+function runWithIdempotency<T>(
+  scopeKey: string | undefined,
+  operation: () => Promise<T>
+): Promise<T> {
+  if (!scopeKey) {
+    return operation();
+  }
+
+  const now = Date.now();
+  const existing = idempotencyStore.get(scopeKey);
+  if (existing && existing.expiresAt > now) {
+    return existing.promise as Promise<T>;
+  }
+
+  if (idempotencyStore.size > 1000) {
+    for (const [key, entry] of idempotencyStore.entries()) {
+      if (entry.expiresAt <= now) {
+        idempotencyStore.delete(key);
+      }
+    }
+  }
+
+  const promise = operation().catch((err) => {
+    idempotencyStore.delete(scopeKey);
+    throw err;
+  });
+
+  idempotencyStore.set(scopeKey, {
+    expiresAt: now + IDEMPOTENCY_TTL_MS,
+    promise,
+  });
+
+  return promise;
+}
 
 type OrderAccessRole = 'BUYER' | 'SELLER' | 'PARTICIPANT';
 
@@ -135,114 +176,159 @@ async function markOrderCompleted(
 }
 
 /**
- * ผู้ซื้อส่งคำขอซื้อสินค้าจากตะกร้า (POST /api/orders)
- * - 1 ตะกร้า = 1 ร้านค้า
- * - จำกัดคำขอค้าง REQUESTED ไม่เกิน 3 ออเดอร์
- * - รองรับ Dual Payment (COD / TRANSFER)
- * - คำนวณค่าส่งตามสูตร v4: PICKUP = ฿0, DELIVERY = ฿35 + ฿10*(N-1) + ฿15(ข้ามภาค)
+ * ตรวจสอบความถูกต้องเบื้องต้นของคำขอสร้างออเดอร์เดี่ยว (ก่อนเปิด Transaction)
  */
-export async function createOrder(
-  buyerId: string,
-  input: CreateOrderInput,
-  prismaClient?: any
-): Promise<CreateOrderResult> {
-  const db = prismaClient || defaultPrisma;
-
+function validateCreateOrderInput(buyerId: string, input: CreateOrderInput): string[] {
   if (!input.bookIds || input.bookIds.length === 0) {
-    throw new AppError('กรุณาเลือกหนังสืออย่างน้อย 1 เล่ม', 400, 'EMPTY_CART');
+    throw new AppError('กรุณาเลือกหนังสืออย่างน้อย 1 เล่ม', 400, 'EMPTY_CART', {
+      sellerId: input.sellerId,
+    });
+  }
+
+  const uniqueBookIds = Array.from(new Set(input.bookIds));
+  if (uniqueBookIds.length !== input.bookIds.length) {
+    throw new AppError('พบหนังสือซ้ำซ้อนในรายการสั่งซื้อ', 400, 'DUPLICATE_BOOK_IDS', {
+      sellerId: input.sellerId,
+    });
   }
 
   if (buyerId === input.sellerId) {
-    throw new AppError('คุณไม่สามารถสั่งซื้อหนังสือของตนเองได้', 400, 'CANNOT_BUY_OWN_BOOK');
+    throw new AppError('คุณไม่สามารถสั่งซื้อหนังสือของตนเองได้', 400, 'CANNOT_BUY_OWN_BOOK', {
+      sellerId: input.sellerId,
+    });
   }
 
+  return uniqueBookIds;
+}
+
+/**
+ * สร้างคำสั่งซื้อ 1 รายการภายใน Transaction (ใช้ร่วมกันระหว่าง createOrder และ createBatchOrders)
+ */
+async function createOrderInTx(
+  tx: any,
+  db: any,
+  buyerId: string,
+  input: CreateOrderInput,
+  uniqueBookIds: string[]
+): Promise<{ result: CreateOrderResult; bookCount: number; sellerId: string }> {
   const paymentMethod = normalizePaymentMethod(input.paymentMethod);
+  const orderRepo = tx.order?.findFirst ? tx.order : db.order;
+  const bookRepo = tx.bookListing?.findMany ? tx.bookListing : db.bookListing;
+  const shopRepo = tx.shopProfile?.findUnique ? tx.shopProfile : db.shopProfile;
 
-  // 1. ตรวจสอบข้อมูลผู้ซื้อ (ไม่บังคับ phoneNumber ตามหลัก PDPA v4)
-  const buyer = await db.user.findUnique({
-    where: { id: buyerId },
-    select: { id: true, phoneNumber: true },
-  });
-
-  if (!buyer) {
-    throw new AppError('ไม่พบบัญชีผู้ซื้อในระบบ', 404, 'USER_NOT_FOUND');
+  // บังคับไม่เกิน 1 คำขอ REQUESTED ต่อ 1 ร้านค้า เพื่อกันการสแปมคำขอร้านเดิม
+  if (orderRepo?.findFirst) {
+    const existingForSeller = await orderRepo.findFirst({
+      where: { buyerId, sellerId: input.sellerId, status: 'REQUESTED' },
+      select: { id: true },
+    });
+    if (existingForSeller) {
+      throw new AppError(
+        'คุณมีคำขอซื้อที่รอร้านค้านี้อนุมัติอยู่แล้ว กรุณารอร้านตอบรับหรือยกเลิกคำขอเดิมก่อน',
+        400,
+        'PENDING_ORDER_EXISTS_FOR_SELLER',
+        { sellerId: input.sellerId, existingOrderId: existingForSeller.id }
+      );
+    }
   }
 
-  // 2. ตรวจสอบโควต้าค้างคำขอ (REQUESTED <= 3)
-  const pendingCount = await db.order.count({
-    where: { buyerId, status: 'REQUESTED' },
+  // ตรวจสอบรายการหนังสือภายใน Transaction
+  const books = await bookRepo.findMany({
+    where: { id: { in: uniqueBookIds } },
   });
 
-  if (pendingCount >= 3) {
-    throw new AppError(
-      'คุณมีคำขอซื้อที่รอการตอบรับครบ 3 ออเดอร์แล้ว กรุณารอร้านค้าตอบรับหรือยกเลิกคำขอเดิม',
-      400,
-      'TOO_MANY_PENDING_REQUESTS'
-    );
+  if (books.length !== uniqueBookIds.length) {
+    const foundIds = new Set(books.map((b: any) => b.id));
+    const missingIds = uniqueBookIds.filter((id) => !foundIds.has(id));
+    throw new AppError('ไม่พบหนังสือบางเล่มในระบบ', 404, 'BOOK_NOT_FOUND', {
+      sellerId: input.sellerId,
+      invalidBookIds: missingIds,
+    });
   }
 
-  // 3. ตรวจสอบรายการหนังสือ
-  const books = await db.bookListing.findMany({
-    where: { id: { in: input.bookIds } },
-  });
-
-  if (books.length !== input.bookIds.length) {
-    throw new AppError('ไม่พบหนังสือบางเล่มในระบบ', 404, 'BOOK_NOT_FOUND');
-  }
-
-  if (books.some((b: any) => b.sellerId !== input.sellerId)) {
+  const wrongSellerBooks = books.filter((b: any) => b.sellerId !== input.sellerId);
+  if (wrongSellerBooks.length > 0) {
     throw new AppError(
       '1 ตะกร้าต้องเป็นหนังสือจากร้านเดียวกันเท่านั้น',
       400,
-      'MULTIPLE_SELLERS_IN_CART'
+      'MULTIPLE_SELLERS_IN_CART',
+      {
+        sellerId: input.sellerId,
+        invalidBookIds: wrongSellerBooks.map((b: any) => b.id),
+      }
     );
   }
 
-  if (books.some((b: any) => b.status !== 'AVAILABLE')) {
+  const unavailableBooks = books.filter((b: any) => b.status !== 'AVAILABLE');
+  if (unavailableBooks.length > 0) {
     throw new AppError(
       'หนังสือบางเล่มในตะกร้าถูกจองหรือขายไปแล้ว',
       400,
-      'BOOK_NOT_AVAILABLE'
+      'BOOK_NOT_AVAILABLE',
+      {
+        sellerId: input.sellerId,
+        invalidBookIds: unavailableBooks.map((b: any) => b.id),
+      }
     );
   }
 
-  if (paymentMethod === 'COD' && books.some((b: any) => b.codEnabled === false)) {
+  const nonCodBooks = paymentMethod === 'COD' ? books.filter((b: any) => b.codEnabled === false) : [];
+  if (nonCodBooks.length > 0) {
     throw new AppError(
       'หนังสือบางเล่มในตะกร้าไม่รองรับการเก็บเงินปลายทาง/จ่ายตอนรับ',
       400,
-      'COD_NOT_ENABLED'
+      'COD_NOT_ENABLED',
+      {
+        sellerId: input.sellerId,
+        invalidBookIds: nonCodBooks.map((b: any) => b.id),
+      }
     );
   }
 
-  // 4. ตรวจสอบวิธีจัดส่งและดึงจังหวัดร้านค้าสำหรับคำนวณค่าส่งข้ามภาค
-  let sellerProvince: string | null = null;
   if (input.shippingMethod === 'DELIVERY') {
-    if (books.some((b: any) => !b.allowDelivery)) {
-      throw new AppError('หนังสือบางเล่มในตะกร้าไม่สะดวกจัดส่งพัสดุ', 400, 'DELIVERY_NOT_ALLOWED');
+    const disallowedDelivery = books.filter((b: any) => !b.allowDelivery);
+    if (disallowedDelivery.length > 0) {
+      throw new AppError('หนังสือบางเล่มในตะกร้าไม่สะดวกจัดส่งพัสดุ', 400, 'DELIVERY_NOT_ALLOWED', {
+        sellerId: input.sellerId,
+        invalidBookIds: disallowedDelivery.map((b: any) => b.id),
+      });
     }
     if (!input.recipientName || !input.deliveryAddress) {
       throw new AppError(
         'กรุณาระบุชื่อผู้รับและที่อยู่จัดส่งพัสดุให้ครบถ้วน',
         400,
-        'MISSING_DELIVERY_DETAILS'
+        'MISSING_DELIVERY_DETAILS',
+        { sellerId: input.sellerId }
       );
     }
-    if (db.shopProfile?.findUnique) {
-      const shop = await db.shopProfile.findUnique({
-        where: { userId: input.sellerId },
-        select: { province: true },
-      });
-      sellerProvince = shop?.province ?? null;
-    }
   } else if (input.shippingMethod === 'PICKUP') {
-    if (books.some((b: any) => !b.allowPickup)) {
-      throw new AppError('หนังสือบางเล่มในตะกร้าไม่สะดวกนัดรับ', 400, 'PICKUP_NOT_ALLOWED');
+    const disallowedPickup = books.filter((b: any) => !b.allowPickup);
+    if (disallowedPickup.length > 0) {
+      throw new AppError('หนังสือบางเล่มในตะกร้าไม่สะดวกนัดรับ', 400, 'PICKUP_NOT_ALLOWED', {
+        sellerId: input.sellerId,
+        invalidBookIds: disallowedPickup.map((b: any) => b.id),
+      });
     }
   } else {
-    throw new AppError('วิธีการจัดส่งไม่ถูกต้อง', 400, 'INVALID_SHIPPING_METHOD');
+    throw new AppError('วิธีการจัดส่งไม่ถูกต้อง', 400, 'INVALID_SHIPPING_METHOD', {
+      sellerId: input.sellerId,
+    });
   }
 
-  // 5. คำนวณค่าส่งและยอดรวม (฿35 + ฿10/เล่ม + ฿15 ข้ามภาค)
+  // ดึงจังหวัดและกำหนดวันจัดส่งจริงจาก ShopProfile บน Server (ไม่เชื่อค่าที่ Client ส่งมา)
+  let sellerProvince: string | null = null;
+  let shipWithinDays: number | null = input.shippingMethod === 'DELIVERY' ? 2 : null;
+  if (shopRepo?.findUnique) {
+    const shop = await shopRepo.findUnique({
+      where: { userId: input.sellerId },
+      select: { province: true, shipWithinDays: true },
+    });
+    sellerProvince = shop?.province ?? null;
+    if (input.shippingMethod === 'DELIVERY' && typeof shop?.shipWithinDays === 'number') {
+      shipWithinDays = shop.shipWithinDays;
+    }
+  }
+
   const booksPrice = books.reduce((sum: number, b: any) => sum + Number(b.price), 0);
   const shippingFee =
     input.shippingMethod === 'DELIVERY'
@@ -250,76 +336,192 @@ export async function createOrder(
       : 0;
   const totalPrice = booksPrice + shippingFee;
 
+  if (
+    typeof input.expectedTotal === 'number' &&
+    Number.isFinite(input.expectedTotal) &&
+    Math.abs(totalPrice - input.expectedTotal) > 0.01
+  ) {
+    throw new AppError(
+      'ราคาหนังสือหรือค่าจัดส่งมีการเปลี่ยนแปลง กรุณาตรวจสอบยอดใหม่อีกครั้ง',
+      409,
+      'PRICE_CHANGED',
+      {
+        sellerId: input.sellerId,
+        expectedTotal: input.expectedTotal,
+        actualTotal: totalPrice,
+      }
+    );
+  }
+
   let parsedScheduledAt: Date | null = null;
   if (input.scheduledAt) {
     const d = new Date(input.scheduledAt);
     if (!isNaN(d.getTime())) parsedScheduledAt = d;
   }
 
-  // 6. บันทึกลงฐานข้อมูล
-  const createdOrder = await db.$transaction(async (tx: any) => {
-    const order = await tx.order.create({
-      data: {
-        buyerId,
-        sellerId: input.sellerId,
-        shippingMethod: input.shippingMethod,
-        paymentMethod,
-        shippingFee,
-        totalPrice,
-        status: 'REQUESTED',
-        pickupLat: input.pickupLat ?? null,
-        pickupLng: input.pickupLng ?? null,
-        pickupLocationName: input.pickupLocationName ?? null,
-        scheduledAt: parsedScheduledAt,
-        scheduleDateIso: input.scheduleDateIso ?? null,
-        scheduleTimeLabel: input.scheduleTimeLabel ?? null,
-        scheduleProposedBy:
-          parsedScheduledAt || input.scheduleDateIso ? 'BUYER' : null,
-        shipWithinDays: input.shipWithinDays ?? null,
-        orderItems: {
-          create: books.map((b: any) => ({
-            bookListingId: b.id,
-            price: b.price,
-          })),
-        },
-        deliveryDetail:
-          input.shippingMethod === 'DELIVERY'
-            ? {
-                create: {
-                  recipientName: input.recipientName!,
-                  recipientPhone: input.recipientPhone ?? null,
-                  province: input.buyerProvince ?? null,
-                  deliveryAddress: input.deliveryAddress!,
-                },
-              }
-            : undefined,
+  const order = await tx.order.create({
+    data: {
+      buyerId,
+      sellerId: input.sellerId,
+      shippingMethod: input.shippingMethod,
+      paymentMethod,
+      shippingFee,
+      totalPrice,
+      status: 'REQUESTED',
+      pickupLat: input.pickupLat ?? null,
+      pickupLng: input.pickupLng ?? null,
+      pickupLocationName: input.pickupLocationName ?? null,
+      scheduledAt: parsedScheduledAt,
+      scheduleDateIso: input.scheduleDateIso ?? null,
+      scheduleTimeLabel: input.scheduleTimeLabel ?? null,
+      scheduleProposedBy:
+        parsedScheduledAt || input.scheduleDateIso ? 'BUYER' : null,
+      shipWithinDays,
+      orderItems: {
+        create: books.map((b: any) => ({
+          bookListingId: b.id,
+          price: b.price,
+        })),
       },
-    });
+      deliveryDetail:
+        input.shippingMethod === 'DELIVERY'
+          ? {
+              create: {
+                recipientName: input.recipientName!,
+                recipientPhone: input.recipientPhone ?? null,
+                province: input.buyerProvince ?? null,
+                deliveryAddress: input.deliveryAddress!,
+              },
+            }
+          : undefined,
+    },
+  });
 
-    return {
+  return {
+    bookCount: books.length,
+    sellerId: input.sellerId,
+    result: {
       orderId: order.id,
       totalPrice: Number(order.totalPrice),
       shippingFee: Number(order.shippingFee),
       paymentMethod: (order.paymentMethod || paymentMethod) as PaymentMethod,
       status: 'REQUESTED' as const,
       createdAt: order.createdAt,
-    };
+    },
+  };
+}
+
+/**
+ * สร้างคำสั่งซื้อหลายร้านค้าพร้อมกันใน Transaction เดียว (All-or-Nothing)
+ */
+async function executeBatchOrders(
+  buyerId: string,
+  inputs: CreateOrderInput[],
+  prismaClient?: any
+): Promise<CreateBatchOrdersResult> {
+  const db = prismaClient || defaultPrisma;
+
+  if (!inputs || inputs.length === 0) {
+    throw new AppError('กรุณาเลือกรายการสั่งซื้ออย่างน้อย 1 ร้านค้า', 400, 'EMPTY_CART');
+  }
+
+  const validatedEntries: Array<{ input: CreateOrderInput; uniqueBookIds: string[] }> = [];
+  const batchSellerIds = new Set<string>();
+  for (const item of inputs) {
+    const uniqueBookIds = validateCreateOrderInput(buyerId, item);
+    if (batchSellerIds.has(item.sellerId)) {
+      throw new AppError(
+        'ไม่สามารถส่งคำขอซื้อหลายออเดอร์พร้อมกันไปยังร้านเดียวกันได้',
+        400,
+        'DUPLICATE_SELLER_IN_BATCH',
+        { sellerId: item.sellerId }
+      );
+    }
+    batchSellerIds.add(item.sellerId);
+    validatedEntries.push({ input: item, uniqueBookIds });
+  }
+
+  const createdEntries: Array<{ result: CreateOrderResult; bookCount: number; sellerId: string }> =
+    await db.$transaction(async (tx: any) => {
+    const userRepo = tx.user?.findUnique ? tx.user : db.user;
+    const orderRepo = tx.order?.count ? tx.order : db.order;
+
+    const buyer = await userRepo.findUnique({
+      where: { id: buyerId },
+      select: { id: true, phoneNumber: true },
+    });
+    if (!buyer) {
+      throw new AppError('ไม่พบบัญชีผู้ซื้อในระบบ', 404, 'USER_NOT_FOUND');
+    }
+
+    const pendingCount = await orderRepo.count({
+      where: { buyerId, status: 'REQUESTED' },
+    });
+
+    if (pendingCount + validatedEntries.length > MAX_PENDING_REQUESTS) {
+      throw new AppError(
+        `คุณมีคำขอซื้อที่รอการตอบรับเกินโควต้าสูงสุด ${MAX_PENDING_REQUESTS} ออเดอร์แล้ว กรุณารอร้านค้าตอบรับหรือยกเลิกคำขอเดิม`,
+        400,
+        'TOO_MANY_PENDING_REQUESTS',
+        { currentPending: pendingCount, maxPending: MAX_PENDING_REQUESTS }
+      );
+    }
+
+    const results: Array<{ result: CreateOrderResult; bookCount: number; sellerId: string }> = [];
+    for (const entry of validatedEntries) {
+      results.push(await createOrderInTx(tx, db, buyerId, entry.input, entry.uniqueBookIds));
+    }
+    return results;
   });
 
-  await safeNotifyOrder(
-    {
-      recipientUserId: input.sellerId,
-      role: 'SELLER',
-      orderId: createdOrder.orderId,
-      title: 'มีคำขอสั่งซื้อหนังสือใหม่',
-      message: `มีผู้สนใจสั่งซื้อหนังสือจำนวน ${books.length} เล่ม (฿${createdOrder.totalPrice})`,
-      badgeText: 'NEW ORDER REQUEST',
-      linkPath: `/seller/orders/${createdOrder.orderId}`,
-    },
-    db
-  );
+  for (const created of createdEntries) {
+    await safeNotifyOrder(
+      {
+        recipientUserId: created.sellerId,
+        role: 'SELLER',
+        orderId: created.result.orderId,
+        title: 'มีคำขอสั่งซื้อหนังสือใหม่',
+        message: `มีผู้สนใจสั่งซื้อหนังสือจำนวน ${created.bookCount} เล่ม (฿${created.result.totalPrice})`,
+        badgeText: 'NEW ORDER REQUEST',
+        linkPath: `/seller/orders/${created.result.orderId}`,
+      },
+      db
+    );
+  }
 
-  return createdOrder;
+  return {
+    orders: createdEntries.map((entry) => entry.result),
+  };
+}
+
+/**
+ * ผู้ซื้อส่งคำขอซื้อสินค้าจากตะกร้า (POST /api/orders)
+ * - 1 ออเดอร์ = 1 ร้านค้า
+ * - จำกัดคำขอค้าง REQUESTED ไม่เกิน 10 ออเดอร์ และไม่เกิน 1 ออเดอร์ค้างต่อร้านค้าเดียวกัน
+ * - คำนวณค่าส่งตามสูตร v4: PICKUP = ฿0, DELIVERY = ฿35 + ฿10*(N-1) + ฿15(ข้ามภาค)
+ */
+export async function createOrder(
+  buyerId: string,
+  input: CreateOrderInput,
+  prismaClient?: any
+): Promise<CreateOrderResult> {
+  const scopeKey = input.idempotencyKey ? `single:${buyerId}:${input.idempotencyKey}` : undefined;
+  return runWithIdempotency(scopeKey, async () => {
+    const batch = await executeBatchOrders(buyerId, [input], prismaClient);
+    return batch.orders[0];
+  });
+}
+
+/**
+ * ผู้ซื้อส่งคำขอซื้อหลายร้านค้าพร้อมกันแบบ All-or-Nothing (POST /api/orders/batch)
+ */
+export async function createBatchOrders(
+  buyerId: string,
+  input: CreateBatchOrdersInput,
+  prismaClient?: any
+): Promise<CreateBatchOrdersResult> {
+  const scopeKey = input.idempotencyKey ? `batch:${buyerId}:${input.idempotencyKey}` : undefined;
+  return runWithIdempotency(scopeKey, () => executeBatchOrders(buyerId, input.orders, prismaClient));
 }
 
 /**
@@ -423,6 +625,7 @@ export async function getOrderDetail(
         item.bookListing.images[0]?.imageUrl ||
         item.bookListing.bookCatalog.coverUrl ||
         '',
+      grade: item.bookListing.grade,
     })),
     buyer: {
       id: order.buyer.id,
@@ -571,10 +774,22 @@ export async function acceptOrder(
       },
     });
 
-    await tx.bookListing.updateMany({
-      where: { id: { in: bookListingIds } },
+    const lockResult = await tx.bookListing.updateMany({
+      where: { id: { in: bookListingIds }, status: 'AVAILABLE' },
       data: { status: 'RESERVED' },
     });
+
+    if (
+      lockResult &&
+      typeof lockResult.count === 'number' &&
+      lockResult.count !== bookListingIds.length
+    ) {
+      throw new AppError(
+        'หนังสือบางเล่มถูกจองหรือขายไปแล้วระหว่างดำเนินการ กรุณารีเฟรชและลองใหม่อีกครั้ง',
+        409,
+        'BOOK_NOT_AVAILABLE'
+      );
+    }
 
     const competingOrderItems = await tx.orderItem.findMany({
       where: {
@@ -582,12 +797,19 @@ export async function acceptOrder(
         orderId: { not: orderId },
         order: { status: 'REQUESTED' },
       },
-      select: { orderId: true },
+      select: {
+        orderId: true,
+        order: { select: { buyerId: true } },
+      },
     });
 
-    const rejectedOrderIds: string[] = Array.from(
-      new Set(competingOrderItems.map((item: any) => item.orderId))
-    );
+    const rejectedBuyerByOrder = new Map<string, string | undefined>();
+    for (const item of competingOrderItems) {
+      if (!rejectedBuyerByOrder.has(item.orderId)) {
+        rejectedBuyerByOrder.set(item.orderId, item.order?.buyerId);
+      }
+    }
+    const rejectedOrderIds: string[] = Array.from(rejectedBuyerByOrder.keys());
 
     if (rejectedOrderIds.length > 0) {
       await tx.order.updateMany({
@@ -624,6 +846,10 @@ export async function acceptOrder(
       remainingCredits: updatedSeller.credits,
       lockedBookIds: bookListingIds,
       rejectedOrderIds,
+      rejectedOrders: Array.from(rejectedBuyerByOrder.entries()).map(([id, bId]) => ({
+        orderId: id,
+        buyerId: bId,
+      })),
     };
   });
 
@@ -638,6 +864,21 @@ export async function acceptOrder(
     },
     db
   );
+
+  for (const rejected of result.rejectedOrders) {
+    if (!rejected.buyerId) continue;
+    await safeNotifyOrder(
+      {
+        recipientUserId: rejected.buyerId,
+        role: 'BUYER',
+        orderId: rejected.orderId,
+        title: 'คำขอซื้อถูกยกเลิกอัตโนมัติ',
+        message: 'หนังสือบางเล่มในคำขอถูกขายให้ผู้ซื้อท่านอื่นแล้ว กรุณาเลือกหนังสือเล่มใหม่',
+        badgeText: 'ORDER AUTO-REJECTED',
+      },
+      db
+    );
+  }
 
   return {
     orderId: result.orderId,
@@ -1381,7 +1622,7 @@ export async function schedulePickupOrder(
         ? { scheduleTimeLabel: input.scheduleTimeLabel }
         : {}),
       scheduleProposedBy: actorRole,
-      ...(actorRole === 'BUYER' ? { scheduleConfirmedByBuyer: true } : {}),
+      scheduleConfirmedByBuyer: actorRole === 'BUYER',
     },
   });
 

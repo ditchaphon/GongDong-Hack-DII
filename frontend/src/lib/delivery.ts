@@ -118,3 +118,27 @@ export function upcomingDates(availableDays: string[], count = 6, from = new Dat
 export function formatThaiDate(iso: string) {
   return parseLocal(iso).toLocaleDateString('th-TH', { weekday: 'short', day: 'numeric', month: 'short' });
 }
+
+/**
+ * Convert YYYY-MM-DD + Thai time-slot label into an accurate Bangkok (+07:00) ISO timestamp.
+ */
+export function scheduleToIso(dateISO: string, timeLabel?: string): string {
+  const datePart = dateISO.slice(0, 10);
+  const label = timeLabel ?? '';
+  let hour = 10;
+  let minute = 0;
+
+  const explicit = label.match(/(\d{1,2})[:.](\d{2})/);
+  if (explicit) {
+    hour = Math.min(23, Math.max(0, Number(explicit[1])));
+    minute = Math.min(59, Math.max(0, Number(explicit[2])));
+  } else if (label.includes('เย็น') || label.includes('16') || label.includes('17') || label.includes('18')) {
+    hour = 17;
+  } else if (label.includes('บ่าย') || label.includes('13') || label.includes('14') || label.includes('15')) {
+    hour = 14;
+  } else if (label.includes('เช้า') || label.includes('9') || label.includes('10')) {
+    hour = 10;
+  }
+
+  return new Date(`${datePart}T${pad(hour)}:${pad(minute)}:00+07:00`).toISOString();
+}

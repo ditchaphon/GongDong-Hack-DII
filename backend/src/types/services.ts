@@ -327,6 +327,23 @@ export interface CreateOrderInput {
   scheduleDateIso?: string;
   scheduleTimeLabel?: string;
   shipWithinDays?: number;
+  expectedTotal?: number;
+  idempotencyKey?: string;
+}
+
+/**
+ * ข้อมูลสำหรับสร้างคำสั่งซื้อหลายร้านค้าพร้อมกันแบบ All-or-Nothing (POST /api/orders/batch)
+ */
+export interface CreateBatchOrdersInput {
+  orders: CreateOrderInput[];
+  idempotencyKey?: string;
+}
+
+/**
+ * ผลลัพธ์จากการสร้างคำสั่งซื้อแบบ Batch
+ */
+export interface CreateBatchOrdersResult {
+  orders: CreateOrderResult[];
 }
 
 /**
@@ -373,6 +390,7 @@ export interface OrderDetail {
     title: string;
     price: number;
     coverImageUrl: string;
+    grade?: BookGrade;
   }>;
   buyer: {
     id: string;

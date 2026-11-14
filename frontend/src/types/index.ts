@@ -46,6 +46,8 @@ export interface Book {
   course?: string;
   defects?: { label: string; photo: string }[];
   shopPayeeVerified?: boolean;
+  codEnabled?: boolean;
+  status?: string;
 }
 
 export type OrderStatus =

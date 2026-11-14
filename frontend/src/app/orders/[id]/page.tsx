@@ -18,6 +18,7 @@ import { formatThaiDate, mapDirectionsUrl, mapEmbedUrl } from '@/lib/delivery';
 import { V4Order, ViewRole } from '@/types/v4';
 import {
   Clock,
+  CalendarDays,
   MapPin,
   Truck,
   Star,
@@ -280,6 +281,18 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
           </>
         )}
 
+        {isBuyer && order.status === 'ACCEPTED' && order.delivery === 'MEETUP' && (
+          <Panel icon={<CalendarDays className="w-4 h-4 text-teal-600" />} title="ยืนยันวันและจุดนัดรับ">
+            <p className="text-[11px] text-slate-500 leading-relaxed">
+              ผู้ขายรับออเดอร์แล้ว · ยืนยันหรือปรับเปลี่ยนวันเวลาและจุดนัดรับ เพื่อให้ระบบสร้างรหัสยืนยันส่งมอบ
+            </p>
+            {meetupCard}
+            <Button fullWidth onClick={() => router.push(`/orders/${order.id}/schedule?role=buyer`)}>
+              จัดการเวลานัดรับ / ยืนยันนัดหมาย
+            </Button>
+          </Panel>
+        )}
+
         {isBuyer && order.status === 'ACCEPTED' && order.delivery === 'PARCEL' && (
           <Panel icon={<Hourglass className="w-4 h-4 text-sky-600" />} title="รอผู้ขายยืนยันการส่ง">
             <p className="text-[11px] text-slate-500 leading-relaxed">
@@ -369,6 +382,18 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
               {meetupCard}
             </Panel>
           </>
+        )}
+
+        {!isBuyer && order.status === 'ACCEPTED' && order.delivery === 'MEETUP' && (
+          <Panel icon={<CalendarDays className="w-4 h-4 text-teal-600" />} title="กำหนด / ยืนยันเวลานัดรับ">
+            <p className="text-[11px] text-slate-500 leading-relaxed">
+              ออเดอร์นี้เป็นแบบนัดรับ · กดยืนยันหรือเสนอเวลานัดหมายใหม่กับผู้ซื้อก่อนเจอกัน (จ่ายเงินสดหน้างาน)
+            </p>
+            {meetupCard}
+            <Button fullWidth onClick={() => router.push(`/orders/${order.id}/schedule?role=seller`)}>
+              กำหนด / ยืนยันนัดหมาย
+            </Button>
+          </Panel>
         )}
 
         {!isBuyer && order.status === 'ACCEPTED' && order.delivery === 'PARCEL' && (
