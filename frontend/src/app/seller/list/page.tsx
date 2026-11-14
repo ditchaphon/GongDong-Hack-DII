@@ -14,6 +14,7 @@ import {
 import { useListing } from '@/hooks/useListing';
 import { useSeller } from '@/hooks/useSeller';
 import { IsbnScanner } from '@/components/v4';
+import { api } from '@/lib/api';
 import {
   ScanLine,
   BookOpen,
@@ -36,18 +37,45 @@ export default function SellerListStep1Page() {
   const [isMissingOpen, setIsMissingOpen] = useState(false);
   const [manualIsbn, setManualIsbn] = useState('');
   const [volumes, setVolumes] = useState<{ volume: number; isbn: string }[]>([]);
+  const [lookingUp, setLookingUp] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const isSet = draft.mode === 'SET';
 
-  // The book lookup service is owned by the backend team. The frontend only
-  // captures the ISBN here and never fills in fake metadata.
-  const applyLookup = (isbn: string) => {
-    update({ isbn, title: '', author: '', publisher: '', originalPrice: 0 });
-    setManualIsbn(isbn);
-    setToastMessage(`อ่านเลข ISBN ${isbn} แล้ว`);
-    router.push('/seller/list/details');
+  const applyLookup = async (isbn: string) => {
+    const clean = isbn.replace(/[^0-9Xx]/g, '');
+    setManualIsbn(clean);
+    setLookingUp(true);
+    try {
+      const res = await api.get<{
+        found: boolean;
+        isbn: string;
+        title?: string;
+        author?: string | null;
+        publisher?: string | null;
+        original_price?: number | null;
+      }>(`/api/books/isbn/${encodeURIComponent(clean)}`);
+      if (res.found && res.title) {
+        update({
+          isbn: res.isbn || clean,
+          title: res.title,
+          author: res.author || '',
+          publisher: res.publisher || '',
+          originalPrice: res.original_price ? Number(res.original_price) : 0,
+        });
+        setToastMessage(`พบข้อมูลหนังสือ ISBN ${clean}`);
+      } else {
+        update({ isbn: clean, title: '', author: '', publisher: '', originalPrice: 0 });
+        setToastMessage(`อ่านเลข ISBN ${clean} แล้ว · กรอกข้อมูลเพิ่มเติม`);
+      }
+    } catch {
+      update({ isbn: clean, title: '', author: '', publisher: '', originalPrice: 0 });
+      setToastMessage(`อ่านเลข ISBN ${clean} แล้ว · กรอกข้อมูลเพิ่มเติม`);
+    } finally {
+      setLookingUp(false);
+      router.push('/seller/list/details');
+    }
   };
 
   const handleScan = () => {

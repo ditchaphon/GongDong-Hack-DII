@@ -24,9 +24,11 @@ const envSchema = z.object({
   LINE_LOGIN_CHANNEL_ID: z.string().optional(),
   LINE_LIFF_CHANNEL_ID: z.string().optional(),
 
-  // SlipOK
+  // SlipOK & Platform PromptPay
   SLIPOK_API_KEY: z.string().optional(),
   SLIPOK_BRANCH_ID: z.string().optional(),
+  PLATFORM_PROMPTPAY_ID: z.string().optional(),
+  PLATFORM_RECIPIENT_NAME: z.string().default('กองดอง · บัญชีรับชำระ'),
 });
 
 export const env = envSchema.parse(process.env);

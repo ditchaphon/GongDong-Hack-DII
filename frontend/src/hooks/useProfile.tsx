@@ -1,37 +1,93 @@
 'use client';
 
-import React, { createContext, useContext, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { api } from '@/lib/api';
+import { useLiff } from '@/hooks/useLiff';
 
-/**
- * v4 identity: nickname + avatar replace the LINE name/photo everywhere.
- * Stored in memory for the prototype (server session in production).
- */
 export interface ProfileContextValue {
   nickname: string;
   avatar: string;
   consent: boolean;
   isComplete: boolean;
-  saveProfile: (data: { nickname: string; avatar: string; consent: boolean }) => void;
+  loading: boolean;
+  saveProfile: (data: {
+    nickname: string;
+    avatar: string;
+    consent: boolean;
+  }) => Promise<void>;
   clearProfile: () => void;
 }
 
 const ProfileContext = createContext<ProfileContextValue | null>(null);
 
+const consentKeyFor = (userId: string) => `gongdong.pdpa.consent.${userId}`;
+
 export const ProfileProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+  const { user, isReady, idToken, refreshUser } = useLiff();
+
   const [nickname, setNickname] = useState('');
   const [avatar, setAvatar] = useState('');
   const [consent, setConsent] = useState(false);
 
-  const saveProfile = (data: { nickname: string; avatar: string; consent: boolean }) => {
-    setNickname(data.nickname.trim());
+  useEffect(() => {
+    if (!isReady) return;
+
+    const backendNickname = user.nickname?.trim() ?? '';
+    setNickname(backendNickname);
+    setAvatar(user.pictureUrl || '');
+
+    let storedConsent = false;
+    try {
+      storedConsent = window.localStorage.getItem(consentKeyFor(user.id)) === '1';
+    } catch {
+      storedConsent = false;
+    }
+    setConsent(storedConsent || backendNickname.length >= 2);
+  }, [isReady, user.id, user.nickname, user.pictureUrl]);
+
+  const saveProfile = async (data: {
+    nickname: string;
+    avatar: string;
+    consent: boolean;
+  }) => {
+    const clean = data.nickname.trim();
+
+    if (idToken) {
+      await api.patch(
+        '/api/users/me',
+        {
+          nickname: clean,
+          avatar_url: data.avatar || undefined,
+        },
+        { token: idToken }
+      );
+      await refreshUser();
+    }
+
+    setNickname(clean);
     setAvatar(data.avatar);
     setConsent(data.consent);
+
+    try {
+      if (data.consent) {
+        window.localStorage.setItem(consentKeyFor(user.id), '1');
+      } else {
+        window.localStorage.removeItem(consentKeyFor(user.id));
+      }
+    } catch {
+      /* ignore storage errors */
+    }
   };
 
   const clearProfile = () => {
     setNickname('');
     setAvatar('');
     setConsent(false);
+    try {
+      window.localStorage.removeItem(consentKeyFor(user.id));
+    } catch {
+      /* ignore */
+    }
   };
 
   return (
@@ -41,6 +97,7 @@ export const ProfileProvider: React.FC<{ children: ReactNode }> = ({ children })
         avatar,
         consent,
         isComplete: nickname.trim().length >= 2 && consent,
+        loading: !isReady,
         saveProfile,
         clearProfile,
       }}

@@ -4,6 +4,7 @@ import {
   completeMeetupCodOrder,
   createOrder,
   disputeMissedMeeting,
+  getOrderPaymentQR,
   openDispute,
   receiveOrder,
   shipOrder,
@@ -269,5 +270,53 @@ describe('v3.0.0 Flows (Dual Payment COD, Cancel, Receive, Dispute, Book Set/INN
     );
     expect(updated.status).toBe('HIDDEN');
     expect(updated.price).toBe(790);
+  });
+
+  it('PromptPay QR สำหรับออเดอร์: สร้าง QR พร้อมชื่อผู้รับแบบ Masked และบล็อกออเดอร์ COD', async () => {
+    const dbTransfer = {
+      order: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: 'ord-qr-1',
+          buyerId: 'buyer-1',
+          sellerId: 'seller-1',
+          shippingMethod: 'DELIVERY',
+          paymentMethod: 'TRANSFER',
+          status: 'ACCEPTED',
+          totalPrice: 350,
+          seller: {
+            nickname: 'ป้าหนอน',
+            promptpayId: '0812345678',
+            verifiedName: 'สมหญิง รักอ่าน',
+            shopProfile: { shopName: 'ป้าหนอนหนังสือ' },
+          },
+        }),
+      },
+    };
+
+    const qrRes = await getOrderPaymentQR('ord-qr-1', 'buyer-1', dbTransfer);
+    expect(qrRes.orderId).toBe('ord-qr-1');
+    expect(qrRes.amount).toBe(350);
+    expect(qrRes.recipientLabel).toBe('สม••• รัก••• · ป้าหนอนหนังสือ');
+    expect(qrRes.qrDataUrl.startsWith('data:image/png;base64,')).toBe(true);
+    expect(qrRes.payload).toContain('000201');
+
+    const dbCod = {
+      order: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: 'ord-qr-cod',
+          buyerId: 'buyer-1',
+          sellerId: 'seller-1',
+          shippingMethod: 'DELIVERY',
+          paymentMethod: 'COD',
+          status: 'ACCEPTED',
+          totalPrice: 350,
+          seller: { promptpayId: '0812345678' },
+        }),
+      },
+    };
+
+    await expect(getOrderPaymentQR('ord-qr-cod', 'buyer-1', dbCod)).rejects.toThrowError(
+      /COD/
+    );
   });
 });

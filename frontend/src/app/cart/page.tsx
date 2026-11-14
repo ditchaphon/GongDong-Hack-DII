@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import clsx from 'clsx';
@@ -8,10 +8,10 @@ import { TopBar } from '@/components/layout/TopBar';
 import { Button, BottomSheet, EmptyState } from '@/components/ui';
 import { useCart } from '@/hooks/useCart';
 import { useV4Orders } from '@/hooks/useV4Orders';
-import { MOCK_ADDRESSES } from '@/mocks/books';
-import { getShopById } from '@/mocks/shops';
-import { BookGrade, DeliveryMethod } from '@/types';
-import { V4Grade } from '@/types/v4';
+import { api } from '@/lib/api';
+import { toV4Grade } from '@/lib/catalog';
+import { BackendPublicShopResponse, mapPublicShopToShopProfile } from '@/lib/mappers';
+import { DeliveryMethod, ShopProfile } from '@/types';
 import {
   MeetupPoint,
   calcParcelFee,
@@ -33,28 +33,58 @@ import {
   Info,
 } from 'lucide-react';
 
-const GRADE_TO_V4: Record<BookGrade, V4Grade> = {
-  A: 'LIKE_NEW',
-  B: 'GENTLY_READ',
-  C: 'WELL_LOVED',
-  D: 'WORN_BUT_READABLE',
-};
-
-// Shops without a public profile (e.g. demo listings) fall back to campus points.
+// Fallback campus point if a seller has not yet added custom meetup points.
 const FALLBACK_POINTS: MeetupPoint[] = [
   { id: 'fb-1', name: 'หน้าหอสมุดกลาง มช.', province: 'เชียงใหม่', lat: 18.8023, lng: 98.9524 },
 ];
 
 export default function CartPage() {
   const router = useRouter();
-  const { items, sellerId, sellerName, selectedAddress, setSelectedAddress, removeFromCart, clearCart, bookTotal } =
-    useCart();
+  const {
+    items,
+    sellerId,
+    sellerName,
+    addresses,
+    addressesLoading,
+    selectedAddress,
+    setSelectedAddress,
+    removeFromCart,
+    clearCart,
+    bookTotal,
+  } = useCart();
   const { createOrder } = useV4Orders();
 
-  const shop = sellerId ? getShopById(sellerId) : undefined;
+  const [shop, setShop] = useState<ShopProfile | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    if (!sellerId) {
+      setShop(null);
+      return;
+    }
+    api
+      .get<BackendPublicShopResponse>(`/api/shops/${sellerId}`)
+      .then((res) => {
+        if (active) setShop(mapPublicShopToShopProfile(res));
+      })
+      .catch(() => {
+        if (active) setShop(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, [sellerId]);
+
   const points = shop?.meetupPoints?.length ? shop.meetupPoints : FALLBACK_POINTS;
-  const availableDays = shop?.availableDays ?? ['จ', 'อ', 'พ', 'พฤ', 'ศ'];
-  const slots = shop?.availableSlots?.length ? shop.availableSlots : ['เย็น 16–20 น.'];
+  const availableDays = useMemo(
+    () => (shop?.availableDays?.length ? shop.availableDays : ['จ', 'อ', 'พ', 'พฤ', 'ศ']),
+    [shop?.availableDays]
+  );
+  const slots = useMemo(
+    () => (shop?.availableSlots?.length ? shop.availableSlots : ['เย็น 16–20 น.']),
+    [shop?.availableSlots]
+  );
   const dates = useMemo(() => upcomingDates(availableDays), [availableDays]);
 
   const canMeetup = items.length > 0 && items.every((book) => book.deliveryMethods.includes('MEETUP'));
@@ -72,56 +102,87 @@ export default function CartPage() {
   const [isAddressSheetOpen, setIsAddressSheetOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  useEffect(() => {
+    if (points.length && !points.some((p) => p.id === pointId)) {
+      setPointId(points[0].id);
+    }
+  }, [points, pointId]);
+
+  useEffect(() => {
+    if (dates.length && !dates.some((d) => d.iso === dateISO)) {
+      setDateISO(dates[0].iso);
+    }
+  }, [dates, dateISO]);
+
+  useEffect(() => {
+    if (slots.length && !slots.includes(slot)) {
+      setSlot(slots[0]);
+    }
+  }, [slots, slot]);
+
   const point = points.find((p) => p.id === pointId) ?? points[0];
-  const parcelFee = calcParcelFee(items.length, shop?.province, selectedAddress.province);
+  const parcelFee = calcParcelFee(items.length, shop?.province, selectedAddress?.province);
   const shippingFee = delivery === 'PARCEL' ? parcelFee : 0;
   const total = bookTotal + shippingFee;
+  const missingParcelAddress = delivery === 'PARCEL' && !selectedAddress;
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!items.length) return;
+    if (delivery === 'PARCEL' && !selectedAddress) {
+      setSubmitError('กรุณาเพิ่มหรือเลือกที่อยู่จัดส่งก่อนส่งคำขอซื้อ');
+      return;
+    }
+    setSubmitError(null);
     setIsSubmitting(true);
-    const id = createOrder({
-      delivery,
-      shopId: sellerId ?? undefined,
-      shop: {
-        shopName: shop?.shopName ?? sellerName ?? 'ร้านหนังสือ',
-        avatar: shop?.avatar ?? items[0].sellerAvatar,
-        rating: shop?.rating ?? items[0].sellerRating,
-        completedSales: shop?.completedSales ?? 0,
-        payeeVerified: shop?.payeeVerified ?? items[0].isPromptPayVerified,
-      },
-      books: items.map((book) => ({
-        id: book.id,
-        title: book.title,
-        author: book.author,
-        cover: book.photos.cover,
-        grade: GRADE_TO_V4[book.grade],
-        price: book.price,
-      })),
-      shippingFee,
-      schedule:
-        delivery === 'MEETUP' && point
-          ? {
-              dateISO,
-              timeLabel: slot,
-              lat: point.lat,
-              lng: point.lng,
-              landmark: point.name,
-              proposedBy: 'BUYER',
-              confirmedByBuyer: true,
-            }
-          : undefined,
-      shipping:
-        delivery === 'PARCEL'
-          ? {
-              receiverName: selectedAddress.fullName,
-              receiverAddress: `${selectedAddress.detail} ${selectedAddress.subdistrict} ${selectedAddress.district} ${selectedAddress.province} ${selectedAddress.postalCode}`,
-            }
-          : undefined,
-      shipWithinDays: shop ? shipDeadlineDays(shop.shipMode, shop.shipWithinDays) : 2,
-    });
-    clearCart();
-    router.push(`/cart/success?id=${id}`);
+    try {
+      const id = await createOrder({
+        delivery,
+        shopId: sellerId ?? undefined,
+        shop: {
+          shopName: shop?.shopName ?? sellerName ?? 'ร้านหนังสือ',
+          avatar: shop?.avatar ?? items[0].sellerAvatar,
+          rating: shop?.rating ?? items[0].sellerRating,
+          completedSales: shop?.completedSales ?? 0,
+          payeeVerified: shop?.payeeVerified ?? items[0].isPromptPayVerified,
+        },
+        books: items.map((book) => ({
+          id: book.id,
+          title: book.title,
+          author: book.author,
+          cover: book.photos.cover,
+          grade: toV4Grade(book.grade),
+          price: book.price,
+        })),
+        shippingFee,
+        schedule:
+          delivery === 'MEETUP' && point
+            ? {
+                dateISO,
+                timeLabel: slot,
+                lat: point.lat,
+                lng: point.lng,
+                landmark: point.name,
+                proposedBy: 'BUYER',
+                confirmedByBuyer: true,
+              }
+            : undefined,
+        shipping:
+          delivery === 'PARCEL' && selectedAddress
+            ? {
+                province: selectedAddress.province,
+                receiverName: selectedAddress.fullName,
+                receiverAddress: `${selectedAddress.detail} ${selectedAddress.subdistrict} ${selectedAddress.district} ${selectedAddress.province} ${selectedAddress.postalCode}`,
+              }
+            : undefined,
+        shipWithinDays: shop ? shipDeadlineDays(shop.shipMode, shop.shipWithinDays) : 2,
+      });
+      clearCart();
+      router.push(`/cart/success?id=${id}`);
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : 'ส่งคำขอซื้อไม่สำเร็จ');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   if (items.length === 0) {
@@ -294,20 +355,34 @@ export default function CartPage() {
             </div>
           ) : (
             <div className="space-y-3 pt-3 border-t border-slate-100">
-              <button
-                type="button"
-                onClick={() => setIsAddressSheetOpen(true)}
-                className="w-full p-3 rounded-xl bg-slate-50 hover:bg-slate-100 text-left text-xs space-y-1"
-              >
-                <span className="flex items-center justify-between">
-                  <span className="font-bold text-slate-800">ส่งถึง: {selectedAddress.fullName}</span>
-                  <span className="text-[var(--color-primary)] font-semibold">เปลี่ยน</span>
-                </span>
-                <span className="block text-slate-500 leading-snug">
-                  {selectedAddress.detail} {selectedAddress.subdistrict} {selectedAddress.district}{' '}
-                  {selectedAddress.province} {selectedAddress.postalCode}
-                </span>
-              </button>
+              {selectedAddress ? (
+                <button
+                  type="button"
+                  onClick={() => setIsAddressSheetOpen(true)}
+                  className="w-full p-3 rounded-xl bg-slate-50 hover:bg-slate-100 text-left text-xs space-y-1"
+                >
+                  <span className="flex items-center justify-between">
+                    <span className="font-bold text-slate-800">ส่งถึง: {selectedAddress.fullName}</span>
+                    <span className="text-[var(--color-primary)] font-semibold">เปลี่ยน</span>
+                  </span>
+                  <span className="block text-slate-500 leading-snug">
+                    {selectedAddress.detail} {selectedAddress.subdistrict} {selectedAddress.district}{' '}
+                    {selectedAddress.province} {selectedAddress.postalCode}
+                  </span>
+                </button>
+              ) : (
+                <Link
+                  href="/addresses/edit?next=/cart"
+                  className="block w-full p-3 rounded-xl border border-dashed border-amber-300 bg-amber-50 hover:bg-amber-100/70 text-left text-xs space-y-1"
+                >
+                  <span className="block font-bold text-amber-900">
+                    {addressesLoading ? 'กำลังโหลดที่อยู่จัดส่ง...' : 'ยังไม่มีที่อยู่จัดส่ง'}
+                  </span>
+                  <span className="block text-amber-700">
+                    แตะเพื่อเพิ่มที่อยู่สำหรับส่งพัสดุ →
+                  </span>
+                </Link>
+              )}
               <div className="flex items-start gap-2 p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-[11px] text-slate-600 leading-relaxed">
                 <Truck className="w-3.5 h-3.5 shrink-0 mt-0.5 text-slate-400" />
                 <span>
@@ -357,7 +432,7 @@ export default function CartPage() {
 
       <BottomSheet isOpen={isAddressSheetOpen} onClose={() => setIsAddressSheetOpen(false)} title="เลือกที่อยู่จัดส่ง">
         <div className="space-y-2 py-2">
-          {MOCK_ADDRESSES.map((addr) => (
+          {addresses.map((addr) => (
             <button
               key={addr.id}
               type="button"
@@ -367,7 +442,7 @@ export default function CartPage() {
               }}
               className={clsx(
                 'w-full text-left p-3.5 rounded-xl border',
-                selectedAddress.id === addr.id ? 'border-[var(--color-primary)] bg-emerald-50/60' : 'border-slate-200 hover:bg-slate-50'
+                selectedAddress?.id === addr.id ? 'border-[var(--color-primary)] bg-emerald-50/60' : 'border-slate-200 hover:bg-slate-50'
               )}
             >
               <div className="flex justify-between items-center text-xs font-bold text-slate-800">
@@ -377,7 +452,7 @@ export default function CartPage() {
               <p className="text-xs text-slate-500 mt-1">{addr.detail}</p>
             </button>
           ))}
-          <Link href="/addresses/edit" className="block text-center text-xs font-bold text-[var(--color-primary)] py-2">
+          <Link href="/addresses/edit?next=/cart" className="block text-center text-xs font-bold text-[var(--color-primary)] py-2">
             + เพิ่มที่อยู่ใหม่
           </Link>
         </div>
@@ -385,11 +460,21 @@ export default function CartPage() {
 
       <div className="fixed bottom-0 left-0 right-0 z-30 flex justify-center pointer-events-none">
         <div className="w-full max-w-[430px] bg-white border-t border-slate-200 p-3 pointer-events-auto safe-area-bottom shadow-lg space-y-2">
-          <p className="flex items-center justify-center gap-1 text-[10px] text-slate-400 text-center">
-            <Info className="w-3 h-3" />
-            ยังไม่ต้องจ่ายเงินตอนนี้ · รอผู้ขายตอบรับก่อน
-          </p>
-          <Button fullWidth size="lg" isLoading={isSubmitting} onClick={handleSubmit}>
+          {submitError ? (
+            <p className="text-[11px] font-semibold text-rose-600 text-center">{submitError}</p>
+          ) : (
+            <p className="flex items-center justify-center gap-1 text-[10px] text-slate-400 text-center">
+              <Info className="w-3 h-3" />
+              ยังไม่ต้องจ่ายเงินตอนนี้ · รอผู้ขายตอบรับก่อน
+            </p>
+          )}
+          <Button
+            fullWidth
+            size="lg"
+            isLoading={isSubmitting}
+            disabled={missingParcelAddress}
+            onClick={handleSubmit}
+          >
             ส่งคำขอซื้อ · ฿{total.toLocaleString()}
           </Button>
         </div>

@@ -56,3 +56,36 @@ export function maskSensitiveData(text: string): MaskingResult {
     detectedTypes,
   };
 }
+
+function splitGraphemes(text: string): string[] {
+  if (typeof Intl !== 'undefined' && 'Segmenter' in Intl) {
+    const segmenter = new Intl.Segmenter('th', { granularity: 'grapheme' });
+    return Array.from(segmenter.segment(text), (s) => s.segment);
+  }
+  return Array.from(text);
+}
+
+/**
+ * เซ็นเซอร์ชื่อจริงเจ้าของบัญชีรับเงิน (เช่น "สมชาย ใจดี" -> "สม••• ใจ•••")
+ * ใช้สำหรับ Human Firewall แสดงเตือนชื่อบัญชีผู้รับโดยไม่เปิดเผยชื่อเต็มตามกฎ PDPA
+ */
+export function maskAccountHolderName(name?: string | null): string | null {
+  const trimmed = (name || '').trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  return trimmed
+    .split(/\s+/)
+    .map((part) => {
+      const graphemes = splitGraphemes(part);
+      if (graphemes.length <= 1) {
+        return '•';
+      }
+      if (graphemes.length === 2) {
+        return `${graphemes[0]}•••`;
+      }
+      return `${graphemes.slice(0, 2).join('')}•••`;
+    })
+    .join(' ');
+}

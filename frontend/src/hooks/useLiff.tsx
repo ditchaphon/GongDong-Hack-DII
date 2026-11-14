@@ -9,6 +9,22 @@ import React, {
   ReactNode,
 } from 'react';
 import { UserProfile } from '@/types';
+import { api, setApiAuthToken } from '@/lib/api';
+
+interface BackendUserProfile {
+  id: string;
+  line_user_id: string;
+  display_name: string | null;
+  picture_url: string | null;
+  nickname: string | null;
+  avatar_url: string | null;
+  phone_number: string | null;
+  verified_name: string | null;
+  promptpay_id: string | null;
+  is_verified_seller: boolean;
+  no_show_count: number;
+  credits: number;
+}
 
 export interface LiffContextValue {
   isReady: boolean;
@@ -24,6 +40,7 @@ export interface LiffContextValue {
   error: string | null;
   login: () => void;
   logout: () => void;
+  refreshUser: () => Promise<void>;
   openWindow: (url: string, external?: boolean) => void;
   closeWindow: () => void;
   scanCode: () => Promise<string | null>;
@@ -62,18 +79,63 @@ export const LiffProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [friendship, setFriendship] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
+  const syncUserWithBackend = useCallback(
+    async (token: string, liffProfileFallback?: Partial<UserProfile>) => {
+      const profile = await api.get<BackendUserProfile>('/api/users/me', { token });
+      setUser({
+        id: profile.id,
+        lineUserId: profile.line_user_id,
+        displayName:
+          profile.nickname ||
+          profile.display_name ||
+          liffProfileFallback?.displayName ||
+          'ผู้ใช้กองดอง',
+        nickname: profile.nickname || undefined,
+        pictureUrl:
+          profile.avatar_url ||
+          profile.picture_url ||
+          liffProfileFallback?.pictureUrl,
+        isSeller: true,
+        credits: profile.credits,
+        isVerifiedSeller: profile.is_verified_seller,
+        promptPayName: profile.verified_name || undefined,
+        phone: profile.phone_number || undefined,
+      });
+    },
+    []
+  );
+
+  const refreshUser = useCallback(async () => {
+    if (!idToken) return;
+    try {
+      await syncUserWithBackend(idToken);
+    } catch (err) {
+      console.warn('[useLiff] Failed to refresh user profile from backend:', err);
+    }
+  }, [idToken, syncUserWithBackend]);
+
   useEffect(() => {
     let mounted = true;
 
     async function initLiff() {
-      // 1. Mock Mode (Development or Forced Mock)
+      // 1. Mock Mode (Development only when NEXT_PUBLIC_LIFF_MOCK=true or no LIFF ID)
       if (isMockEnv) {
+        const mockToken = 'mock_usr_mock_01';
+        setApiAuthToken(mockToken);
         if (mounted) {
           setIsInClient(false);
           setIsLoggedIn(true);
           setIsMock(true);
-          setIdToken('mock_id_token_eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9');
-          setIsReady(true);
+          setIdToken(mockToken);
+        }
+        try {
+          await syncUserWithBackend(mockToken);
+        } catch (err) {
+          console.warn('[useLiff] Backend /api/users/me unreachable in mock mode, using offline MOCK_USER:', err);
+        } finally {
+          if (mounted) {
+            setIsReady(true);
+          }
         }
         return;
       }
@@ -104,6 +166,7 @@ export const LiffProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         if (loggedIn) {
           const profile = await liff.getProfile();
           const rawToken = liff.getIDToken();
+          setApiAuthToken(rawToken);
           setIdToken(rawToken);
 
           // Check friendship with LINE OA
@@ -114,22 +177,36 @@ export const LiffProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             setFriendship(true);
           }
 
-          setUser((prev) => ({
-            ...prev,
-            lineUserId: profile.userId,
-            displayName: profile.displayName || prev.displayName,
-            pictureUrl: profile.pictureUrl || prev.pictureUrl,
-          }));
+          if (rawToken) {
+            try {
+              await syncUserWithBackend(rawToken, {
+                displayName: profile.displayName,
+                pictureUrl: profile.pictureUrl,
+              });
+            } catch (syncErr: any) {
+              console.error('[useLiff] Failed to sync user with backend:', syncErr);
+              if (mounted) {
+                setError(syncErr?.message || 'ไม่สามารถเชื่อมต่อข้อมูลผู้ใช้จากเซิร์ฟเวอร์ได้');
+              }
+            }
+          } else {
+            setUser((prev) => ({
+              ...prev,
+              lineUserId: profile.userId,
+              displayName: profile.displayName || prev.displayName,
+              pictureUrl: profile.pictureUrl || prev.pictureUrl,
+            }));
+          }
         }
 
-        setIsReady(true);
+        if (mounted) {
+          setIsReady(true);
+        }
       } catch (err: any) {
         console.error('LIFF init error:', err);
         if (mounted) {
-          setError(err?.message || 'Failed to initialize LIFF');
-          // Graceful fallback to mock mode if LIFF init fails
-          setIsMock(true);
-          setIsLoggedIn(true);
+          setError(err?.message || 'ไม่สามารถเชื่อมต่อ LINE LIFF ได้');
+          setIsLoggedIn(false);
           setIsReady(true);
         }
       }
@@ -140,7 +217,7 @@ export const LiffProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     return () => {
       mounted = false;
     };
-  }, [isMockEnv]);
+  }, [isMockEnv, syncUserWithBackend]);
 
   const login = useCallback(async () => {
     if (isMock) {
@@ -159,6 +236,8 @@ export const LiffProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, [isMock]);
 
   const logout = useCallback(async () => {
+    setApiAuthToken(null);
+    setIdToken(null);
     if (isMock) {
       setIsLoggedIn(false);
       return;
@@ -273,6 +352,7 @@ export const LiffProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         error,
         login,
         logout,
+        refreshUser,
         openWindow,
         closeWindow,
         scanCode,

@@ -9,12 +9,16 @@ import { formatThaiDate } from '@/lib/delivery';
 
 export default function CartSuccessPage() {
   const router = useRouter();
-  const { getOrder } = useV4Orders();
+  const { getOrder, fetchOrder } = useV4Orders();
   const [orderId, setOrderId] = useState<string | null>(null);
 
   useEffect(() => {
-    setOrderId(new URLSearchParams(window.location.search).get('id'));
-  }, []);
+    const id = new URLSearchParams(window.location.search).get('id');
+    setOrderId(id);
+    if (id) {
+      fetchOrder(id);
+    }
+  }, [fetchOrder]);
 
   const order = orderId ? getOrder(orderId) : undefined;
 

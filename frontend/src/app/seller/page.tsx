@@ -44,7 +44,6 @@ export default function SellerShopPage() {
     isShopSetup,
     credits,
     listings,
-    orders,
     setListingStatus,
   } = useSeller();
 
@@ -304,7 +303,14 @@ export default function SellerShopPage() {
                       <button
                         type="button"
                         disabled={listing.status === 'WAITING_PAYMENT'}
-                        onClick={() => setListingStatus(listing.id, 'HIDDEN')}
+                        onClick={async () => {
+                          try {
+                            await setListingStatus(listing.id, 'HIDDEN');
+                            setToastMessage('ซ่อนประกาศแล้ว');
+                          } catch (err) {
+                            setToastMessage(err instanceof Error ? err.message : 'อัปเดตไม่สำเร็จ');
+                          }
+                        }}
                         title={
                           listing.status === 'WAITING_PAYMENT'
                             ? 'ซ่อนไม่ได้ขณะมีคนขอซื้อ'
@@ -385,7 +391,14 @@ export default function SellerShopPage() {
                     </div>
                     <button
                       type="button"
-                      onClick={() => setListingStatus(listing.id, 'ACTIVE')}
+                      onClick={async () => {
+                        try {
+                          await setListingStatus(listing.id, 'ACTIVE');
+                          setToastMessage('แสดงประกาศอีกครั้งแล้ว');
+                        } catch (err) {
+                          setToastMessage(err instanceof Error ? err.message : 'อัปเดตไม่สำเร็จ');
+                        }
+                      }}
                       className="px-2.5 py-1 rounded-lg border border-emerald-200 bg-emerald-50 text-[11px] font-semibold text-emerald-700"
                     >
                       แสดงอีกครั้ง

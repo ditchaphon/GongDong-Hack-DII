@@ -1,14 +1,13 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { TopBar } from '@/components/layout/TopBar';
 import { Button, PhotoUploader, Toast } from '@/components/ui';
-import { useSeller } from '@/hooks/useSeller';
-import { REPORT_REASONS } from '@/mocks/seller';
+import { useV4Orders } from '@/hooks/useV4Orders';
+import { REPORT_REASONS } from '@/lib/catalog';
 import {
   AlertTriangle,
-  Camera,
   Info,
   ShieldAlert,
   ChevronRight,
@@ -16,32 +15,57 @@ import {
 
 export default function SellerReportPage() {
   const router = useRouter();
-  const { orders } = useSeller();
+  const { orders, isMineAsBuyer, reportMissedMeeting, openDispute } = useV4Orders();
 
-  const reportableOrders = orders.filter(
-    (o) => o.status !== 'CANCELLED' && o.status !== 'COMPLETED'
+  const sellerOrders = orders.filter((o) => !isMineAsBuyer(o));
+  const reportableOrders = sellerOrders.filter(
+    (o) => !['CANCELLED', 'REJECTED', 'EXPIRED', 'COMPLETED'].includes(o.status)
   );
-  const [orderId, setOrderId] = useState(reportableOrders[0]?.id || orders[0]?.id || '');
+  const [orderId, setOrderId] = useState(
+    reportableOrders[0]?.id || sellerOrders[0]?.id || ''
+  );
   const [reason, setReason] = useState(REPORT_REASONS[0]);
   const [detail, setDetail] = useState('');
   const [photo, setPhoto] = useState('');
+  const [submitting, setSubmitting] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const selectedOrder = orders.find((o) => o.id === orderId);
+  useEffect(() => {
+    if (!orderId && (reportableOrders[0]?.id || sellerOrders[0]?.id)) {
+      setOrderId(reportableOrders[0]?.id || sellerOrders[0]?.id || '');
+    }
+  }, [orderId, reportableOrders, sellerOrders]);
 
-  const handleSubmit = () => {
+  const selectedOrder = sellerOrders.find((o) => o.id === orderId);
+
+  const handleSubmit = async () => {
+    if (!orderId || !selectedOrder) {
+      setError('ยังไม่มีออเดอร์ที่สามารถรายงานได้');
+      return;
+    }
     if (detail.trim().length < 10) {
       setError('อธิบายปัญหาอย่างน้อย 10 ตัวอักษร เพื่อให้แอดมินช่วยได้ตรงจุด');
       return;
     }
     setError(null);
+    setSubmitting(true);
+    const fullReason = `${reason}: ${detail.trim()}${photo ? ` (หลักฐาน: ${photo})` : ''}`;
+    const res =
+      reason === 'ผู้ซื้อไม่มาตามนัด' && selectedOrder.delivery === 'MEETUP'
+        ? await reportMissedMeeting(orderId)
+        : await openDispute(orderId, fullReason, 'SELLER');
+    setSubmitting(false);
+    if (!res.ok) {
+      setError(res.error || 'ส่งรายงานไม่สำเร็จ');
+      return;
+    }
     router.push('/seller/report/sent');
   };
 
   return (
     <div className="flex flex-col min-h-screen bg-slate-50 select-none pb-32">
-      <TopBar title="รายงานปัญหา (S6R)" onBack={() => router.push('/orders')} />
+      <TopBar title="รายงานปัญหา" onBack={() => router.push('/orders')} />
 
       <div className="p-4 space-y-4">
         <div className="bg-white rounded-2xl border border-slate-200 p-4 space-y-3">
@@ -68,18 +92,22 @@ export default function SellerReportPage() {
               onChange={(e) => setOrderId(e.target.value)}
               className="w-full min-h-[44px] px-3.5 text-sm bg-white rounded-xl border border-slate-200 focus:outline-none focus:border-[#8B5E3C] focus:ring-2 focus:ring-[#8B5E3C]/20"
             >
-              {orders.map((o) => (
-                <option key={o.id} value={o.id}>
-                  #{o.id} · {o.buyerName} · {o.books[0]?.title.slice(0, 24)}
-                </option>
-              ))}
+              {sellerOrders.length === 0 ? (
+                <option value="">ยังไม่มีออเดอร์</option>
+              ) : (
+                sellerOrders.map((o) => (
+                  <option key={o.id} value={o.id}>
+                    #{o.id.slice(0, 8)} · {o.buyer.nickname || `ผู้ซื้อ #${o.id.slice(-4)}`} · {o.books[0]?.title.slice(0, 24)}
+                  </option>
+                ))
+              )}
             </select>
             {selectedOrder && (
               <p className="text-[11px] text-slate-400">
-                {selectedOrder.deliveryMethod === 'MEETUP'
-                  ? `นัดรับ · ${selectedOrder.meetupDetails?.zone}`
+                {selectedOrder.delivery === 'MEETUP'
+                  ? `นัดรับ · ${selectedOrder.schedule?.landmark ?? 'จุดนัดรับ'}`
                   : 'ส่งพัสดุ'}{' '}
-                · ฿{selectedOrder.totalAmount.toLocaleString()}
+                · ฿{selectedOrder.total.toLocaleString()}
               </p>
             )}
           </div>
@@ -131,6 +159,7 @@ export default function SellerReportPage() {
 
           <PhotoUploader
             label="แนบหลักฐาน (ถ้ามี)"
+            bucket="disputes"
             previewUrl={photo}
             onChange={(url) => {
               setPhoto(url);
@@ -169,6 +198,8 @@ export default function SellerReportPage() {
           <Button
             fullWidth
             size="lg"
+            isLoading={submitting}
+            disabled={!orderId}
             onClick={handleSubmit}
             rightIcon={<ChevronRight className="w-4 h-4" />}
           >

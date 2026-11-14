@@ -1,20 +1,53 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { SearchBar, Chip, BookCard, BottomSheet } from '@/components/ui';
+import { SearchBar, Chip, BookCard, BottomSheet, EmptyState } from '@/components/ui';
 import { BottomTab } from '@/components/layout/BottomTab';
-import { MOCK_BOOKS } from '@/mocks/books';
+import { api } from '@/lib/api';
+import { BackendBookFeedItem, mapBackendBookToBook } from '@/lib/mappers';
 import { Book } from '@/types';
-import { Bell, MoreHorizontal, X, BookOpen, ChevronRight, Sparkles, ShoppingBag } from 'lucide-react';
+import { Bell, MoreHorizontal, BookOpen, ChevronRight, Sparkles, ShoppingBag } from 'lucide-react';
 import { useCart } from '@/hooks/useCart';
+import { useV4Orders } from '@/hooks/useV4Orders';
+import { isTerminal } from '@/lib/orderStateMachine';
 
 export default function HomePage() {
   const router = useRouter();
   const { items: cartItems } = useCart();
+  const { orders, isMineAsBuyer } = useV4Orders();
+  const [books, setBooks] = useState<Book[]>([]);
+  const [recommendedBook, setRecommendedBook] = useState<Book | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [activeCategory, setActiveCategory] = useState<string>('all');
   const [isLiffMenuOpen, setIsLiffMenuOpen] = useState(false);
+
+  const loadFeed = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [feedRes, recRes] = await Promise.all([
+        api.get<{ books: BackendBookFeedItem[]; total: number }>('/api/books?limit=30'),
+        api
+          .get<{ books: BackendBookFeedItem[] }>('/api/books/recommended?limit=1')
+          .catch(() => ({ books: [] })),
+      ]);
+      const mapped = (feedRes.books ?? []).map(mapBackendBookToBook);
+      setBooks(mapped);
+      const rec = recRes.books?.[0] ? mapBackendBookToBook(recRes.books[0]) : null;
+      setRecommendedBook(rec);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'โหลดรายการหนังสือไม่สำเร็จ');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadFeed();
+  }, []);
 
   const categories = [
     { id: 'all', label: 'ทั้งหมด' },
@@ -24,17 +57,22 @@ export default function HomePage() {
     { id: 'manga', label: 'การ์ตูนยกชุด' },
   ];
 
-  const filteredBooks = MOCK_BOOKS.filter((b) => {
+  const filteredBooks = books.filter((b) => {
     if (activeCategory === 'meetup') return b.deliveryMethods.includes('MEETUP');
     if (activeCategory === 'parcel') return b.deliveryMethods.includes('PARCEL');
+    if (activeCategory === 'self-help') {
+      return (b.categories ?? []).some((c) => c.includes('พัฒนา'));
+    }
     if (activeCategory === 'manga') return b.isSet;
     return true;
   });
 
-  // Placeholder recommendation until the personalised feed API is available.
-  const spotlightBook = filteredBooks[0] ?? MOCK_BOOKS[0];
+  const spotlightBook = filteredBooks[0] ?? recommendedBook ?? books[0] ?? null;
   const activeCategoryLabel =
     categories.find((category) => category.id === activeCategory)?.label ?? 'ทั้งหมด';
+  const activeBuyerOrderCount = orders.filter(
+    (o) => isMineAsBuyer(o) && !isTerminal(o.status)
+  ).length;
 
   return (
     <div className="flex flex-col min-h-screen bg-slate-50 pb-20 select-none">
@@ -119,35 +157,36 @@ export default function HomePage() {
 
       {/* Feed Content */}
       <div className="p-4 space-y-6">
-        {/* Recommendation banner — template fed by mock data for now. */}
-        <button
-          type="button"
-          onClick={() => router.push(`/book/${spotlightBook.id}`)}
-          className="w-full text-left p-4 rounded-2xl bg-gradient-to-r from-[#8B5E3C] to-[#B07A50] text-white shadow-xs flex items-center gap-3"
-        >
-          <div className="flex-1 min-w-0 space-y-1">
-            <span className="text-[10px] font-bold uppercase tracking-wider bg-white/20 px-2 py-0.5 rounded-full inline-block">
-              แนะนำสำหรับคุณ
-            </span>
-            <h3 className="font-bold text-base">เรื่องนี้คุณอาจสนใจ</h3>
-            <p className="text-xs text-white/90 line-clamp-1">{spotlightBook.title}</p>
-            <p className="text-[11px] text-white/75 line-clamp-1">
-              {spotlightBook.grade} · ฿{spotlightBook.price.toLocaleString()} · {activeCategoryLabel}
-            </p>
-          </div>
-          <div className="w-14 h-16 rounded-xl bg-white/15 backdrop-blur-xs flex items-center justify-center shrink-0 overflow-hidden">
-            {spotlightBook.photos?.cover ? (
-              <img
-                src={spotlightBook.photos.cover}
-                alt=""
-                className="w-full h-full object-cover"
-              />
-            ) : (
-              <BookOpen className="w-6 h-6 text-white" />
-            )}
-          </div>
-          <ChevronRight className="w-4 h-4 text-white/70 shrink-0" />
-        </button>
+        {spotlightBook && (
+          <button
+            type="button"
+            onClick={() => router.push(`/book/${spotlightBook.id}`)}
+            className="w-full text-left p-4 rounded-2xl bg-gradient-to-r from-[#8B5E3C] to-[#B07A50] text-white shadow-xs flex items-center gap-3"
+          >
+            <div className="flex-1 min-w-0 space-y-1">
+              <span className="text-[10px] font-bold uppercase tracking-wider bg-white/20 px-2 py-0.5 rounded-full inline-block">
+                แนะนำสำหรับคุณ
+              </span>
+              <h3 className="font-bold text-base">เรื่องนี้คุณอาจสนใจ</h3>
+              <p className="text-xs text-white/90 line-clamp-1">{spotlightBook.title}</p>
+              <p className="text-[11px] text-white/75 line-clamp-1">
+                {spotlightBook.grade} · ฿{spotlightBook.price.toLocaleString()} · {activeCategoryLabel}
+              </p>
+            </div>
+            <div className="w-14 h-16 rounded-xl bg-white/15 backdrop-blur-xs flex items-center justify-center shrink-0 overflow-hidden">
+              {spotlightBook.photos?.cover ? (
+                <img
+                  src={spotlightBook.photos.cover}
+                  alt=""
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <BookOpen className="w-6 h-6 text-white" />
+              )}
+            </div>
+            <ChevronRight className="w-4 h-4 text-white/70 shrink-0" />
+          </button>
+        )}
 
         {/* Book Feed Grid */}
         <div className="space-y-3">
@@ -161,15 +200,41 @@ export default function HomePage() {
             </span>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            {filteredBooks.map((book) => (
-              <BookCard
-                key={book.id}
-                book={book}
-                onClick={() => router.push(`/book/${book.id}`)}
+          {loading ? (
+            <div className="grid grid-cols-2 gap-3">
+              {[1, 2, 3, 4].map((idx) => (
+                <div key={idx} className="h-56 rounded-2xl bg-slate-200 animate-pulse" />
+              ))}
+            </div>
+          ) : error ? (
+            <div className="bg-white rounded-2xl border border-slate-200 p-6">
+              <EmptyState
+                title="โหลดรายการหนังสือไม่สำเร็จ"
+                description={error}
+                actionText="ลองใหม่"
+                onAction={loadFeed}
               />
-            ))}
-          </div>
+            </div>
+          ) : filteredBooks.length > 0 ? (
+            <div className="grid grid-cols-2 gap-3">
+              {filteredBooks.map((book) => (
+                <BookCard
+                  key={book.id}
+                  book={book}
+                  onClick={() => router.push(`/book/${book.id}`)}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="bg-white rounded-2xl border border-slate-200 p-6">
+              <EmptyState
+                title="ยังไม่มีหนังสือในหมวดนี้"
+                description="ลองเลือกหมวดอื่น หรือค้นหาหนังสือที่ต้องการ"
+                actionText="ค้นหาหนังสือ"
+                onAction={() => router.push('/search')}
+              />
+            </div>
+          )}
         </div>
       </div>
 
@@ -224,7 +289,7 @@ export default function HomePage() {
       </BottomSheet>
 
       {/* Fixed Bottom Navigation */}
-      <BottomTab orderBadge={1} />
+      <BottomTab orderBadge={activeBuyerOrderCount || undefined} />
     </div>
   );
 }

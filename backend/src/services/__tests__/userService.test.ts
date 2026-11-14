@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   calculateTopupCredits,
+  getTopupPaymentQr,
   getUserProfile,
   processTopupSlip,
   updateUserProfile,
@@ -312,6 +313,31 @@ describe('userService', () => {
       expect(result.total_credits).toBe(11);
       expect(result.verified_name).toBe('นาย เตชินท์ เกียรติคุณ');
       expect(result.is_verified_seller).toBe(true);
+    });
+  });
+
+  describe('getTopupPaymentQr', () => {
+    it('ควรสร้าง PromptPay QR สำหรับแพ็กเกจ bookworm (฿50 / 10 เครดิต) สำเร็จ', async () => {
+      const qr = await getTopupPaymentQr({ packId: 'bookworm' });
+
+      expect(qr.packId).toBe('bookworm');
+      expect(qr.credits).toBe(10);
+      expect(qr.amount).toBe(50);
+      expect(qr.recipientLabel).toBeTruthy();
+      expect(qr.qrDataUrl.startsWith('data:image/png;base64,')).toBe(true);
+      expect(qr.payload).toContain('000201');
+    });
+
+    it('ควรรองรับการระบุยอดเงิน amount ตรงกับแพ็กเกจ ฿100', async () => {
+      const qr = await getTopupPaymentQr({ amount: 100 });
+      expect(qr.packId).toBe('merchant');
+      expect(qr.credits).toBe(25);
+      expect(qr.amount).toBe(100);
+    });
+
+    it('ควรโยน Error เมื่อระบุ pack_id ไม่ถูกต้องหรือไม่ได้ระบุแพ็กเกจ', async () => {
+      await expect(getTopupPaymentQr({ packId: 'unknown' })).rejects.toThrowError(/แพ็กเกจเครดิตไม่ถูกต้อง/);
+      await expect(getTopupPaymentQr({})).rejects.toThrowError(/กรุณาระบุ pack_id/);
     });
   });
 });

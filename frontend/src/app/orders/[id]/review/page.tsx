@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, use } from 'react';
+import React, { useEffect, useState, use } from 'react';
 import { useRouter } from 'next/navigation';
 import { TopBar } from '@/components/layout/TopBar';
 import { Button, Toast } from '@/components/ui';
@@ -16,9 +16,13 @@ export default function OrderReviewPage({
 }) {
   const resolvedParams = use(params);
   const router = useRouter();
-  const { getOrder, submitReview } = useV4Orders();
+  const { getOrder, fetchOrder, loading, submitReview } = useV4Orders();
 
   const order = getOrder(resolvedParams.id);
+
+  useEffect(() => {
+    if (!order) fetchOrder(resolvedParams.id);
+  }, [resolvedParams.id, order, fetchOrder]);
 
   const [rating, setRating] = useState(order?.review?.rating || 5);
   const [gradeMatched, setGradeMatched] = useState<boolean | null>(
@@ -26,14 +30,26 @@ export default function OrderReviewPage({
   );
   const [tags, setTags] = useState<string[]>(order?.review?.tags || []);
   const [comment, setComment] = useState(order?.review?.comment || '');
+  const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (order?.review) {
+      setRating(order.review.rating);
+      setGradeMatched(order.review.isGradeMatched);
+      setTags(order.review.tags);
+      setComment(order.review.comment);
+    }
+  }, [order?.review]);
 
   if (!order) {
     return (
       <div className="flex flex-col min-h-screen bg-slate-50">
         <TopBar title="ให้คะแนน" onBack={() => router.push('/orders')} />
-        <p className="p-6 text-center text-xs text-slate-500">ไม่พบออเดอร์นี้</p>
+        <p className="p-6 text-center text-xs text-slate-500">
+          {loading ? 'กำลังโหลดข้อมูลออเดอร์...' : 'ไม่พบออเดอร์นี้'}
+        </p>
       </div>
     );
   }
@@ -43,18 +59,24 @@ export default function OrderReviewPage({
       prev.includes(tag) ? prev.filter((item) => item !== tag) : [...prev, tag]
     );
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (gradeMatched === null) {
       setError('กรุณาตอบว่าสภาพหนังสือตรงเกรดที่ร้านแจ้งไว้หรือไม่');
       return;
     }
     setError(null);
-    submitReview(order.id, {
+    setSubmitting(true);
+    const res = await submitReview(order.id, {
       rating,
       isGradeMatched: gradeMatched,
       tags,
       comment: comment.trim(),
     });
+    setSubmitting(false);
+    if (!res.ok) {
+      setError(res.error || 'ส่งรีวิวไม่สำเร็จ');
+      return;
+    }
     setToastMessage('ส่งคะแนนรีวิวแล้ว · ขอบคุณที่ช่วยให้ชุมชนน่าเชื่อถือขึ้น');
     setTimeout(() => router.push(`/orders/${order.id}`), 1000);
   };

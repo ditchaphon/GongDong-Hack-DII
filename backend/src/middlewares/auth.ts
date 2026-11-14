@@ -53,6 +53,23 @@ export async function verifyLineToken(
   return payload;
 }
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * ค้นหาผู้ใช้จาก Mock ID หรือ LINE User ID (ป้องกัน Prisma P2023 เมื่อ Identifier ไม่ใช่ UUID)
+ */
+async function findUserByMockIdentifier(identifier: string) {
+  if (UUID_REGEX.test(identifier)) {
+    const byId = await prisma.user.findUnique({ where: { id: identifier } });
+    if (byId) return byId;
+  }
+
+  const byLineId = await prisma.user.findUnique({ where: { lineUserId: identifier } });
+  if (byLineId) return byLineId;
+
+  return prisma.user.findUnique({ where: { lineUserId: `line_${identifier}` } });
+}
+
 export interface AuthMiddlewareOptions {
   tokenVerifier?: (token: string) => Promise<LineTokenPayload>;
 }
@@ -74,10 +91,7 @@ export function createAuthMiddleware(options: AuthMiddlewareOptions = {}) {
       const isTestOrDev = process.env.NODE_ENV !== 'production';
 
       if (isTestOrDev && xUserId) {
-        let user = await prisma.user.findUnique({ where: { id: xUserId } });
-        if (!user) {
-          user = await prisma.user.findUnique({ where: { lineUserId: xUserId } });
-        }
+        const user = await findUserByMockIdentifier(xUserId);
         if (user) {
           req.user = user;
           req.userId = user.id;
@@ -97,10 +111,7 @@ export function createAuthMiddleware(options: AuthMiddlewareOptions = {}) {
       // ตรวจสอบ Mock Token ใน dev/test: เช่น Bearer mock_<uuid> หรือ mock_user_1
       if (isTestOrDev && token.startsWith('mock_')) {
         const mockTargetId = token.substring(5);
-        let user = await prisma.user.findUnique({ where: { id: mockTargetId } });
-        if (!user) {
-          user = await prisma.user.findUnique({ where: { lineUserId: mockTargetId } });
-        }
+        const user = await findUserByMockIdentifier(mockTargetId);
         if (user) {
           req.user = user;
           req.userId = user.id;

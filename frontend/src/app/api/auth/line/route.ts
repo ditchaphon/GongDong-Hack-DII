@@ -61,10 +61,31 @@ export async function POST(req: NextRequest) {
     const payload = await lineResponse.json();
     // payload contains: sub (line userId), name, picture, email, etc.
 
-    // 3. TODO: Supabase integration
-    // - Check if user exists in public.users table where line_user_id = payload.sub
-    // - If not, insert new record with 1 free credit: credits = 1
-    // - Issue secure HTTP-only session cookie or JWT for API calls
+    // 3. Forward to Express Backend (/api/users/me) so user is persisted/synced in PostgreSQL
+    const backendUrl = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/+$/, '');
+    const backendRes = await fetch(`${backendUrl}/api/users/me`, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${idToken}`,
+      },
+    });
+
+    if (backendRes.ok) {
+      const backendJson = await backendRes.json();
+      if (backendJson?.success && backendJson?.data) {
+        return NextResponse.json({
+          success: true,
+          user: {
+            id: backendJson.data.id,
+            lineUserId: backendJson.data.line_user_id,
+            displayName: backendJson.data.nickname || backendJson.data.display_name,
+            pictureUrl: backendJson.data.avatar_url || backendJson.data.picture_url,
+            credits: backendJson.data.credits,
+            isVerifiedSeller: backendJson.data.is_verified_seller,
+          },
+        });
+      }
+    }
 
     return NextResponse.json({
       success: true,
@@ -72,7 +93,7 @@ export async function POST(req: NextRequest) {
         lineUserId: payload.sub,
         displayName: payload.name,
         pictureUrl: payload.picture,
-        credits: 1, // Default free credit for newly verified users
+        credits: 1,
       },
     });
   } catch (error: any) {

@@ -6,7 +6,7 @@ import { TopBar } from '@/components/layout/TopBar';
 import { Button, Toast, Countdown } from '@/components/ui';
 import { QrPayCard, SlipUploader, SlipResult } from '@/components/v4';
 import { useSeller } from '@/hooks/useSeller';
-import { MOCK_CREDIT_PACKAGES } from '@/mocks/seller';
+import { CREDIT_PACKAGES } from '@/lib/catalog';
 import { SlipCheckState } from '@/types/v4';
 import { Info, ShieldCheck, CheckCircle2 } from 'lucide-react';
 
@@ -15,8 +15,8 @@ export default function SellerTopUpPayPage() {
   const { selectedPackageId, submitTopUp } = useSeller();
 
   const pkg =
-    MOCK_CREDIT_PACKAGES.find((p) => p.id === selectedPackageId) ||
-    MOCK_CREDIT_PACKAGES[1];
+    CREDIT_PACKAGES.find((p) => p.id === selectedPackageId) ||
+    CREDIT_PACKAGES[1];
 
   const [slipUrl, setSlipUrl] = useState('');
   const [slipState, setSlipState] = useState<SlipCheckState>('NONE');

@@ -201,6 +201,7 @@ export interface UserProfile {
   id: string;
   lineUserId: string;
   displayName: string;
+  nickname?: string;
   pictureUrl?: string;
   isSeller: boolean;
   credits: number;

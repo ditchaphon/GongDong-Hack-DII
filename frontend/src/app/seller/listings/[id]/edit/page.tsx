@@ -38,6 +38,7 @@ export default function EditListingPage({
   const [price, setPrice] = useState(listing ? String(listing.price) : '');
   const [meetup, setMeetup] = useState(listing?.deliveryMethods.includes('MEETUP') ?? true);
   const [parcel, setParcel] = useState(listing?.deliveryMethods.includes('PARCEL') ?? false);
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -52,7 +53,7 @@ export default function EditListingPage({
 
   const locked = listing.status === 'WAITING_PAYMENT' || hasActiveOrder;
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (locked) {
       setError('ออเดอร์นี้ถูกยืนยันแล้ว · แก้ไขประกาศไม่ได้จนกว่าจะปิดออเดอร์');
       return;
@@ -67,16 +68,23 @@ export default function EditListingPage({
       return;
     }
     setError(null);
-    updateListing(listing.id, {
-      price: nextPrice,
-      deliveryMethods: [
-        ...(meetup ? (['MEETUP'] as const) : []),
-        ...(parcel ? (['PARCEL'] as const) : []),
-      ],
-      parcelShippingFee: undefined,
-    });
-    setToastMessage('บันทึกการแก้ไขแล้ว');
-    setTimeout(() => router.push('/seller'), 500);
+    setSaving(true);
+    try {
+      await updateListing(listing.id, {
+        price: nextPrice,
+        deliveryMethods: [
+          ...(meetup ? (['MEETUP'] as const) : []),
+          ...(parcel ? (['PARCEL'] as const) : []),
+        ],
+        parcelShippingFee: undefined,
+      });
+      setToastMessage('บันทึกการแก้ไขแล้ว');
+      setTimeout(() => router.push('/seller'), 500);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'บันทึกไม่สำเร็จ');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -202,10 +210,14 @@ export default function EditListingPage({
             variant="outline"
             fullWidth
             leftIcon={<Eye className="w-4 h-4" />}
-            onClick={() => {
-              setListingStatus(listing.id, 'ACTIVE');
-              setToastMessage('แสดงประกาศอีกครั้งแล้ว');
-              setTimeout(() => router.push('/seller'), 500);
+            onClick={async () => {
+              try {
+                await setListingStatus(listing.id, 'ACTIVE');
+                setToastMessage('แสดงประกาศอีกครั้งแล้ว');
+                setTimeout(() => router.push('/seller'), 500);
+              } catch (err) {
+                setError(err instanceof Error ? err.message : 'อัปเดตสถานะไม่สำเร็จ');
+              }
             }}
           >
             แสดงประกาศอีกครั้ง
@@ -216,10 +228,14 @@ export default function EditListingPage({
             fullWidth
             disabled={locked}
             leftIcon={<EyeOff className="w-4 h-4" />}
-            onClick={() => {
-              setListingStatus(listing.id, 'HIDDEN');
-              setToastMessage('ซ่อนประกาศแล้ว · ผู้ซื้อจะไม่เห็น');
-              setTimeout(() => router.push('/seller'), 500);
+            onClick={async () => {
+              try {
+                await setListingStatus(listing.id, 'HIDDEN');
+                setToastMessage('ซ่อนประกาศแล้ว · ผู้ซื้อจะไม่เห็น');
+                setTimeout(() => router.push('/seller'), 500);
+              } catch (err) {
+                setError(err instanceof Error ? err.message : 'อัปเดตสถานะไม่สำเร็จ');
+              }
             }}
           >
             ซ่อนประกาศชั่วคราว
@@ -229,7 +245,7 @@ export default function EditListingPage({
 
       <div className="fixed bottom-0 left-0 right-0 z-30 flex justify-center pointer-events-none">
         <div className="w-full max-w-[430px] bg-white border-t border-slate-200 p-3 pointer-events-auto safe-area-bottom shadow-lg">
-          <Button fullWidth size="lg" onClick={handleSave} disabled={locked}>
+          <Button fullWidth size="lg" isLoading={saving} onClick={handleSave} disabled={locked}>
             {locked ? 'ล็อกอยู่ · ปิดออเดอร์ก่อน' : 'บันทึกการแก้ไข'}
           </Button>
         </div>

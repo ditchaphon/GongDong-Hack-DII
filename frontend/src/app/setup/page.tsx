@@ -20,6 +20,7 @@ export default function AccountSetupPage() {
   const [localNickname, setLocalNickname] = useState(nickname);
   const [localAvatar, setLocalAvatar] = useState(avatar || DEFAULT_AVATAR);
   const [localConsent, setLocalConsent] = useState(consent);
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -28,7 +29,13 @@ export default function AccountSetupPage() {
     setNext(params.get('next') === 'sell' ? 'sell' : 'buy');
   }, []);
 
-  const handleSave = () => {
+  useEffect(() => {
+    if (nickname) setLocalNickname(nickname);
+    if (avatar) setLocalAvatar(avatar);
+    if (consent) setLocalConsent(consent);
+  }, [nickname, avatar, consent]);
+
+  const handleSave = async () => {
     const clean = localNickname.trim();
     if (clean.length < 2) {
       setError('ตั้งชื่อเล่นอย่างน้อย 2 ตัวอักษร');
@@ -44,11 +51,18 @@ export default function AccountSetupPage() {
       return;
     }
     setError(null);
-    saveProfile({ nickname: clean, avatar: localAvatar, consent: localConsent });
-    setToastMessage('บันทึกโปรไฟล์แล้ว');
-    setTimeout(() => {
-      router.replace(next === 'sell' ? '/seller' : '/');
-    }, 500);
+    setSaving(true);
+    try {
+      await saveProfile({ nickname: clean, avatar: localAvatar, consent: localConsent });
+      setToastMessage('บันทึกโปรไฟล์แล้ว');
+      setTimeout(() => {
+        router.replace(next === 'sell' ? '/seller' : '/');
+      }, 500);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'บันทึกโปรไฟล์ไม่สำเร็จ');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -104,7 +118,7 @@ export default function AccountSetupPage() {
 
       <div className="fixed bottom-0 left-0 right-0 z-30 flex justify-center pointer-events-none">
         <div className="w-full max-w-[430px] bg-white border-t border-slate-200 p-3 pointer-events-auto safe-area-bottom shadow-lg">
-          <Button fullWidth size="lg" onClick={handleSave}>
+          <Button fullWidth size="lg" isLoading={saving} onClick={handleSave}>
             {next === 'sell' ? 'บันทึกและไปเปิดร้าน' : 'บันทึกและเริ่มเลือกซื้อ'}
           </Button>
         </div>

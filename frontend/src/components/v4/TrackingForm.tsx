@@ -86,6 +86,7 @@ export const TrackingForm: React.FC<TrackingFormProps> = ({
 
       <PhotoUploader
         label="รูปกล่องพัสดุ"
+        bucket="order-receives"
         isRequired
         previewUrl={value.boxPhoto}
         onChange={(url) => onChange({ boxPhoto: url })}

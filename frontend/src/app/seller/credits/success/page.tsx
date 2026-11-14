@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui';
 import { useSeller } from '@/hooks/useSeller';
-import { MOCK_CREDIT_PACKAGES } from '@/mocks/seller';
+import { CREDIT_PACKAGES } from '@/lib/catalog';
 import {
   CheckCircle2,
   Clock3,
@@ -19,7 +19,7 @@ export default function SellerTopUpSuccessPage() {
 
   const [justApproved, setJustApproved] = useState(false);
 
-  const pkg = MOCK_CREDIT_PACKAGES.find((p) => p.id === pendingTopUp?.packId);
+  const pkg = CREDIT_PACKAGES.find((p) => p.id === pendingTopUp?.packId);
 
   const approved = justApproved && !pendingTopUp;
 

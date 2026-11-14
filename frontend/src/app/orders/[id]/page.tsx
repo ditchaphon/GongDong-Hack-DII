@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, use } from 'react';
+import React, { useEffect, useState, use } from 'react';
 import { useRouter } from 'next/navigation';
 import clsx from 'clsx';
 import { TopBar } from '@/components/layout/TopBar';
@@ -63,6 +63,9 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
   const router = useRouter();
   const {
     getOrder,
+    loading,
+    fetchOrder,
+    fetchMessages,
     messagesFor,
     sendMessage,
     acceptOrder,
@@ -75,6 +78,23 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
   const { credits } = useSeller();
 
   const order = getOrder(id);
+  const orderStatus = order?.status;
+  const chatOpen = !!orderStatus && !['REQUESTED', 'REJECTED', 'EXPIRED'].includes(orderStatus);
+
+  useEffect(() => {
+    fetchOrder(id);
+  }, [id, fetchOrder]);
+
+  useEffect(() => {
+    if (!orderStatus || !chatOpen) return;
+    fetchMessages(id);
+    if (isTerminal(orderStatus)) return;
+    const timer = setInterval(() => {
+      fetchMessages(id);
+      fetchOrder(id);
+    }, 8000);
+    return () => clearInterval(timer);
+  }, [id, orderStatus, chatOpen, fetchMessages, fetchOrder]);
 
   const [toast, setToast] = useState<string | null>(null);
   const [acceptOpen, setAcceptOpen] = useState(false);
@@ -86,7 +106,9 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
     return (
       <div className="flex flex-col min-h-screen bg-slate-50">
         <TopBar title="ออเดอร์" onBack={() => router.push('/orders')} />
-        <p className="p-6 text-center text-xs text-slate-500">ไม่พบออเดอร์นี้ · อาจถูกลบหรือลิงก์ไม่ถูกต้อง</p>
+        <p className="p-6 text-center text-xs text-slate-500">
+          {loading ? 'กำลังโหลดข้อมูลออเดอร์...' : 'ไม่พบออเดอร์นี้ · อาจถูกลบหรือลิงก์ไม่ถูกต้อง'}
+        </p>
       </div>
     );
   }
@@ -95,7 +117,6 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
   const isBuyer = role === 'BUYER';
   const meta = STATUS_META[order.status];
   const timer = getTimerInfo(order);
-  const chatOpen = !['REQUESTED', 'REJECTED', 'EXPIRED'].includes(order.status);
   const otherName = isBuyer ? order.shop.shopName : buyerAlias(order);
 
   const headline = (() => {
@@ -109,10 +130,15 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
     return meta.label;
   })();
 
-  const handleAccept = () => {
-    const result = acceptOrder(order.id);
+  const handleAccept = async () => {
+    const result = await acceptOrder(order.id);
     setAcceptOpen(false);
     setToast(result.ok ? 'รับออเดอร์แล้ว · ใช้ 1 เครดิต แชทเปิดแล้ว' : result.error || 'รับออเดอร์ไม่สำเร็จ');
+  };
+
+  const handleComplete = async () => {
+    const result = await complete(order.id);
+    setToast(result.ok ? 'ยืนยันส่งมอบแล้ว · ปิดการขายสำเร็จ' : result.error || 'ยืนยันไม่สำเร็จ');
   };
 
   const copy = async (text: string) => {
@@ -328,7 +354,7 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
                 ให้ผู้ซื้อตรวจหนังสือและจ่ายเงินสดก่อน แล้วกดยืนยันเพื่อปิดการขาย
                 · ระบบไม่มีการโอนเงินออนไลน์
               </p>
-              <Button fullWidth onClick={() => complete(order.id)}>
+              <Button fullWidth onClick={handleComplete}>
                 ยืนยันส่งมอบแล้ว
               </Button>
               <button
@@ -413,7 +439,10 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
           otherName={otherName}
           otherAvatar={isBuyer ? order.shop.avatar : undefined}
           orderLabel={order.id}
-          onSend={(text) => sendMessage(order.id, role, text)}
+          onSend={async (text) => {
+            const res = await sendMessage(order.id, role, text);
+            if (!res.ok) setToast(res.error || 'ส่งข้อความไม่สำเร็จ');
+          }}
         />
 
         {['SCHEDULED', 'ACCEPTED', 'PAID', 'SHIPPED'].includes(order.status) && (
@@ -443,10 +472,10 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
         description="ไม่เสียเครดิต · หนังสือยังวางขายต่อ"
         confirmLabel="ปฏิเสธคำขอ"
         tone="danger"
-        onConfirm={() => {
-          rejectOrder(order.id);
+        onConfirm={async () => {
+          const res = await rejectOrder(order.id);
           setRejectOpen(false);
-          setToast('ปฏิเสธคำขอแล้ว');
+          setToast(res.ok ? 'ปฏิเสธคำขอแล้ว' : res.error || 'ปฏิเสธไม่สำเร็จ');
         }}
       />
       <ConfirmSheet
@@ -456,10 +485,10 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
         description="คำขอจะถูกยกเลิก · หนังสือยังวางขายให้คนอื่นขอได้"
         confirmLabel="ยกเลิกคำขอ"
         tone="danger"
-        onConfirm={() => {
-          cancelOrder(order.id);
+        onConfirm={async () => {
+          const res = await cancelOrder(order.id);
           setCancelOpen(false);
-          setToast('ยกเลิกคำขอแล้ว');
+          setToast(res.ok ? 'ยกเลิกคำขอแล้ว' : res.error || 'ยกเลิกไม่สำเร็จ');
         }}
       />
       <ConfirmSheet
@@ -478,10 +507,10 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
             <button
               key={reason}
               type="button"
-              onClick={() => {
-                openDispute(order.id, reason, role);
+              onClick={async () => {
+                const res = await openDispute(order.id, reason, role);
                 setDisputeOpen(false);
-                setToast('ส่งเรื่องให้แอดมินแล้ว');
+                setToast(res.ok ? 'ส่งเรื่องให้แอดมินแล้ว' : res.error || 'ส่งเรื่องไม่สำเร็จ');
               }}
               className="w-full text-left p-3 rounded-xl border border-slate-200 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
             >

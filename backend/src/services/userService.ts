@@ -1,4 +1,6 @@
+import { env } from '../config/env';
 import { prisma as defaultPrisma } from '../config/prisma';
+import { generatePromptPayQR } from './promptPayService';
 import {
   AppError,
   CreditLedgerItem,
@@ -8,6 +10,12 @@ import {
   UserProfileResponse,
 } from '../types';
 
+export const TOPUP_CREDIT_PACKAGES = [
+  { id: 'starter', name: 'Starter', credits: 3, price: 20 },
+  { id: 'bookworm', name: 'Bookworm', credits: 10, price: 50 },
+  { id: 'merchant', name: 'Merchant', credits: 25, price: 100 },
+] as const;
+
 /**
  * คำนวณจำนวนเครดิตที่ได้รับจากยอดเงินโอน (เฉพาะ 3 แพ็กเกจมาตรฐาน)
  * - ฿20 = 3 เครดิต
@@ -16,15 +24,84 @@ import {
  */
 export function calculateTopupCredits(amount: number): number {
   const roundedAmount = Math.round(Number(amount));
-  if (roundedAmount === 20) return 3;
-  if (roundedAmount === 50) return 10;
-  if (roundedAmount === 100) return 25;
+  const matched = TOPUP_CREDIT_PACKAGES.find((pkg) => pkg.price === roundedAmount);
+  if (matched) return matched.credits;
 
   throw new AppError(
     'ยอดเงินเติมเครดิตไม่ตรงกับแพ็กเกจมาตรฐาน (รองรับ ฿20 = 3 เครดิต, ฿50 = 10 เครดิต, ฿100 = 25 เครดิต)',
     400,
     'INVALID_TOPUP_AMOUNT'
   );
+}
+
+/**
+ * สร้าง PromptPay QR สำหรับเติมเครดิตเข้าบัญชีกองดอง (GET /api/users/me/topup-qr)
+ */
+export async function getTopupPaymentQr(options: {
+  packId?: string;
+  amount?: number;
+}): Promise<{
+  packId: string;
+  credits: number;
+  amount: number;
+  recipientLabel: string;
+  qrDataUrl: string;
+  payload: string;
+}> {
+  const normalizedPackId = (options.packId || '').trim().toLowerCase();
+
+  let selectedPackage = normalizedPackId
+    ? TOPUP_CREDIT_PACKAGES.find((pkg) => pkg.id === normalizedPackId)
+    : undefined;
+
+  if (normalizedPackId && !selectedPackage) {
+    throw new AppError(
+      'แพ็กเกจเครดิตไม่ถูกต้อง (รองรับ starter, bookworm, merchant)',
+      400,
+      'INVALID_TOPUP_PACKAGE'
+    );
+  }
+
+  if (!selectedPackage && options.amount !== undefined && !isNaN(Number(options.amount))) {
+    const rounded = Math.round(Number(options.amount));
+    selectedPackage = TOPUP_CREDIT_PACKAGES.find((pkg) => pkg.price === rounded);
+    if (!selectedPackage) {
+      throw new AppError(
+        'ยอดเงินเติมเครดิตไม่ตรงกับแพ็กเกจมาตรฐาน (รองรับ ฿20 = 3 เครดิต, ฿50 = 10 เครดิต, ฿100 = 25 เครดิต)',
+        400,
+        'INVALID_TOPUP_AMOUNT'
+      );
+    }
+  }
+
+  if (!selectedPackage) {
+    throw new AppError(
+      'กรุณาระบุ pack_id (starter/bookworm/merchant) หรือ amount (20/50/100)',
+      400,
+      'MISSING_TOPUP_PACKAGE'
+    );
+  }
+
+  const platformPromptPayId = env.PLATFORM_PROMPTPAY_ID?.trim();
+  if (!platformPromptPayId && env.NODE_ENV === 'production') {
+    throw new AppError(
+      'ระบบยังไม่ได้ตั้งค่าบัญชีพร้อมเพย์กลางของแพลตฟอร์ม (Missing PLATFORM_PROMPTPAY_ID)',
+      503,
+      'PLATFORM_PROMPTPAY_NOT_CONFIGURED'
+    );
+  }
+
+  const effectivePromptPayId = platformPromptPayId || '0800000000';
+  const qr = await generatePromptPayQR(effectivePromptPayId, selectedPackage.price);
+
+  return {
+    packId: selectedPackage.id,
+    credits: selectedPackage.credits,
+    amount: selectedPackage.price,
+    recipientLabel: env.PLATFORM_RECIPIENT_NAME,
+    qrDataUrl: qr.qrDataUrl,
+    payload: qr.payload,
+  };
 }
 
 /**

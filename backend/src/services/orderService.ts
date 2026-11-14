@@ -2,7 +2,9 @@ import crypto from 'crypto';
 import { prisma as defaultPrisma } from '../config/prisma';
 import { calcParcelFee } from './shippingService';
 import { createSystemOrderMessage } from './messageService';
+import { maskAccountHolderName } from './dataMaskingService';
 import { notifyOrderEvent } from './lineNotifyService';
+import { generatePromptPayQR } from './promptPayService';
 import {
   AcceptOrderResult,
   AppError,
@@ -782,6 +784,70 @@ export async function cancelOrder(
     orderId: outcome.orderId,
     status: outcome.status,
     cancelledBy: outcome.cancelledBy,
+  };
+}
+
+/**
+ * สร้าง PromptPay QR สำหรับผู้ซื้อชำระเงินค่าหนังสือ (GET /api/orders/:id/payment-qr)
+ */
+export async function getOrderPaymentQR(
+  orderId: string,
+  buyerId: string,
+  prismaClient?: any
+): Promise<{
+  orderId: string;
+  amount: number;
+  recipientLabel: string;
+  qrDataUrl: string;
+  payload: string;
+}> {
+  const db = prismaClient || defaultPrisma;
+
+  const order = await loadAndAuthorizeOrder(db, orderId, buyerId, {
+    role: 'BUYER',
+    shippingMethod: 'DELIVERY',
+    shippingErrorMessage: 'คิวอาร์พร้อมเพย์ใช้สำหรับออเดอร์จัดส่งพัสดุเท่านั้น',
+    allowedStatuses: ['ACCEPTED'],
+    statusErrorBuilder: (s) =>
+      `คำสั่งซื้อต้องอยู่ในสถานะ ACCEPTED เท่านั้นจึงจะสร้างคิวอาร์ชำระเงินได้ (สถานะปัจจุบัน: ${s})`,
+    include: {
+      seller: {
+        include: {
+          shopProfile: { select: { shopName: true } },
+        },
+      },
+    },
+  });
+
+  if (normalizePaymentMethod(order.paymentMethod) === 'COD') {
+    throw new AppError(
+      'ออเดอร์นี้เลือกชำระแบบเก็บเงินปลายทาง (COD) ไม่ต้องชำระผ่าน PromptPay QR',
+      400,
+      'NOT_TRANSFER_ORDER'
+    );
+  }
+
+  if (!order.seller?.promptpayId) {
+    throw new AppError(
+      'ร้านค้ายังไม่ได้ตั้งค่าบัญชีพร้อมเพย์รับเงิน',
+      400,
+      'SELLER_PROMPTPAY_NOT_CONFIGURED'
+    );
+  }
+
+  const amount = Number(order.totalPrice);
+  const qr = await generatePromptPayQR(order.seller.promptpayId, amount);
+
+  const maskedVerified = maskAccountHolderName(order.seller.verifiedName);
+  const shopName = order.seller.shopProfile?.shopName || order.seller.nickname || 'ร้านค้ากองดอง';
+  const recipientLabel = maskedVerified ? `${maskedVerified} · ${shopName}` : shopName;
+
+  return {
+    orderId: order.id,
+    amount,
+    recipientLabel,
+    qrDataUrl: qr.qrDataUrl,
+    payload: qr.payload,
   };
 }
 

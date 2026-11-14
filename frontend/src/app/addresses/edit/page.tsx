@@ -1,24 +1,60 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { TopBar } from '@/components/layout/TopBar';
 import { Button, Input, BottomSheet, Toast } from '@/components/ui';
-import { MapPin, ChevronRight, Check } from 'lucide-react';
+import { api } from '@/lib/api';
+import { BackendAddress } from '@/lib/mappers';
+import { useCart } from '@/hooks/useCart';
+import { MapPin, ChevronRight } from 'lucide-react';
 
 export default function AddressEditPage() {
   const router = useRouter();
+  const { refreshAddresses } = useCart();
 
-  const [fullName, setFullName] = useState('สกาย ระมัดระวัง');
+  const [editId, setEditId] = useState<string | null>(null);
+  const [nextPath, setNextPath] = useState('/addresses');
+  const [fullName, setFullName] = useState('');
   const [province, setProvince] = useState('เชียงใหม่');
   const [district, setDistrict] = useState('เมืองเชียงใหม่');
   const [subdistrict, setSubdistrict] = useState('สุเทพ');
   const [postalCode, setPostalCode] = useState('50200');
-  const [detail, setDetail] = useState('หอพักนักศึกษา อาคาร 4 มช.');
+  const [detail, setDetail] = useState('');
   const [isDefault, setIsDefault] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   const [isProvSheetOpen, setIsProvSheetOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const id = params.get('id');
+    const next = params.get('next');
+    if (next) setNextPath(next);
+    if (!id) return;
+    setEditId(id);
+    setLoading(true);
+    api
+      .get<{ addresses: BackendAddress[] }>('/api/users/me/addresses')
+      .then((res) => {
+        const found = (res.addresses ?? []).find((a) => a.id === id);
+        if (found) {
+          setFullName(found.full_name);
+          setProvince(found.province);
+          setDistrict(found.district);
+          setSubdistrict(found.subdistrict);
+          setPostalCode(found.postal_code);
+          setDetail(found.detail);
+          setIsDefault(Boolean(found.is_default));
+        }
+      })
+      .catch(() => {
+        setToastMessage('โหลดข้อมูลที่อยู่ไม่สำเร็จ');
+      })
+      .finally(() => setLoading(false));
+  }, []);
 
   const popularProvinces = [
     { prov: 'เชียงใหม่', dist: 'เมืองเชียงใหม่', sub: 'สุเทพ', zip: '50200' },
@@ -35,18 +71,40 @@ export default function AddressEditPage() {
     setIsProvSheetOpen(false);
   };
 
-  const handleSave = () => {
-    if (!fullName || !detail) {
+  const handleSave = async () => {
+    if (!fullName.trim() || !detail.trim() || !postalCode.trim()) {
       setToastMessage('กรุณากรอกข้อมูลให้ครบถ้วน');
       return;
     }
-    setToastMessage('บันทึกที่อยู่เรียบร้อยแล้ว (TSAVE) ✓');
-    setTimeout(() => router.push('/addresses'), 1000);
+    setSaving(true);
+    const payload = {
+      full_name: fullName.trim(),
+      province: province.trim(),
+      district: district.trim(),
+      subdistrict: subdistrict.trim(),
+      postal_code: postalCode.trim(),
+      detail: detail.trim(),
+      is_default: isDefault,
+    };
+    try {
+      if (editId) {
+        await api.patch(`/api/users/me/addresses/${editId}`, payload);
+      } else {
+        await api.post('/api/users/me/addresses', payload);
+      }
+      await refreshAddresses();
+      setToastMessage('บันทึกที่อยู่เรียบร้อยแล้ว ✓');
+      setTimeout(() => router.push(nextPath), 500);
+    } catch (err) {
+      setToastMessage(err instanceof Error ? err.message : 'บันทึกที่อยู่ไม่สำเร็จ');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
     <div className="flex flex-col min-h-screen bg-slate-50 select-none pb-24">
-      <TopBar title="เพิ่ม / แก้ไขที่อยู่ (B7E)" />
+      <TopBar title={editId ? 'แก้ไขที่อยู่จัดส่ง' : 'เพิ่มที่อยู่จัดส่ง'} />
 
       <div className="p-4 space-y-4 flex-1">
         <p className="text-[11px] text-slate-500 leading-relaxed">
@@ -116,7 +174,7 @@ export default function AddressEditPage() {
       {/* Save Button */}
       <div className="fixed bottom-0 left-0 right-0 z-30 flex justify-center pointer-events-none">
         <div className="w-full max-w-[430px] bg-white border-t border-slate-200 p-3 pointer-events-auto safe-area-bottom shadow-lg">
-          <Button fullWidth size="lg" onClick={handleSave}>
+          <Button fullWidth size="lg" isLoading={saving} disabled={loading} onClick={handleSave}>
             บันทึกที่อยู่จัดส่ง
           </Button>
         </div>

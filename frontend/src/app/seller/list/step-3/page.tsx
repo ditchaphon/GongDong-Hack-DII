@@ -6,7 +6,7 @@ import clsx from 'clsx';
 import { TopBar } from '@/components/layout/TopBar';
 import { Button, BottomSheet, GradeBadge, Stepper } from '@/components/ui';
 import { useListing } from '@/hooks/useListing';
-import { GRADE_CRITERIA } from '@/mocks/seller';
+import { GRADE_CRITERIA } from '@/lib/catalog';
 import { ConditionChecklist, PhotoCheck } from '@/types';
 import { ChevronRight, Info, CheckCircle2, AlertTriangle } from 'lucide-react';
 

@@ -78,6 +78,36 @@ describe('authMiddleware', () => {
     expect(req.userId).toBe('usr-1');
   });
 
+  it('ไม่ควร query id เมื่อ Mock Token ไม่ใช่ UUID และควรพบ user ที่ถูก auto-create ด้วย prefix line_', async () => {
+    const middleware = createAuthMiddleware({
+      tokenVerifier: vi.fn(),
+    });
+
+    const autoCreatedUser = {
+      id: '9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d',
+      lineUserId: 'line_usr_mock_01',
+      displayName: 'Mock User (usr_mock_01)',
+    };
+
+    mockFindUnique.mockReset();
+    mockFindUnique.mockImplementation(({ where }) => {
+      if (where.lineUserId === 'line_usr_mock_01') {
+        return Promise.resolve(autoCreatedUser);
+      }
+      return Promise.resolve(null);
+    });
+
+    const req: any = { headers: { authorization: 'Bearer mock_usr_mock_01' } };
+    const res: any = {};
+    const next = vi.fn();
+
+    await middleware(req, res, next);
+
+    expect(mockFindUnique).not.toHaveBeenCalledWith({ where: { id: 'usr_mock_01' } });
+    expect(next).toHaveBeenCalledWith();
+    expect(req.userId).toBe(autoCreatedUser.id);
+  });
+
   it('ควร Auto-create ผู้ใช้ใหม่และแจก 1 เครดิตฟรี เมื่อเป็น First Login จาก LINE API', async () => {
     const mockVerifier = vi.fn().mockResolvedValue({
       sub: 'U_NEW_LINE_USER_999',

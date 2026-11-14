@@ -32,13 +32,14 @@ export default function SellerListStep4Page() {
   const hasParcel = draft.deliveryMethods.includes('PARCEL') && canParcel;
 
   const [priceInput, setPriceInput] = useState(draft.price ? String(draft.price) : '');
+  const [publishing, setPublishing] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const price = Number(priceInput) || 0;
   const pointCount = shop?.meetupPoints.length ?? 0;
 
-  const handlePublish = () => {
+  const handlePublish = async () => {
     if (price < 1) {
       setError('กรุณาตั้งราคาขายอย่างน้อย ฿1');
       return;
@@ -48,9 +49,16 @@ export default function SellerListStep4Page() {
       return;
     }
     setError(null);
-    update({ price });
-    publishListing({ ...draft, price });
-    router.push('/seller/list/success');
+    setPublishing(true);
+    try {
+      update({ price });
+      await publishListing({ ...draft, price });
+      router.push('/seller/list/success');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'ลงประกาศขายไม่สำเร็จ');
+    } finally {
+      setPublishing(false);
+    }
   };
 
   return (
@@ -230,6 +238,7 @@ export default function SellerListStep4Page() {
           <Button
             fullWidth
             size="lg"
+            isLoading={publishing}
             onClick={handlePublish}
             rightIcon={<ChevronRight className="w-4 h-4" />}
           >

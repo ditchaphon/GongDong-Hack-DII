@@ -10,6 +10,7 @@ import { useSeller } from '@/hooks/useSeller';
 import { useProfile } from '@/hooks/useProfile';
 import { useLiff } from '@/hooks/useLiff';
 import { useAppMode } from '@/hooks/useAppMode';
+import { uploadImageFile } from '@/lib/api';
 import { MeetupPoint, ShipMode, THAI_PROVINCES, provinceCentre } from '@/lib/delivery';
 import { findContactLeaks } from '@/lib/masking';
 import {
@@ -33,6 +34,7 @@ import {
   Upload,
   Package,
   Calculator,
+  Loader2,
 } from 'lucide-react';
 
 const DEFAULT_POINT: MeetupPoint = {
@@ -88,6 +90,9 @@ export default function ShopSetupWizardPage() {
   const [step, setStep] = useState(2);
   const [error, setError] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [hydratedShop, setHydratedShop] = useState(false);
 
   // Step 2 — shop info
   const [shopName, setShopName] = useState(shop?.shopName || '');
@@ -115,6 +120,25 @@ export default function ShopSetupWizardPage() {
   const [lastName, setLastName] = useState(shop?.kyc?.lastName || '');
   const [kycConsent, setKycConsent] = useState(false);
   const [editKyc, setEditKyc] = useState(!shop?.kyc);
+
+  useEffect(() => {
+    if (!shop || hydratedShop) return;
+    setShopName(shop.shopName || '');
+    setDescription(shop.description || '');
+    if (shop.avatar) setShopAvatar(shop.avatar);
+    setProvince(shop.province || 'เชียงใหม่');
+    setNewPointProvince(shop.province || 'เชียงใหม่');
+    if (shop.meetupPoints?.length) setPoints(shop.meetupPoints);
+    if (shop.availableDays?.length) setDays(shop.availableDays);
+    if (shop.availableSlots?.length) setSlots(shop.availableSlots);
+    setSupportsParcel(shop.supportsParcel);
+    if (shop.kyc) {
+      setFirstName(shop.kyc.firstName || '');
+      setLastName(shop.kyc.lastName || '');
+      setEditKyc(false);
+    }
+    setHydratedShop(true);
+  }, [shop, hydratedShop]);
 
   useEffect(() => {
     const requested = Number(new URLSearchParams(window.location.search).get('step'));
@@ -178,36 +202,45 @@ export default function ShopSetupWizardPage() {
     setStep(target);
   };
 
-  const finish = () => {
-    profile.saveProfile({
-      nickname: user.displayName,
-      avatar: user.pictureUrl || DEFAULT_PROFILE_AVATAR,
-      consent: true,
-    });
-    saveShop({
-      shopName: shopName.trim(),
-      description: description.trim(),
-      avatar: shopAvatar,
-      province,
-      meetupPoints: points,
-      availableDays: days,
-      availableSlots: slots,
-      supportsParcel,
-      shipMode,
-      shipWithinDays,
-    });
-    if (editKyc) {
-      submitKyc({
-        firstName: firstName.trim(),
-        lastName: lastName.trim(),
-        nationalIdMasked: maskThaiId(nationalId),
-        verifiedAt: new Date().toISOString(),
+  const finish = async () => {
+    setIsSaving(true);
+    setError(null);
+    try {
+      await profile.saveProfile({
+        nickname: user.displayName,
+        avatar: user.pictureUrl || DEFAULT_PROFILE_AVATAR,
+        consent: true,
       });
+      await saveShop({
+        shopName: shopName.trim(),
+        description: description.trim(),
+        avatar: shopAvatar,
+        province,
+        meetupPoints: points,
+        availableDays: days,
+        availableSlots: slots,
+        supportsParcel,
+        shipMode,
+        shipWithinDays,
+      });
+      if (editKyc) {
+        await submitKyc({
+          firstName: firstName.trim(),
+          lastName: lastName.trim(),
+          nationalId: onlyDigits(nationalId),
+          nationalIdMasked: maskThaiId(nationalId),
+          verifiedAt: new Date().toISOString(),
+        });
+      }
+      setNationalId('');
+      setMode('SELLER');
+      setToastMessage(shop?.setupComplete ? 'บันทึกข้อมูลร้านแล้ว' : 'เปิดร้านสำเร็จ · ยืนยันตัวตนแล้ว');
+      setTimeout(() => router.push('/seller'), 600);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'บันทึกข้อมูลร้านไม่สำเร็จ');
+    } finally {
+      setIsSaving(false);
     }
-    setNationalId('');
-    setMode('SELLER');
-    setToastMessage(shop?.setupComplete ? 'บันทึกข้อมูลร้านแล้ว' : 'เปิดร้านสำเร็จ · ยืนยันตัวตนแล้ว');
-    setTimeout(() => router.push('/seller'), 600);
   };
 
   const heading = STEP_HEADINGS[step];
@@ -312,19 +345,37 @@ export default function ShopSetupWizardPage() {
                 <div className="flex items-center gap-3 p-3 rounded-2xl bg-slate-50 border border-slate-200">
                   <img src={shopAvatar} alt="รูปร้านที่เลือก" className="w-16 h-16 rounded-2xl object-cover border-2 border-teal-500 bg-white" />
                   <div className="flex-1 min-w-0 space-y-1">
-                    <label className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white border border-slate-200 text-xs font-semibold text-slate-700 cursor-pointer hover:bg-slate-100">
-                      <Upload className="w-3.5 h-3.5" />
-                      อัปโหลดรูปร้านของคุณ
+                    <label
+                      className={clsx(
+                        'inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white border border-slate-200 text-xs font-semibold text-slate-700',
+                        isUploadingAvatar ? 'opacity-60 cursor-wait' : 'cursor-pointer hover:bg-slate-100',
+                      )}
+                    >
+                      {isUploadingAvatar ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Upload className="w-3.5 h-3.5" />
+                      )}
+                      {isUploadingAvatar ? 'กำลังอัปโหลด…' : 'อัปโหลดรูปร้านของคุณ'}
                       <input
                         type="file"
                         accept="image/*"
+                        disabled={isUploadingAvatar}
                         className="hidden"
-                        onChange={(event) => {
+                        onChange={async (event) => {
                           const file = event.target.files?.[0];
+                          event.target.value = '';
                           if (!file) return;
-                          const reader = new FileReader();
-                          reader.onload = () => typeof reader.result === 'string' && setShopAvatar(reader.result);
-                          reader.readAsDataURL(file);
+                          setIsUploadingAvatar(true);
+                          try {
+                            const uploaded = await uploadImageFile(file, 'avatars');
+                            setShopAvatar(uploaded.url);
+                            setToastMessage('อัปโหลดรูปร้านแล้ว');
+                          } catch (err) {
+                            setToastMessage(err instanceof Error ? err.message : 'อัปโหลดรูปร้านไม่สำเร็จ');
+                          } finally {
+                            setIsUploadingAvatar(false);
+                          }
                         }}
                       />
                     </label>
@@ -663,7 +714,7 @@ export default function ShopSetupWizardPage() {
               ย้อนกลับ
             </Button>
           )}
-          <Button fullWidth size="lg" onClick={goNext}>
+          <Button fullWidth size="lg" isLoading={isSaving} onClick={goNext}>
             {step < 4
               ? 'ถัดไป'
               : shop?.setupComplete

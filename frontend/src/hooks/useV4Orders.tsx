@@ -1,17 +1,29 @@
 'use client';
 
-import React, { createContext, useContext, useState, ReactNode } from 'react';
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useState,
+  ReactNode,
+} from 'react';
 import {
   ChatMessage,
   V4BookSnapshot,
   V4Delivery,
   V4Order,
-  V4OrderStatus,
   V4Schedule,
   V4Shipping,
   ViewRole,
 } from '@/types/v4';
-import { MOCK_BUYER, MOCK_V4_CHAT, MOCK_V4_ORDERS } from '@/mocks/v4';
+import { api, ApiError } from '@/lib/api';
+import {
+  BackendOrderDetail,
+  BackendOrderMessage,
+  mapBackendOrderDetailToV4Order,
+  mapBackendOrderMessageToChatMessage,
+} from '@/lib/mappers';
 import { useLiff } from '@/hooks/useLiff';
 
 export interface CreateOrderInput {
@@ -21,297 +33,509 @@ export interface CreateOrderInput {
   books: V4BookSnapshot[];
   shippingFee: number;
   schedule?: V4Schedule;
-  shipping?: V4Shipping;
+  shipping?: V4Shipping & { province?: string };
   shipWithinDays?: number;
 }
 
 export interface V4OrdersContextValue {
   orders: V4Order[];
-  createOrder: (input: CreateOrderInput) => string;
+  loading: boolean;
+  error: string | null;
+  refreshOrders: () => Promise<void>;
+  fetchOrder: (id: string) => Promise<V4Order | undefined>;
+  createOrder: (input: CreateOrderInput) => Promise<string>;
   confirmReceived: (
     id: string,
     photo: string,
-    review: { rating: number; isGradeMatched: boolean; tags: string[]; comment: string }
-  ) => void;
+    review: {
+      rating: number;
+      isGradeMatched: boolean;
+      tags: string[];
+      comment: string;
+    }
+  ) => Promise<{ ok: boolean; error?: string }>;
   getOrder: (id: string) => V4Order | undefined;
   messagesFor: (orderId: string) => ChatMessage[];
-  sendMessage: (orderId: string, role: ViewRole, text: string) => void;
-  acceptOrder: (id: string) => { ok: boolean; error?: string };
-  rejectOrder: (id: string) => void;
-  cancelOrder: (id: string) => void;
-  patchOrder: (id: string, patch: Partial<V4Order>, status?: V4OrderStatus) => void;
-  proposeSchedule: (id: string, schedule: V4Schedule) => void;
-  confirmSchedule: (id: string) => void;
-  markShipped: (id: string, shipping: V4Shipping) => void;
-  complete: (id: string) => void;
-  openDispute: (id: string, reason: string, by: ViewRole) => void;
+  fetchMessages: (orderId: string) => Promise<ChatMessage[]>;
+  sendMessage: (
+    orderId: string,
+    role: ViewRole,
+    text: string
+  ) => Promise<{ ok: boolean; error?: string }>;
+  acceptOrder: (id: string) => Promise<{ ok: boolean; error?: string }>;
+  rejectOrder: (id: string) => Promise<{ ok: boolean; error?: string }>;
+  cancelOrder: (id: string, reason?: string) => Promise<{ ok: boolean; error?: string }>;
+  proposeSchedule: (
+    id: string,
+    schedule: V4Schedule
+  ) => Promise<{ ok: boolean; error?: string }>;
+  confirmSchedule: (id: string) => Promise<{ ok: boolean; error?: string }>;
+  markShipped: (
+    id: string,
+    shipping: V4Shipping
+  ) => Promise<{ ok: boolean; error?: string }>;
+  complete: (id: string) => Promise<{ ok: boolean; error?: string }>;
+  openDispute: (
+    id: string,
+    reason: string,
+    by?: ViewRole
+  ) => Promise<{ ok: boolean; error?: string }>;
+  reportMissedMeeting: (id: string) => Promise<{ ok: boolean; error?: string }>;
+  disputeMissedMeeting: (
+    id: string,
+    reason: string
+  ) => Promise<{ ok: boolean; error?: string }>;
   submitReview: (
     id: string,
-    review: { rating: number; isGradeMatched: boolean; tags: string[]; comment: string }
-  ) => void;
-  verifyHandover: (id: string, code: string) => boolean;
+    review: {
+      rating: number;
+      isGradeMatched: boolean;
+      tags: string[];
+      comment: string;
+    }
+  ) => Promise<{ ok: boolean; error?: string }>;
+  verifyHandover: (id: string, code: string) => Promise<boolean>;
   isMineAsBuyer: (order: V4Order) => boolean;
 }
 
 const OrdersContext = createContext<V4OrdersContextValue | null>(null);
 
-const code6 = () => String(Math.floor(100000 + Math.random() * 900000));
+function extractErrorMessage(err: unknown, fallback: string): string {
+  if (err instanceof ApiError || err instanceof Error) {
+    return err.message || fallback;
+  }
+  return fallback;
+}
 
 export const V4OrdersProvider: React.FC<{ children: ReactNode }> = ({
   children,
 }) => {
-  const { user, deductCredit } = useLiff();
-  const [orders, setOrders] = useState<V4Order[]>(MOCK_V4_ORDERS);
-  const [messages, setMessages] = useState<ChatMessage[]>(MOCK_V4_CHAT);
+  const { user, isReady, isLoggedIn, idToken, refreshUser } = useLiff();
+  const [orders, setOrders] = useState<V4Order[]>([]);
+  const [messagesByOrder, setMessagesByOrder] = useState<
+    Record<string, ChatMessage[]>
+  >({});
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const getOrder = (id: string) => orders.find((order) => order.id === id);
-
-  const patchOrder = (
-    id: string,
-    patch: Partial<V4Order>,
-    status?: V4OrderStatus
-  ) => {
-    setOrders((prev) =>
-      prev.map((order) =>
-        order.id === id
-          ? {
-              ...order,
-              ...patch,
-              ...(status ? { status } : {}),
-              updatedAtISO: new Date().toISOString(),
-            }
-          : order
-      )
-    );
-  };
-
-  const isMineAsBuyer = (order: V4Order) =>
-    order.buyer.nickname === MOCK_BUYER.nickname;
-
-  const acceptOrder = (id: string) => {
-    const order = getOrder(id);
-    if (!order) return { ok: false, error: 'ไม่พบออเดอร์นี้' };
-    if (order.status !== 'REQUESTED') {
-      return { ok: false, error: 'คำขอนี้ถูกตอบไปแล้ว' };
-    }
-    if (user.credits < 1) {
-      return { ok: false, error: 'เครดิตไม่พอ กรุณาเติมเครดิตก่อนรับออเดอร์' };
-    }
-    deductCredit(1);
-
-    const now = new Date().toISOString();
-    setOrders((prev) =>
-      prev.map((item) => {
-        if (item.id === id) {
-          // Meet-up point + time were chosen in the request, so accepting
-          // confirms the appointment. Parcel orders wait for payment.
-          const scheduled = item.delivery === 'MEETUP' && !!item.schedule;
-          return {
-            ...item,
-            status: scheduled ? 'SCHEDULED' : 'ACCEPTED',
-            schedule: scheduled ? { ...item.schedule!, confirmedByBuyer: true } : item.schedule,
-            creditSpent: true,
-            updatedAtISO: now,
-            handoverCode: item.handoverCode ?? code6(),
-          };
-        }
-        // Accepting locks the book: other open requests for it are rejected.
-        if (
-          item.status === 'REQUESTED' &&
-          item.shop.shopName === order.shop.shopName &&
-          item.books.some((book) =>
-            order.books.some((mine) => mine.id === book.id)
-          )
-        ) {
-          return { ...item, status: 'REJECTED', updatedAtISO: now };
-        }
-        return item;
-      })
-    );
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: `msg-accept-${id}`,
-        orderId: id,
-        from: 'SELLER',
-                    text:
-              order.delivery === 'MEETUP'
-                ? 'ผู้ขายรับคำขอแล้ว · นัดรับยืนยันแล้ว แชทในออเดอร์เปิดแล้ว'
-                : 'ผู้ขายรับคำขอแล้ว · รอผู้ขายยืนยันการส่งและเก็บเงินปลายทาง',
-        sentAtISO: now,
-        kind: 'SYSTEM',
-      },
-    ]);
-    return { ok: true };
-  };
-
-  const rejectOrder = (id: string) => {
-    patchOrder(id, {}, 'REJECTED');
-  };
-
-  const cancelOrder = (id: string) => {
-    patchOrder(id, {}, 'CANCELLED');
-  };
-
-  const proposeSchedule = (id: string, schedule: V4Schedule) => {
-    patchOrder(id, { schedule });
-  };
-
-  const confirmSchedule = (id: string) => {
-    const order = getOrder(id);
-    if (!order?.schedule) return;
-    patchOrder(
-      id,
-      { schedule: { ...order.schedule, confirmedByBuyer: true } },
-      'SCHEDULED'
-    );
-  };
-
-  const confirmReceived: V4OrdersContextValue['confirmReceived'] = (id, photo, review) => {
-    const now = new Date().toISOString();
-    patchOrder(
-      id,
-      {
-        receivedPhoto: photo,
-        receivedAtISO: now,
-        payoutReleasedAtISO: now,
-        review: { ...review, reviewedAtISO: now },
-      },
-      'COMPLETED'
-    );
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: `msg-received-${id}`,
-        orderId: id,
-        from: 'BUYER',
-        text: 'ผู้ซื้อยืนยันรับของพร้อมรูปถ่ายแล้ว · ชำระเงินปลายทางเรียบร้อย',
-        sentAtISO: now,
-        kind: 'SYSTEM',
-      },
-    ]);
-  };
-
-  const createOrder = (input: CreateOrderInput) => {
-    const id = `ORD-${Math.floor(100000 + Math.random() * 900000)}`;
-    const now = new Date().toISOString();
-    const amount = input.books.reduce((sum, book) => sum + book.price, 0);
-    const order: V4Order = {
-      id,
-      status: 'REQUESTED',
-      delivery: input.delivery,
-      buyer: MOCK_BUYER,
-      shop: input.shop,
-      shopId: input.shopId,
-      books: input.books,
-      amount,
-      shippingFee: input.shippingFee,
-      total: amount + input.shippingFee,
-      createdAtISO: now,
-      updatedAtISO: now,
-      schedule: input.schedule,
-      shipping: input.shipping,
-      shipWithinDays: input.shipWithinDays,
-      creditSpent: false,
-    };
-    setOrders((prev) => [order, ...prev]);
-    return id;
-  };
-
-  /** Seller confirms the handover/shipment; cash is collected on delivery. */
-  const markShipped = (id: string, shipping: V4Shipping) => {
-    patchOrder(id, { shipping }, 'PAID');
-  };
-
-  const complete = (id: string) => {
-    patchOrder(id, {}, 'COMPLETED');
-  };
-
-  const openDispute = (id: string, reason: string, by: ViewRole) => {
-    patchOrder(
-      id,
-      {
-        dispute: { reason, openedBy: by, openedAtISO: new Date().toISOString() },
-      },
-      'DISPUTED'
-    );
-  };
-
-  const submitReview = (
-    id: string,
-    reviewData: { rating: number; isGradeMatched: boolean; tags: string[]; comment: string }
-  ) => {
-    patchOrder(id, {
-      review: {
-        ...reviewData,
-        reviewedAtISO: new Date().toISOString(),
-      },
+  const upsertOrder = useCallback((nextOrder: V4Order) => {
+    setOrders((prev) => {
+      const exists = prev.some((o) => o.id === nextOrder.id);
+      if (exists) {
+        return prev.map((o) =>
+          o.id === nextOrder.id ? { ...o, ...nextOrder } : o
+        );
+      }
+      return [nextOrder, ...prev];
     });
-  };
+  }, []);
 
-  /** Seller confirms the meetup handover: sale closes, chat locks. */
-  const verifyHandover = (id: string, code: string) => {
-    const order = getOrder(id);
-    if (!order?.handoverCode) return false;
-    if (order.handoverCode !== code.trim()) return false;
-    const now = new Date().toISOString();
-    patchOrder(
-      id,
+  const fetchOrder = useCallback(
+    async (id: string): Promise<V4Order | undefined> => {
+      if (!idToken) return undefined;
+      try {
+        const detail = await api.get<BackendOrderDetail>(`/api/orders/${id}`, {
+          token: idToken,
+        });
+        const mapped = mapBackendOrderDetailToV4Order(detail);
+        upsertOrder(mapped);
+        return mapped;
+      } catch (err) {
+        console.warn('[useV4Orders] Failed to fetch order detail:', id, err);
+        return undefined;
+      }
+    },
+    [idToken, upsertOrder]
+  );
+
+  const refreshOrders = useCallback(async () => {
+    if (!idToken) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const summary = await api.get<{
+        buying?: Array<{ id: string }>;
+        selling?: Array<{ id: string }>;
+      }>('/api/users/me/orders', { token: idToken });
+
+      const uniqueIds = Array.from(
+        new Set([
+          ...(summary.buying ?? []).map((o) => o.id),
+          ...(summary.selling ?? []).map((o) => o.id),
+        ])
+      );
+
+      if (uniqueIds.length === 0) {
+        setOrders([]);
+        return;
+      }
+
+      const details = await Promise.all(
+        uniqueIds.map((orderId) =>
+          api
+            .get<BackendOrderDetail>(`/api/orders/${orderId}`, {
+              token: idToken,
+            })
+            .then(mapBackendOrderDetailToV4Order)
+            .catch(() => null)
+        )
+      );
+
+      setOrders(details.filter((o): o is V4Order => o !== null));
+    } catch (err) {
+      setError(extractErrorMessage(err, 'โหลดรายการออเดอร์ไม่สำเร็จ'));
+    } finally {
+      setLoading(false);
+    }
+  }, [idToken]);
+
+  useEffect(() => {
+    if (!isReady || !isLoggedIn || !idToken) return;
+    refreshOrders();
+  }, [isReady, isLoggedIn, idToken, refreshOrders]);
+
+  const getOrder = useCallback(
+    (id: string) => orders.find((order) => order.id === id),
+    [orders]
+  );
+
+  const isMineAsBuyer = useCallback(
+    (order: V4Order) =>
+      order.buyerId ? order.buyerId === user.id : order.shopId !== user.id,
+    [user.id]
+  );
+
+  const fetchMessages = useCallback(
+    async (orderId: string): Promise<ChatMessage[]> => {
+      if (!idToken) return [];
+      try {
+        const raw = await api.get<BackendOrderMessage[]>(
+          `/api/orders/${orderId}/messages`,
+          { token: idToken }
+        );
+        const mapped = (Array.isArray(raw) ? raw : []).map(
+          mapBackendOrderMessageToChatMessage
+        );
+        setMessagesByOrder((prev) => ({ ...prev, [orderId]: mapped }));
+        return mapped;
+      } catch (err) {
+        console.warn('[useV4Orders] Failed to fetch messages:', err);
+        return messagesByOrder[orderId] ?? [];
+      }
+    },
+    [idToken]
+  );
+
+  const messagesFor = useCallback(
+    (orderId: string) => messagesByOrder[orderId] ?? [],
+    [messagesByOrder]
+  );
+
+  const sendMessage = useCallback(
+    async (
+      orderId: string,
+      _role: ViewRole,
+      text: string
+    ): Promise<{ ok: boolean; error?: string }> => {
+      if (!idToken) return { ok: false, error: 'ยังไม่ได้เข้าสู่ระบบ' };
+      try {
+        const created = await api.post<BackendOrderMessage>(
+          `/api/orders/${orderId}/messages`,
+          { text },
+          { token: idToken }
+        );
+        const mapped = mapBackendOrderMessageToChatMessage(created);
+        setMessagesByOrder((prev) => ({
+          ...prev,
+          [orderId]: [...(prev[orderId] ?? []), mapped],
+        }));
+        return { ok: true };
+      } catch (err) {
+        return { ok: false, error: extractErrorMessage(err, 'ส่งข้อความไม่สำเร็จ') };
+      }
+    },
+    [idToken]
+  );
+
+  const createOrder = async (input: CreateOrderInput): Promise<string> => {
+    if (!idToken) throw new Error('ยังไม่ได้เข้าสู่ระบบ');
+    if (!input.shopId) throw new Error('ไม่พบรหัสผู้ขาย');
+
+    const scheduledAtIso =
+      input.schedule?.dateISO
+        ? `${input.schedule.dateISO}T16:00:00.000Z`
+        : undefined;
+
+    const created = await api.post<{ order_id: string }>(
+      '/api/orders',
       {
-        handoverCodeVerifiedAtISO: now,
-        payoutReleasedAtISO: now,
-        handoverCode: undefined,
+        seller_id: input.shopId,
+        book_ids: input.books.map((b) => b.id),
+        shipping_method: input.delivery === 'MEETUP' ? 'PICKUP' : 'DELIVERY',
+        payment_method: 'COD',
+        recipient_name: input.shipping?.receiverName,
+        recipient_phone: input.shipping?.receiverPhone,
+        buyer_province: input.shipping?.province,
+        delivery_address: input.shipping?.receiverAddress,
+        pickup_lat: input.schedule?.lat,
+        pickup_lng: input.schedule?.lng,
+        pickup_location_name: input.schedule?.landmark,
+        scheduled_at: scheduledAtIso,
+        schedule_date_iso: input.schedule?.dateISO,
+        schedule_time_label: input.schedule?.timeLabel,
+        ship_within_days: input.shipWithinDays,
       },
-      'COMPLETED'
+      { token: idToken }
     );
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: `msg-handover-${id}`,
-        orderId: id,
-        from: 'SELLER',
-        text: 'ผู้ขายยืนยันการส่งมอบแล้ว · ปิดการขายเรียบร้อย',
-        sentAtISO: now,
-        kind: 'SYSTEM',
-      },
-    ]);
-    return true;
+
+    await fetchOrder(created.order_id);
+    return created.order_id;
   };
 
-  const sendMessage = (orderId: string, role: ViewRole, text: string) => {
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: `msg-${Date.now()}`,
-        orderId,
-        from: role,
-        text,
-        sentAtISO: new Date().toISOString(),
-      },
-    ]);
+  const acceptOrder = async (id: string) => {
+    if (!idToken) return { ok: false, error: 'ยังไม่ได้เข้าสู่ระบบ' };
+    try {
+      await api.post(`/api/orders/${id}/accept`, undefined, { token: idToken });
+      await Promise.all([fetchOrder(id), fetchMessages(id), refreshUser()]);
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: extractErrorMessage(err, 'รับออเดอร์ไม่สำเร็จ') };
+    }
   };
 
-  const messagesFor = (orderId: string) =>
-    messages.filter((message) => message.orderId === orderId);
+  const rejectOrder = async (id: string) => {
+    if (!idToken) return { ok: false, error: 'ยังไม่ได้เข้าสู่ระบบ' };
+    try {
+      await api.post(`/api/orders/${id}/reject`, undefined, { token: idToken });
+      await fetchOrder(id);
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: extractErrorMessage(err, 'ปฏิเสธคำขอไม่สำเร็จ') };
+    }
+  };
+
+  const cancelOrder = async (id: string, reason?: string) => {
+    if (!idToken) return { ok: false, error: 'ยังไม่ได้เข้าสู่ระบบ' };
+    try {
+      await api.post(`/api/orders/${id}/cancel`, { reason }, { token: idToken });
+      await fetchOrder(id);
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: extractErrorMessage(err, 'ยกเลิกออเดอร์ไม่สำเร็จ') };
+    }
+  };
+
+  const proposeSchedule = async (id: string, schedule: V4Schedule) => {
+    if (!idToken) return { ok: false, error: 'ยังไม่ได้เข้าสู่ระบบ' };
+    try {
+      await api.patch(
+        `/api/orders/${id}/schedule`,
+        {
+          scheduled_at: `${schedule.dateISO}T16:00:00.000Z`,
+          pickup_lat: schedule.lat,
+          pickup_lng: schedule.lng,
+          pickup_location_name: schedule.landmark,
+        },
+        { token: idToken }
+      );
+      await Promise.all([fetchOrder(id), fetchMessages(id)]);
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: extractErrorMessage(err, 'อัปเดตเวลานัดไม่สำเร็จ') };
+    }
+  };
+
+  const confirmSchedule = async (id: string) => {
+    const order = getOrder(id);
+    if (!order?.schedule) {
+      return { ok: false, error: 'ไม่พบข้อมูลนัดหมาย' };
+    }
+    return proposeSchedule(id, { ...order.schedule, confirmedByBuyer: true });
+  };
+
+  const markShipped = async (id: string, shipping: V4Shipping) => {
+    if (!idToken) return { ok: false, error: 'ยังไม่ได้เข้าสู่ระบบ' };
+    try {
+      await api.patch(
+        `/api/orders/${id}/ship`,
+        {
+          courier_name: shipping.carrier,
+          tracking_number: shipping.trackingNumber,
+          parcel_image_url: shipping.boxPhoto,
+        },
+        { token: idToken }
+      );
+      await Promise.all([fetchOrder(id), fetchMessages(id)]);
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: extractErrorMessage(err, 'บันทึกการจัดส่งไม่สำเร็จ') };
+    }
+  };
+
+  const confirmReceived: V4OrdersContextValue['confirmReceived'] = async (
+    id,
+    photo,
+    review
+  ) => {
+    if (!idToken) return { ok: false, error: 'ยังไม่ได้เข้าสู่ระบบ' };
+    try {
+      await api.post(
+        `/api/orders/${id}/receive`,
+        {
+          received_photo_url: photo,
+          review: {
+            rating: review.rating,
+            is_condition_accurate: review.isGradeMatched,
+            tags: review.tags,
+            comment: review.comment,
+          },
+        },
+        { token: idToken }
+      );
+      await Promise.all([fetchOrder(id), fetchMessages(id)]);
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: extractErrorMessage(err, 'ยืนยันรับของไม่สำเร็จ') };
+    }
+  };
+
+  const complete = async (id: string) => {
+    if (!idToken) return { ok: false, error: 'ยังไม่ได้เข้าสู่ระบบ' };
+    try {
+      const order = getOrder(id);
+      if (order?.delivery === 'PARCEL') {
+        await api.post(`/api/orders/${id}/complete-delivery`, undefined, {
+          token: idToken,
+        });
+      } else {
+        await api.post(`/api/orders/${id}/complete-meetup`, undefined, {
+          token: idToken,
+        });
+      }
+      await Promise.all([fetchOrder(id), fetchMessages(id)]);
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: extractErrorMessage(err, 'ปิดการขายไม่สำเร็จ') };
+    }
+  };
+
+  const verifyHandover = async (id: string, code: string): Promise<boolean> => {
+    if (!idToken) return false;
+    try {
+      await api.post(
+        `/api/orders/${id}/handover`,
+        { handover_code: code },
+        { token: idToken }
+      );
+      await fetchOrder(id);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  const openDispute = async (id: string, reason: string) => {
+    if (!idToken) return { ok: false, error: 'ยังไม่ได้เข้าสู่ระบบ' };
+    try {
+      await api.post(`/api/orders/${id}/dispute`, { reason }, { token: idToken });
+      await Promise.all([fetchOrder(id), fetchMessages(id)]);
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: extractErrorMessage(err, 'เปิดข้อพิพาทไม่สำเร็จ') };
+    }
+  };
+
+  const reportMissedMeeting = async (id: string) => {
+    if (!idToken) return { ok: false, error: 'ยังไม่ได้เข้าสู่ระบบ' };
+    try {
+      await api.post(`/api/orders/${id}/report-missed-meeting`, undefined, {
+        token: idToken,
+      });
+      await fetchOrder(id);
+      return { ok: true };
+    } catch (err) {
+      return {
+        ok: false,
+        error: extractErrorMessage(err, 'แจ้งไม่มาตามนัดไม่สำเร็จ'),
+      };
+    }
+  };
+
+  const disputeMissedMeeting = async (id: string, reason: string) => {
+    if (!idToken) return { ok: false, error: 'ยังไม่ได้เข้าสู่ระบบ' };
+    try {
+      await api.post(
+        `/api/orders/${id}/dispute-missed-meeting`,
+        { reason },
+        { token: idToken }
+      );
+      await fetchOrder(id);
+      return { ok: true };
+    } catch (err) {
+      return {
+        ok: false,
+        error: extractErrorMessage(err, 'ส่งคำชี้แจงไม่สำเร็จ'),
+      };
+    }
+  };
+
+  const submitReview = async (
+    id: string,
+    reviewData: {
+      rating: number;
+      isGradeMatched: boolean;
+      tags: string[];
+      comment: string;
+    }
+  ) => {
+    if (!idToken) return { ok: false, error: 'ยังไม่ได้เข้าสู่ระบบ' };
+    try {
+      await api.post(
+        `/api/orders/${id}/review`,
+        {
+          rating: reviewData.rating,
+          is_condition_accurate: reviewData.isGradeMatched,
+          tags: reviewData.tags,
+          comment: reviewData.comment,
+        },
+        { token: idToken }
+      );
+      const now = new Date().toISOString();
+      setOrders((prev) =>
+        prev.map((o) =>
+          o.id === id ? { ...o, review: { ...reviewData, reviewedAtISO: now } } : o
+        )
+      );
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: extractErrorMessage(err, 'บันทึกรีวิวไม่สำเร็จ') };
+    }
+  };
 
   return (
     <OrdersContext.Provider
       value={{
         orders,
+        loading,
+        error,
+        refreshOrders,
+        fetchOrder,
         createOrder,
         confirmReceived,
         getOrder,
         messagesFor,
+        fetchMessages,
         sendMessage,
         acceptOrder,
         rejectOrder,
         cancelOrder,
-        patchOrder,
         proposeSchedule,
         confirmSchedule,
         markShipped,
         complete,
         openDispute,
+        reportMissedMeeting,
+        disputeMissedMeeting,
         submitReview,
         verifyHandover,
         isMineAsBuyer,
@@ -324,6 +548,8 @@ export const V4OrdersProvider: React.FC<{ children: ReactNode }> = ({
 
 export function useV4Orders(): V4OrdersContextValue {
   const ctx = useContext(OrdersContext);
-  if (!ctx) throw new Error('useV4Orders must be used within V4OrdersProvider');
+  if (!ctx) {
+    throw new Error('useV4Orders must be used within V4OrdersProvider');
+  }
   return ctx;
 }

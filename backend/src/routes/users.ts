@@ -11,6 +11,7 @@ import { getUserOrders } from '../services/orderService';
 import { getUserReviews } from '../services/reviewService';
 import {
   getCreditLedger,
+  getTopupPaymentQr,
   getUserProfile,
   processTopupSlip,
   updateUserProfile,
@@ -82,6 +83,36 @@ userRouter.patch(
         success: true,
         data: updated,
         message: 'บันทึกข้อมูลส่วนตัวสำเร็จ',
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * GET /api/users/me/topup-qr
+ * สร้าง PromptPay QR สำหรับเติมเครดิตเข้าบัญชีกองดอง (ระบุ ?pack_id=starter|bookworm|merchant หรือ ?amount=20|50|100)
+ */
+userRouter.get(
+  '/me/topup-qr',
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const packId = req.query.pack_id ? String(req.query.pack_id) : undefined;
+      const amount = req.query.amount !== undefined ? Number(req.query.amount) : undefined;
+
+      const qr = await getTopupPaymentQr({ packId, amount });
+
+      res.status(200).json({
+        success: true,
+        data: {
+          pack_id: qr.packId,
+          credits: qr.credits,
+          amount: qr.amount,
+          recipient_label: qr.recipientLabel,
+          qr_data_url: qr.qrDataUrl,
+          payload: qr.payload,
+        },
       });
     } catch (error) {
       next(error);

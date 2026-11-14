@@ -16,10 +16,14 @@ export default function OrderSchedulePage({
 }) {
   const resolvedParams = use(params);
   const router = useRouter();
-  const { getOrder, proposeSchedule, confirmSchedule } = useV4Orders();
+  const { getOrder, fetchOrder, loading, proposeSchedule, confirmSchedule } = useV4Orders();
 
   const order = getOrder(resolvedParams.id);
   const [role, setRole] = useState<ViewRole>('SELLER');
+
+  useEffect(() => {
+    if (!order) fetchOrder(resolvedParams.id);
+  }, [resolvedParams.id, order, fetchOrder]);
 
   const [when, setWhen] = useState<ScheduleValue | null>(
     order?.schedule
@@ -30,6 +34,7 @@ export default function OrderSchedulePage({
     order?.schedule ? { lat: order.schedule.lat, lng: order.schedule.lng } : null
   );
   const [landmark, setLandmark] = useState(order?.schedule?.landmark ?? '');
+  const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -38,11 +43,21 @@ export default function OrderSchedulePage({
     setRole(search.get('role') === 'buyer' ? 'BUYER' : 'SELLER');
   }, []);
 
+  useEffect(() => {
+    if (order?.schedule) {
+      setWhen((prev) => prev ?? { dateISO: order.schedule!.dateISO, timeLabel: order.schedule!.timeLabel });
+      setPoint((prev) => prev ?? { lat: order.schedule!.lat, lng: order.schedule!.lng });
+      setLandmark((prev) => prev || order.schedule!.landmark);
+    }
+  }, [order?.schedule]);
+
   if (!order) {
     return (
       <div className="flex flex-col min-h-screen bg-slate-50">
         <TopBar title="นัดรับ" onBack={() => router.push('/orders')} />
-        <p className="p-6 text-center text-xs text-slate-500">ไม่พบออเดอร์นี้</p>
+        <p className="p-6 text-center text-xs text-slate-500">
+          {loading ? 'กำลังโหลดข้อมูลออเดอร์...' : 'ไม่พบออเดอร์นี้'}
+        </p>
       </div>
     );
   }
@@ -52,7 +67,7 @@ export default function OrderSchedulePage({
   const canConfirm =
     role === 'BUYER' && order.status === 'ACCEPTED' && !!order.schedule && !confirmed;
 
-  const handlePropose = () => {
+  const handlePropose = async () => {
     if (!when) {
       setError('เลือกวันและเวลา');
       return;
@@ -66,7 +81,8 @@ export default function OrderSchedulePage({
       return;
     }
     setError(null);
-    proposeSchedule(order.id, {
+    setSubmitting(true);
+    const res = await proposeSchedule(order.id, {
       dateISO: when.dateISO,
       timeLabel: when.timeLabel,
       lat: point.lat,
@@ -75,12 +91,23 @@ export default function OrderSchedulePage({
       proposedBy: 'SELLER',
       confirmedByBuyer: false,
     });
+    setSubmitting(false);
+    if (!res.ok) {
+      setError(res.error || 'บันทึกนัดหมายไม่สำเร็จ');
+      return;
+    }
     setToastMessage('ส่งนัดให้ผู้ซื้อแล้ว · รอผู้ซื้อยืนยัน');
     setTimeout(() => router.push(`/orders/${order.id}?role=seller`), 800);
   };
 
-  const handleConfirm = () => {
-    confirmSchedule(order.id);
+  const handleConfirm = async () => {
+    setSubmitting(true);
+    const res = await confirmSchedule(order.id);
+    setSubmitting(false);
+    if (!res.ok) {
+      setError(res.error || 'ยืนยันนัดไม่สำเร็จ');
+      return;
+    }
     setToastMessage('ยืนยันนัดแล้ว · ออเดอร์อยู่ในสถานะนัดรับ');
     setTimeout(() => router.push(`/orders/${order.id}`), 800);
   };

@@ -1,5 +1,6 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { authMiddleware } from '../middlewares/auth';
+import { maskAccountHolderName } from '../services/dataMaskingService';
 import { getOrderMessages, sendOrderMessage } from '../services/messageService';
 import {
   acceptOrder,
@@ -9,6 +10,7 @@ import {
   createOrder,
   disputeMissedMeeting,
   getOrderDetail,
+  getOrderPaymentQR,
   getUserOrders,
   openDispute,
   receiveOrder,
@@ -160,13 +162,28 @@ orderRouter.get(
           id: orderDetail.id,
           status: orderDetail.status,
           shipping_method: orderDetail.shippingMethod,
+          payment_method: orderDetail.paymentMethod,
           shipping_fee: orderDetail.shippingFee,
           total_price: orderDetail.totalPrice,
           pickup_lat: orderDetail.pickupLat,
           pickup_lng: orderDetail.pickupLng,
           pickup_location_name: orderDetail.pickupLocationName,
           scheduled_at: orderDetail.scheduledAt,
-          handover_code: orderDetail.handoverCode,
+          schedule_date_iso: orderDetail.scheduleDateIso,
+          schedule_time_label: orderDetail.scheduleTimeLabel,
+          schedule_proposed_by: orderDetail.scheduleProposedBy,
+          schedule_confirmed_by_buyer: orderDetail.scheduleConfirmedByBuyer,
+          handover_code: orderDetail.handoverCode ?? null,
+          received_photo_url: orderDetail.receivedPhotoUrl,
+          received_at: orderDetail.receivedAt,
+          cancel_reason: orderDetail.cancelReason,
+          dispute: orderDetail.dispute
+            ? {
+                reason: orderDetail.dispute.reason,
+                opened_by: orderDetail.dispute.openedBy,
+                opened_at: orderDetail.dispute.openedAt,
+              }
+            : null,
           items: orderDetail.items.map((item) => ({
             book_id: item.bookId,
             title: item.title,
@@ -177,20 +194,22 @@ orderRouter.get(
             id: orderDetail.buyer.id,
             nickname: orderDetail.buyer.nickname,
             avatar_url: orderDetail.buyer.avatarUrl,
-            phone_number: orderDetail.buyer.phoneNumber,
+            phone_number: orderDetail.buyer.phoneNumber ?? null,
+            no_show_count: orderDetail.buyer.noShowCount ?? 0,
           },
           seller: {
             id: orderDetail.seller.id,
             nickname: orderDetail.seller.nickname,
+            shop_name: orderDetail.seller.shopName,
             avatar_url: orderDetail.seller.avatarUrl,
-            promptpay_id: orderDetail.seller.promptpayId,
-            verified_name: orderDetail.seller.verifiedName,
+            verified_name: maskAccountHolderName(orderDetail.seller.verifiedName),
             is_verified_seller: orderDetail.seller.isVerifiedSeller,
           },
           delivery_details: orderDetail.deliveryDetails
             ? {
                 recipient_name: orderDetail.deliveryDetails.recipientName,
                 recipient_phone: orderDetail.deliveryDetails.recipientPhone,
+                province: orderDetail.deliveryDetails.province,
                 delivery_address: orderDetail.deliveryDetails.deliveryAddress,
                 courier_name: orderDetail.deliveryDetails.courierName,
                 tracking_number: orderDetail.deliveryDetails.trackingNumber,
@@ -199,6 +218,7 @@ orderRouter.get(
               }
             : null,
           created_at: orderDetail.createdAt,
+          updated_at: orderDetail.updatedAt,
         },
       });
     } catch (error) {
@@ -329,6 +349,35 @@ orderRouter.post(
           sold_book_ids: result.soldBookIds,
         },
         message: 'ส่งมอบหนังสือสำเร็จ ปิดการขายเรียบร้อย',
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * GET /api/orders/:id/payment-qr
+ * สร้าง PromptPay QR สำหรับผู้ซื้อชำระเงินค่าหนังสือ (เฉพาะ DELIVERY + TRANSFER + สถานะ ACCEPTED)
+ */
+orderRouter.get(
+  '/:id/payment-qr',
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const orderId = String(req.params.id);
+      const buyerId = getUserIdFromRequest(req);
+
+      const qr = await getOrderPaymentQR(orderId, buyerId);
+
+      res.status(200).json({
+        success: true,
+        data: {
+          order_id: qr.orderId,
+          amount: qr.amount,
+          recipient_label: qr.recipientLabel,
+          qr_data_url: qr.qrDataUrl,
+          payload: qr.payload,
+        },
       });
     } catch (error) {
       next(error);

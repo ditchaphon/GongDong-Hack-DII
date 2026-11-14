@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { TopBar } from '@/components/layout/TopBar';
 import { Button } from '@/components/ui';
 import { useSeller } from '@/hooks/useSeller';
-import { MOCK_CREDIT_PACKAGES } from '@/mocks/seller';
+import { CREDIT_PACKAGES } from '@/lib/catalog';
 import { CREDIT_REASON_LABEL, sortLedger } from '@/lib/creditLedger';
 import {
   CreditCard,
@@ -26,8 +26,8 @@ export default function SellerCreditsPage() {
   const history = sortLedger(ledger).slice(0, 5);
 
   const selected =
-    MOCK_CREDIT_PACKAGES.find((p) => p.id === selectedPackageId) ||
-    MOCK_CREDIT_PACKAGES[1];
+    CREDIT_PACKAGES.find((p) => p.id === selectedPackageId) ||
+    CREDIT_PACKAGES[1];
 
   return (
     <div className="flex flex-col min-h-screen bg-slate-50 select-none pb-32">
@@ -73,7 +73,7 @@ export default function SellerCreditsPage() {
             <span className="text-[10px] text-slate-400">จ่ายครั้งเดียว ไม่ต่ออายุ</span>
           </div>
 
-          {MOCK_CREDIT_PACKAGES.map((pkg) => {
+          {CREDIT_PACKAGES.map((pkg) => {
             const isSelected = selectedPackageId === pkg.id;
             return (
               <button

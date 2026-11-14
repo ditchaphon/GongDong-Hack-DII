@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, use } from 'react';
+import React, { useEffect, useState, use } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { TopBar } from '@/components/layout/TopBar';
@@ -8,13 +8,21 @@ import {
   Button,
   GradeBadge,
   ConditionChecklist,
+  EmptyState,
   Modal,
   Toast,
 } from '@/components/ui';
 import { PhotoGallery, ConfirmSheet, CartAddedSheet, CartAddedState } from '@/components/v4';
 import { calcParcelFee } from '@/lib/delivery';
-import { MOCK_BOOKS } from '@/mocks/books';
-import { getShopById } from '@/mocks/shops';
+import { api } from '@/lib/api';
+import {
+  BackendBookDetail,
+  BackendPublicShopResponse,
+  BackendReviewsResponse,
+  mapBackendBookDetailToBook,
+  mapPublicShopToShopProfile,
+} from '@/lib/mappers';
+import { Book, ShopProfile } from '@/types';
 import { useCart } from '@/hooks/useCart';
 import {
   Share2,
@@ -40,8 +48,10 @@ export default function BookDetailPage({
   const router = useRouter();
   const { addToCart, replaceCart, items: cartItems } = useCart();
 
-  const book = MOCK_BOOKS.find((b) => b.id === resolvedParams.id) || MOCK_BOOKS[0];
-  const shop = getShopById(book.sellerId);
+  const [book, setBook] = useState<Book | null>(null);
+  const [shop, setShop] = useState<ShopProfile | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const [activePhotoIdx, setActivePhotoIdx] = useState(0);
   const [isGalleryOpen, setIsGalleryOpen] = useState(false);
@@ -50,6 +60,73 @@ export default function BookDetailPage({
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [cartSheet, setCartSheet] = useState<CartAddedState | null>(null);
   const [buyAfterReplace, setBuyAfterReplace] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    const loadBook = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const detail = await api.get<BackendBookDetail>(`/api/books/${resolvedParams.id}`);
+        const mappedBook = mapBackendBookDetailToBook(detail);
+        if (!active) return;
+        setBook(mappedBook);
+
+        const sellerId = mappedBook.sellerId;
+        if (sellerId) {
+          const [shopRes, reviewsRes] = await Promise.all([
+            api.get<BackendPublicShopResponse>(`/api/shops/${sellerId}`).catch(() => null),
+            api.get<BackendReviewsResponse>(`/api/users/${sellerId}/reviews`).catch(() => null),
+          ]);
+          if (!active) return;
+          if (shopRes) {
+            setShop(mapPublicShopToShopProfile(shopRes, reviewsRes));
+          }
+        }
+      } catch (err) {
+        if (!active) return;
+        setError(err instanceof Error ? err.message : 'ไม่พบหนังสือเล่มนี้');
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+    loadBook();
+    return () => {
+      active = false;
+    };
+  }, [resolvedParams.id]);
+
+  if (loading) {
+    return (
+      <div className="flex flex-col min-h-screen bg-slate-50 select-none pb-24">
+        <TopBar title="รายละเอียดหนังสือ" />
+        <div className="w-full aspect-square bg-slate-200 animate-pulse" />
+        <div className="p-4 space-y-3">
+          <div className="h-7 w-1/3 bg-slate-200 rounded animate-pulse" />
+          <div className="h-5 w-3/4 bg-slate-200 rounded animate-pulse" />
+          <div className="h-24 bg-slate-200 rounded-2xl animate-pulse" />
+        </div>
+      </div>
+    );
+  }
+
+  if (error || !book) {
+    return (
+      <div className="flex flex-col min-h-screen bg-slate-50 select-none pb-24">
+        <TopBar title="รายละเอียดหนังสือ" />
+        <div className="p-4">
+          <div className="bg-white rounded-2xl border border-slate-200 p-6">
+            <EmptyState
+              title="ไม่พบหนังสือเล่มนี้"
+              description={error || 'รายการอาจถูกลบหรือขายออกแล้ว'}
+              actionText="กลับหน้าหลัก"
+              onAction={() => router.push('/')}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const photoList = [
     { src: book.photos.cover, label: 'ปกหน้า' },
@@ -86,7 +163,7 @@ export default function BookDetailPage({
     router.push('/cart');
   };
 
-  const offersMeetup = book.deliveryMethods.includes('MEETUP') && (shop?.meetupPoints.length ?? 0) > 0;
+  const offersMeetup = book.deliveryMethods.includes('MEETUP') && (shop ? shop.meetupPoints.length > 0 : (book.meetupZones?.length ?? 0) > 0);
   const offersParcel =
     book.deliveryMethods.includes('PARCEL') && (shop ? shop.supportsParcel && shop.payeeVerified : true);
 

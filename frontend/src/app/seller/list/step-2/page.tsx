@@ -164,6 +164,7 @@ export default function SellerListStep2Page() {
         title={camera ? `ถ่าย${camera.label}` : ''}
         hint="ถือกล้องให้นิ่ง เห็นหนังสือเต็มกรอบ"
         demoImage={camera ? DEMO[camera.key] : undefined}
+        bucket="book-listings"
         onClose={() => setCamera(null)}
         onCapture={(url) => {
           if (!camera) return;

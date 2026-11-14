@@ -101,6 +101,7 @@ export interface V4Order {
   id: string;
   status: V4OrderStatus;
   delivery: V4Delivery;
+  buyerId?: string;
   buyer: PublicIdentity;
   shop: ShopIdentity;
   books: V4BookSnapshot[];

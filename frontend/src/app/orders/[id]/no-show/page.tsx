@@ -16,12 +16,24 @@ export default function NoShowPage({
 }) {
   const resolvedParams = use(params);
   const router = useRouter();
-  const { getOrder, openDispute } = useV4Orders();
+  const {
+    getOrder,
+    fetchOrder,
+    loading,
+    reportMissedMeeting,
+    disputeMissedMeeting,
+  } = useV4Orders();
 
   const order = getOrder(resolvedParams.id);
+
+  useEffect(() => {
+    if (!order) fetchOrder(resolvedParams.id);
+  }, [resolvedParams.id, order, fetchOrder]);
+
   const [role, setRole] = useState<ViewRole>('SELLER');
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [rebuttal, setRebuttal] = useState('');
+  const [submitting, setSubmitting] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [devBypass, setDevBypass] = useState(false);
 
@@ -34,7 +46,9 @@ export default function NoShowPage({
     return (
       <div className="flex flex-col min-h-screen bg-slate-50">
         <TopBar title="แจ้งไม่มาตามนัด" onBack={() => router.push('/orders')} />
-        <p className="p-6 text-center text-xs text-slate-500">ไม่พบออเดอร์นี้</p>
+        <p className="p-6 text-center text-xs text-slate-500">
+          {loading ? 'กำลังโหลดข้อมูลออเดอร์...' : 'ไม่พบออเดอร์นี้'}
+        </p>
       </div>
     );
   }
@@ -68,16 +82,29 @@ export default function NoShowPage({
 
   const { canReport, reportTimeStr } = checkCanReport();
 
-  const handleReport = () => {
-    openDispute(order.id, 'ผู้ซื้อไม่มาตามนัด', 'SELLER');
+  const handleReport = async () => {
+    setSubmitting(true);
+    const res = await reportMissedMeeting(order.id);
+    setSubmitting(false);
     setConfirmOpen(false);
+    if (!res.ok) {
+      setToastMessage(res.error || 'ส่งรายงานไม่สำเร็จ');
+      return;
+    }
     setToastMessage('แจ้งไม่มาตามนัดแล้ว · แอดมินจะตรวจสอบและติดต่อทั้งสองฝ่าย');
     setTimeout(() => router.push(`/orders/${order.id}?role=seller`), 900);
   };
 
-  const handleRebuttal = () => {
+  const handleRebuttal = async () => {
     if (rebuttal.trim().length < 5) {
       setToastMessage('เขียนคำชี้แจงอย่างน้อย 5 ตัวอักษร');
+      return;
+    }
+    setSubmitting(true);
+    const res = await disputeMissedMeeting(order.id, rebuttal.trim());
+    setSubmitting(false);
+    if (!res.ok) {
+      setToastMessage(res.error || 'ส่งคำชี้แจงไม่สำเร็จ');
       return;
     }
     setToastMessage('ส่งคำชี้แจงให้แอดมินแล้ว');

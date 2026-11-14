@@ -1,20 +1,54 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { TopBar } from '@/components/layout/TopBar';
 import { BottomTab } from '@/components/layout/BottomTab';
 import { Button, Input, BottomSheet, Toast, EmptyState } from '@/components/ui';
-import { MOCK_WISHLIST, WishlistItem } from '@/mocks/books';
-import { Bell, Plus, Trash2, Sparkles, CheckCircle2, ChevronRight, BookOpen } from 'lucide-react';
+import { Bell, Plus, Trash2, Sparkles, BookOpen } from 'lucide-react';
 import Link from 'next/link';
 
+interface WishlistItem {
+  id: string;
+  title: string;
+  maxPrice: number;
+  meetupZone?: string;
+  createdAt: string;
+  matchCount: number;
+}
+
+const WISHLIST_STORAGE_KEY = 'gongdong.wishlist.v1';
+
 export default function WishlistPage() {
-  const [items, setItems] = useState<WishlistItem[]>(MOCK_WISHLIST);
+  const [items, setItems] = useState<WishlistItem[]>([]);
+  const [hydrated, setHydrated] = useState(false);
   const [isAddSheetOpen, setIsAddSheetOpen] = useState(false);
   const [newTitle, setNewTitle] = useState('');
   const [newMaxPrice, setNewMaxPrice] = useState('200');
   const [newZone, setNewZone] = useState('หน้าหอสมุดกลาง มช.');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(WISHLIST_STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) setItems(parsed);
+      }
+    } catch {
+      // Ignore storage errors
+    } finally {
+      setHydrated(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    try {
+      window.localStorage.setItem(WISHLIST_STORAGE_KEY, JSON.stringify(items));
+    } catch {
+      // Ignore storage errors
+    }
+  }, [items, hydrated]);
 
   const handleAddWishlist = () => {
     if (!newTitle.trim()) return;
