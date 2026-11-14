@@ -1,0 +1,273 @@
+import { describe, expect, it, vi } from 'vitest';
+import {
+  cancelOrder,
+  completeMeetupCodOrder,
+  createOrder,
+  disputeMissedMeeting,
+  openDispute,
+  receiveOrder,
+  shipOrder,
+} from '../orderService';
+import { createBookListing, updateBookListing } from '../bookService';
+
+describe('v3.0.0 Flows (Dual Payment COD, Cancel, Receive, Dispute, Book Set/INNER)', () => {
+  it('คำนวณค่าส่งข้ามภาคใน createOrder: เชียงใหม่ -> กรุงเทพฯ 2 เล่ม = ฿35 + ฿10 + ฿15 = ฿60', async () => {
+    const tx = {
+      order: {
+        create: vi.fn().mockImplementation(async ({ data }: any) => ({
+          id: 'ord-cross-1',
+          ...data,
+          createdAt: new Date(),
+        })),
+      },
+    };
+    const db = {
+      user: { findUnique: vi.fn().mockResolvedValue({ id: 'buyer-1', phoneNumber: null }) },
+      order: { count: vi.fn().mockResolvedValue(0) },
+      bookListing: {
+        findMany: vi.fn().mockResolvedValue([
+          { id: 'b1', sellerId: 'seller-1', status: 'AVAILABLE', allowDelivery: true, codEnabled: true, price: 150 },
+          { id: 'b2', sellerId: 'seller-1', status: 'AVAILABLE', allowDelivery: true, codEnabled: true, price: 200 },
+        ]),
+      },
+      shopProfile: { findUnique: vi.fn().mockResolvedValue({ province: 'เชียงใหม่' }) },
+      $transaction: vi.fn(async (cb: any) => cb(tx)),
+    };
+
+    const result = await createOrder(
+      'buyer-1',
+      {
+        sellerId: 'seller-1',
+        bookIds: ['b1', 'b2'],
+        shippingMethod: 'DELIVERY',
+        paymentMethod: 'COD',
+        recipientName: 'สมชาย',
+        buyerProvince: 'กรุงเทพมหานคร',
+        deliveryAddress: 'สยาม',
+      },
+      db
+    );
+
+    expect(result.shippingFee).toBe(60);
+    expect(result.totalPrice).toBe(410);
+    expect(result.paymentMethod).toBe('COD');
+  });
+
+  it('COD Parcel: ผู้ขาย shipOrder ได้ตั้งแต่สถานะ ACCEPTED และผู้ซื้อปิดงานด้วย receiveOrder + inline review', async () => {
+    const shipTx = {
+      orderDeliveryDetail: { update: vi.fn() },
+      order: { update: vi.fn() },
+      orderMessage: { create: vi.fn() },
+    };
+    const shipDb = {
+      order: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: 'ord-cod-1',
+          buyerId: 'buyer-1',
+          sellerId: 'seller-1',
+          shippingMethod: 'DELIVERY',
+          paymentMethod: 'COD',
+          status: 'ACCEPTED',
+        }),
+      },
+      $transaction: vi.fn(async (cb: any) => cb(shipTx)),
+    };
+
+    const shipped = await shipOrder(
+      'ord-cod-1',
+      'seller-1',
+      { courierName: 'Flash Express', trackingNumber: 'TH123456' },
+      shipDb
+    );
+    expect(shipped.status).toBe('SHIPPED');
+
+    const receiveTx = {
+      order: { update: vi.fn() },
+      bookListing: { updateMany: vi.fn() },
+      review: { create: vi.fn() },
+      orderMessage: { create: vi.fn() },
+    };
+    const receiveDb = {
+      order: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: 'ord-cod-1',
+          buyerId: 'buyer-1',
+          sellerId: 'seller-1',
+          shippingMethod: 'DELIVERY',
+          status: 'SHIPPED',
+          orderItems: [{ bookListingId: 'b1' }],
+        }),
+      },
+      $transaction: vi.fn(async (cb: any) => cb(receiveTx)),
+    };
+
+    const received = await receiveOrder(
+      'ord-cod-1',
+      'buyer-1',
+      {
+        receivedPhotoUrl: 'https://storage.local/received.webp',
+        review: {
+          rating: 5,
+          isConditionAccurate: true,
+          tags: ['ส่งไว', 'แพ็คดี'],
+          comment: 'เยี่ยมมาก',
+        },
+      },
+      receiveDb
+    );
+
+    expect(received.status).toBe('COMPLETED');
+    expect(receiveTx.bookListing.updateMany).toHaveBeenCalledWith({
+      where: { id: { in: ['b1'] } },
+      data: { status: 'SOLD' },
+    });
+    expect(receiveTx.review.create).toHaveBeenCalled();
+  });
+
+  it('COD Meetup: ผู้ขายปิดออเดอร์ด้วย completeMeetupCodOrder และรองรับ cancelOrder คืนหนังสือ + คืน 1 เครดิตเมื่อผู้ซื้อยกเลิก', async () => {
+    const completeTx = {
+      order: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: 'ord-m1',
+          buyerId: 'buyer-1',
+          sellerId: 'seller-1',
+          shippingMethod: 'PICKUP',
+          status: 'SCHEDULED',
+          orderItems: [{ bookListingId: 'b1' }],
+        }),
+        update: vi.fn(),
+      },
+      bookListing: { updateMany: vi.fn() },
+      orderMessage: { create: vi.fn() },
+    };
+    const completeRes = await completeMeetupCodOrder(
+      'ord-m1',
+      'seller-1',
+      { $transaction: vi.fn(async (cb: any) => cb(completeTx)) }
+    );
+    expect(completeRes.status).toBe('COMPLETED');
+    expect(completeRes.soldBookIds).toEqual(['b1']);
+
+    const cancelTx = {
+      order: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: 'ord-c1',
+          buyerId: 'buyer-1',
+          sellerId: 'seller-1',
+          status: 'ACCEPTED',
+          orderItems: [{ bookListingId: 'b2' }],
+        }),
+        update: vi.fn(),
+      },
+      bookListing: { updateMany: vi.fn() },
+      user: { update: vi.fn().mockResolvedValue({ credits: 4 }) },
+      creditTransaction: { create: vi.fn() },
+      orderMessage: { create: vi.fn() },
+    };
+    const cancelled = await cancelOrder(
+      'ord-c1',
+      'buyer-1',
+      'เปลี่ยนใจไม่สะดวกรับแล้วครับ',
+      { $transaction: vi.fn(async (cb: any) => cb(cancelTx)) }
+    );
+    expect(cancelled.status).toBe('CANCELLED');
+    expect(cancelTx.creditTransaction.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ amount: 1, type: 'REFUND_CANCEL', userId: 'seller-1' }),
+    });
+    expect(cancelTx.bookListing.updateMany).toHaveBeenCalledWith({
+      where: { id: { in: ['b2'] } },
+      data: { status: 'AVAILABLE' },
+    });
+  });
+
+  it('Dispute & Missed Meeting Dispute: เปลี่ยนสถานะเป็น DISPUTED อย่างถูกต้อง', async () => {
+    const db = {
+      order: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: 'ord-d1',
+          buyerId: 'buyer-1',
+          sellerId: 'seller-1',
+          status: 'SCHEDULED',
+          missedMeetingReportedAt: new Date(),
+        }),
+        update: vi.fn(),
+      },
+      orderMessage: { create: vi.fn() },
+    };
+
+    const disputeRes = await disputeMissedMeeting('ord-d1', 'buyer-1', 'รออยู่หน้าประตูหลังครับ', db);
+    expect(disputeRes.status).toBe('DISPUTED');
+
+    const openRes = await openDispute('ord-d1', 'seller-1', 'สินค้าเสียหายระหว่างขนส่ง', db);
+    expect(openRes.status).toBe('DISPUTED');
+  });
+
+  it('Book v3: ยอมรับมุมรูป INNER สำหรับขายยกชุด (isSet) และซ่อนประกาศผ่าน PATCH HIDDEN', async () => {
+    const tx = {
+      bookCatalog: { upsert: vi.fn() },
+      bookListing: {
+        create: vi.fn().mockResolvedValue({
+          id: 'bok-set-1',
+          category: 'มังงะ / นิยาย',
+          categories: ['มังงะ / นิยาย'],
+          isSet: true,
+          price: 890,
+          status: 'AVAILABLE',
+          createdAt: new Date(),
+        }),
+      },
+      bookListingImage: { createMany: vi.fn() },
+    };
+    const db = {
+      $transaction: vi.fn(async (cb: any) => cb(tx)),
+      bookListing: {
+        findUnique: vi.fn().mockResolvedValue({ id: 'bok-set-1', sellerId: 'seller-1', status: 'AVAILABLE' }),
+        update: vi.fn().mockResolvedValue({
+          id: 'bok-set-1',
+          price: 790,
+          description: 'ลดราคา',
+          categories: ['มังงะ / นิยาย'],
+          status: 'HIDDEN',
+          updatedAt: new Date(),
+        }),
+      },
+    };
+
+    const created = await createBookListing(
+      'seller-1',
+      {
+        isbn: '9786160000001',
+        title: 'One Piece Box Set',
+        categories: ['มังงะ / นิยาย'],
+        isSet: true,
+        totalVolumes: 10,
+        missingVolumes: [4],
+        price: 890,
+        conditionAnswers: {
+          spine: false,
+          stains: false,
+          markings: false,
+          covers: false,
+          pages: false,
+        },
+        images: [
+          { imageUrl: 'https://ex.com/1.webp', imageType: 'FRONT_COVER', displayOrder: 1, isCover: true },
+          { imageUrl: 'https://ex.com/2.webp', imageType: 'BACK_COVER', displayOrder: 2 },
+          { imageUrl: 'https://ex.com/3.webp', imageType: 'SPINE', displayOrder: 3 },
+          { imageUrl: 'https://ex.com/4.webp', imageType: 'INNER', displayOrder: 4 },
+        ],
+      },
+      db
+    );
+    expect(created.isSet).toBe(true);
+
+    const updated = await updateBookListing(
+      'bok-set-1',
+      'seller-1',
+      { price: 790, status: 'HIDDEN' },
+      db
+    );
+    expect(updated.status).toBe('HIDDEN');
+    expect(updated.price).toBe(790);
+  });
+});

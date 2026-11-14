@@ -13,10 +13,16 @@ const envSchema = z.object({
   DATABASE_URL: z.string().optional(),
   DIRECT_URL: z.string().optional(),
 
+  // Supabase Storage
+  SUPABASE_URL: z.string().optional(),
+  SUPABASE_ANON_KEY: z.string().optional(),
+  SUPABASE_SERVICE_ROLE_KEY: z.string().optional(),
+
   // LINE
   LINE_CHANNEL_ACCESS_TOKEN: z.string().optional(),
   LINE_CHANNEL_SECRET: z.string().optional(),
   LINE_LOGIN_CHANNEL_ID: z.string().optional(),
+  LINE_LIFF_CHANNEL_ID: z.string().optional(),
 
   // SlipOK
   SLIPOK_API_KEY: z.string().optional(),

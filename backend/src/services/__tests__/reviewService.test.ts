@@ -45,6 +45,7 @@ describe('reviewService', () => {
           revieweeId: 'usr-seller',
           rating: 5,
           isConditionAccurate: true,
+          tags: [],
           comment: 'หนังสือสภาพดีมาก ห่อกันกระแทกอย่างดี',
         },
       });
@@ -194,7 +195,7 @@ describe('reviewService', () => {
           createdAt: new Date('2026-11-12T10:00:00Z'),
           reviewer: { id: 'b1', nickname: 'หมอก', avatarUrl: 'https://ex.com/a1.webp' },
           order: {
-            items: [
+            orderItems: [
               {
                 bookListing: {
                   bookCatalog: { title: 'Clean Code' },
@@ -212,7 +213,7 @@ describe('reviewService', () => {
           createdAt: new Date('2026-11-12T09:00:00Z'),
           reviewer: { id: 'b2', nickname: 'เต้', avatarUrl: null },
           order: {
-            items: [
+            orderItems: [
               {
                 bookListing: {
                   bookCatalog: { title: 'Refactoring' },
@@ -230,7 +231,7 @@ describe('reviewService', () => {
           createdAt: new Date('2026-11-12T08:00:00Z'),
           reviewer: { id: 'b3', nickname: 'อาร์ม', avatarUrl: null },
           order: {
-            items: [],
+            orderItems: [],
           },
         },
       ];

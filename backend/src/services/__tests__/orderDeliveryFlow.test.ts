@@ -76,16 +76,18 @@ describe('OrderService - Delivery Flow & PDPA Protection', () => {
 
       mockTx.order.create.mockResolvedValue({
         id: 'ord_new_001',
-        totalPrice: 400, // (150 + 200) + (40 + 10) = 400
-        shippingFee: 50,
+        totalPrice: 395, // (150 + 200) + (35 + 10) = 395 (ภาคเดียวกัน)
+        shippingFee: 45,
+        paymentMethod: 'COD',
         status: 'REQUESTED',
         createdAt: new Date('2026-11-12T17:00:00Z'),
       });
 
       const result = await createOrder(mockBuyerId, baseInput, mockDb);
 
-      expect(result.shippingFee).toBe(50);
-      expect(result.totalPrice).toBe(400);
+      expect(result.shippingFee).toBe(45);
+      expect(result.totalPrice).toBe(395);
+      expect(result.paymentMethod).toBe('COD');
       expect(result.status).toBe('REQUESTED');
 
       expect(mockTx.order.create).toHaveBeenCalledWith({
@@ -93,13 +95,15 @@ describe('OrderService - Delivery Flow & PDPA Protection', () => {
           buyerId: mockBuyerId,
           sellerId: mockSellerId,
           shippingMethod: 'DELIVERY',
-          shippingFee: 50,
-          totalPrice: 400,
+          paymentMethod: 'COD',
+          shippingFee: 45,
+          totalPrice: 395,
           status: 'REQUESTED',
           deliveryDetail: {
             create: {
               recipientName: 'สมชาย ใจดี',
               recipientPhone: '0898765432',
+              province: null,
               deliveryAddress: 'หอ 4 มช. ต.สุเทพ อ.เมือง จ.เชียงใหม่',
             },
           },
@@ -141,12 +145,32 @@ describe('OrderService - Delivery Flow & PDPA Protection', () => {
       ).rejects.toThrow('คุณไม่สามารถสั่งซื้อหนังสือของตนเองได้');
     });
 
-    it('ต้องปฏิเสธหากผู้ซื้อยังไม่ได้บันทึกเบอร์โทรศัพท์ (PHONE_NUMBER_REQUIRED)', async () => {
+    it('PDPA v4: ผู้ซื้อที่ยังไม่มี phoneNumber สามารถสร้างคำสั่งซื้อได้โดยไม่บังคับเบอร์โทร', async () => {
       mockDb.user.findUnique.mockResolvedValue({ id: mockBuyerId, phoneNumber: null });
+      mockDb.order.count.mockResolvedValue(0);
+      mockDb.bookListing.findMany.mockResolvedValue([mockBooks[0]]);
+      mockTx.order.create.mockResolvedValue({
+        id: 'ord_pdpa_001',
+        totalPrice: 185,
+        shippingFee: 35,
+        paymentMethod: 'COD',
+        status: 'REQUESTED',
+        createdAt: new Date(),
+      });
 
-      await expect(createOrder(mockBuyerId, baseInput, mockDb)).rejects.toThrow(
-        'กรุณาบันทึกเบอร์โทรศัพท์ในหน้าข้อมูลส่วนตัวก่อนเริ่มสั่งซื้อ'
+      const result = await createOrder(
+        mockBuyerId,
+        {
+          sellerId: mockSellerId,
+          bookIds: ['bok_1'],
+          shippingMethod: 'DELIVERY',
+          recipientName: 'สมชาย ใจดี',
+          deliveryAddress: 'หอ 4 มช.',
+        },
+        mockDb
       );
+      expect(result.status).toBe('REQUESTED');
+      expect(result.shippingFee).toBe(35);
     });
 
     it('ต้องปฏิเสธหากมีคำขอค้าง REQUESTED ครบ 3 ออเดอร์แล้ว (TOO_MANY_PENDING_REQUESTS)', async () => {
@@ -257,9 +281,10 @@ describe('OrderService - Delivery Flow & PDPA Protection', () => {
       expect(result.buyer.nickname).toBe('กานต์'); // เห็นเฉพาะชื่อเล่น
     });
 
-    it('ผู้ขายดูออเดอร์สถานะ ACCEPTED: ยังคงต้องซ่อนที่อยู่จัดส่งจนกว่าจะชำระเงิน', async () => {
+    it('ผู้ขายดูออเดอร์ TRANSFER สถานะ ACCEPTED: ยังคงต้องซ่อนที่อยู่จัดส่งจนกว่าจะชำระเงิน', async () => {
       mockDb.order.findUnique.mockResolvedValue({
         ...baseOrder,
+        paymentMethod: 'TRANSFER',
         status: 'ACCEPTED',
       });
 
@@ -267,6 +292,19 @@ describe('OrderService - Delivery Flow & PDPA Protection', () => {
 
       expect(result.deliveryDetails).toBeNull();
       expect(result.buyer.phoneNumber).toBeNull();
+    });
+
+    it('ผู้ขายดูออเดอร์ COD สถานะ ACCEPTED: สามารถเห็นที่อยู่จัดส่งเพื่อเตรียมแพ็คของได้', async () => {
+      mockDb.order.findUnique.mockResolvedValue({
+        ...baseOrder,
+        paymentMethod: 'COD',
+        status: 'ACCEPTED',
+      });
+
+      const result = await getOrderDetail(mockOrderId, mockSellerId, mockDb);
+
+      expect(result.deliveryDetails).not.toBeNull();
+      expect(result.deliveryDetails?.deliveryAddress).toBe('หอ 4 มช.');
     });
 
     it('ผู้ขายดูออเดอร์สถานะ PAID และ SHIPPED: ปลดล็อกให้เห็นที่อยู่และเบอร์ผู้รับสำหรับเขียนหน้ากล่อง', async () => {

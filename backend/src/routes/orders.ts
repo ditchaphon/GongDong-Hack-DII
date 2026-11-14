@@ -1,10 +1,17 @@
 import { Router, Request, Response, NextFunction } from 'express';
+import { authMiddleware } from '../middlewares/auth';
+import { getOrderMessages, sendOrderMessage } from '../services/messageService';
 import {
   acceptOrder,
+  cancelOrder,
   completeDeliveryOrder,
+  completeMeetupCodOrder,
   createOrder,
+  disputeMissedMeeting,
   getOrderDetail,
   getUserOrders,
+  openDispute,
+  receiveOrder,
   rejectOrder,
   reportMissedMeeting,
   schedulePickupOrder,
@@ -14,20 +21,11 @@ import {
 } from '../services/orderService';
 import { createOrderReview } from '../services/reviewService';
 import { AppError } from '../types';
+import { getUserIdFromRequest } from '../utils/requestUser';
 
 export const orderRouter = Router();
 
-function getUserIdFromRequest(req: Request): string {
-  const userId =
-    (req.headers['x-user-id'] as string) ||
-    ((req as any).user?.id as string);
-
-  if (!userId) {
-    throw new AppError('กรุณาเข้าสู่ระบบก่อนดำเนินการ (Unauthorized)', 401, 'UNAUTHORIZED');
-  }
-
-  return userId;
-}
+orderRouter.use(authMiddleware);
 
 /**
  * POST /api/orders
@@ -42,12 +40,18 @@ orderRouter.post(
         seller_id,
         book_ids,
         shipping_method,
+        payment_method,
         recipient_name,
         recipient_phone,
+        buyer_province,
         delivery_address,
         pickup_lat,
         pickup_lng,
         pickup_location_name,
+        scheduled_at,
+        schedule_date_iso,
+        schedule_time_label,
+        ship_within_days,
       } = req.body;
 
       if (!seller_id || !book_ids || !shipping_method) {
@@ -58,12 +62,19 @@ orderRouter.post(
         sellerId: seller_id,
         bookIds: book_ids,
         shippingMethod: shipping_method,
-        recipientName: recipient_name,
-        recipientPhone: recipient_phone,
-        deliveryAddress: delivery_address,
-        pickupLat: pickup_lat ? Number(pickup_lat) : undefined,
-        pickupLng: pickup_lng ? Number(pickup_lng) : undefined,
-        pickupLocationName: pickup_location_name,
+        paymentMethod: payment_method || req.body.paymentMethod,
+        recipientName: recipient_name || req.body.recipientName,
+        recipientPhone: recipient_phone ?? req.body.recipientPhone,
+        buyerProvince: buyer_province || req.body.buyerProvince,
+        deliveryAddress: delivery_address || req.body.deliveryAddress,
+        pickupLat: pickup_lat !== undefined ? Number(pickup_lat) : undefined,
+        pickupLng: pickup_lng !== undefined ? Number(pickup_lng) : undefined,
+        pickupLocationName: pickup_location_name || req.body.pickupLocationName,
+        scheduledAt: scheduled_at || req.body.scheduledAt,
+        scheduleDateIso: schedule_date_iso || req.body.scheduleDateIso,
+        scheduleTimeLabel: schedule_time_label || req.body.scheduleTimeLabel,
+        shipWithinDays:
+          ship_within_days !== undefined ? Number(ship_within_days) : undefined,
       });
 
       res.status(201).json({
@@ -72,6 +83,7 @@ orderRouter.post(
           order_id: result.orderId,
           total_price: result.totalPrice,
           shipping_fee: result.shippingFee,
+          payment_method: result.paymentMethod,
           status: result.status,
           created_at: result.createdAt,
         },
@@ -456,6 +468,185 @@ orderRouter.post(
         success: true,
         message: 'บันทึกรีวิวสำเร็จ ขอบคุณสำหรับข้อเสนอแนะ',
       });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * POST /api/orders/:id/cancel
+ * ผู้ซื้อหรือผู้ขายยกเลิกคำสั่งซื้อ
+ */
+orderRouter.post(
+  '/:id/cancel',
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const orderId = String(req.params.id);
+      const userId = getUserIdFromRequest(req);
+      const reason = String(req.body?.reason || req.body?.cancelReason || '');
+
+      const result = await cancelOrder(orderId, userId, reason);
+      res.status(200).json({
+        success: true,
+        data: result,
+        message: 'ยกเลิกคำสั่งซื้อเรียบร้อยแล้ว',
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * POST /api/orders/:id/receive
+ * ผู้ซื้อถ่ายรูปยืนยันรับหนังสือพร้อมรีวิว (v4 Flow)
+ */
+orderRouter.post(
+  '/:id/receive',
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const orderId = String(req.params.id);
+      const buyerId = getUserIdFromRequest(req);
+      const receivedPhotoUrl = String(
+        req.body?.received_photo_url || req.body?.receivedPhotoUrl || ''
+      );
+
+      const rawReview = req.body?.review;
+      const review = rawReview
+        ? {
+            rating: Number(rawReview.rating),
+            isConditionAccurate: Boolean(
+              rawReview.isConditionAccurate ?? rawReview.is_condition_accurate ?? true
+            ),
+            tags: Array.isArray(rawReview.tags) ? rawReview.tags : [],
+            comment: rawReview.comment,
+          }
+        : undefined;
+
+      const result = await receiveOrder(orderId, buyerId, {
+        receivedPhotoUrl,
+        review,
+      });
+
+      res.status(200).json({
+        success: true,
+        data: result,
+        message: 'ยืนยันได้รับหนังสือเรียบร้อยแล้ว',
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * POST /api/orders/:id/complete-meetup
+ * ผู้ขายกดยืนยันส่งมอบนัดรับสำเร็จ (โหมด COD / นัดรับ)
+ */
+orderRouter.post(
+  '/:id/complete-meetup',
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const orderId = String(req.params.id);
+      const sellerId = getUserIdFromRequest(req);
+
+      const result = await completeMeetupCodOrder(orderId, sellerId);
+      res.status(200).json({
+        success: true,
+        data: result,
+        message: 'ยืนยันการส่งมอบนัดรับสำเร็จ',
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * POST /api/orders/:id/dispute
+ * เปิดข้อพิพาทคำสั่งซื้อ
+ */
+orderRouter.post(
+  '/:id/dispute',
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const orderId = String(req.params.id);
+      const userId = getUserIdFromRequest(req);
+      const reason = String(req.body?.reason || '');
+
+      const result = await openDispute(orderId, userId, reason);
+      res.status(200).json({
+        success: true,
+        data: result,
+        message: 'เปิดข้อพิพาทคำสั่งซื้อแล้ว',
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * POST /api/orders/:id/dispute-missed-meeting
+ * ผู้ซื้อโต้แย้งกรณีถูกรายงานไม่มาตามนัด
+ */
+orderRouter.post(
+  '/:id/dispute-missed-meeting',
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const orderId = String(req.params.id);
+      const buyerId = getUserIdFromRequest(req);
+      const reason = String(req.body?.reason || '');
+
+      const result = await disputeMissedMeeting(orderId, buyerId, reason);
+      res.status(200).json({
+        success: true,
+        data: result,
+        message: 'บันทึกคำโต้แย้งเรียบร้อยแล้ว',
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * GET /api/orders/:id/messages
+ * ดึงประวัติข้อความแชทในคำสั่งซื้อ
+ */
+orderRouter.get(
+  '/:id/messages',
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const orderId = String(req.params.id);
+      const userId = getUserIdFromRequest(req);
+
+      const messages = await getOrderMessages(orderId, userId);
+      res.status(200).json({ success: true, data: messages });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * POST /api/orders/:id/messages
+ * ส่งข้อความแชทในคำสั่งซื้อ (PDPA Masking อัตโนมัติ)
+ */
+orderRouter.post(
+  '/:id/messages',
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const orderId = String(req.params.id);
+      const userId = getUserIdFromRequest(req);
+
+      const message = await sendOrderMessage(orderId, userId, {
+        text: String(req.body?.text || ''),
+        kind: req.body?.kind,
+      });
+
+      res.status(201).json({ success: true, data: message });
     } catch (error) {
       next(error);
     }

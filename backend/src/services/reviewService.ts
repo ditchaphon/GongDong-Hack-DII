@@ -86,6 +86,10 @@ export async function createOrderReview(
   }
 
   // 7. บันทึกรีวิวลงฐานข้อมูล
+  const tags = Array.isArray(input.tags)
+    ? input.tags.map((t) => String(t).trim()).filter(Boolean)
+    : [];
+
   const review = await db.review.create({
     data: {
       orderId,
@@ -93,6 +97,7 @@ export async function createOrderReview(
       revieweeId,
       rating,
       isConditionAccurate,
+      tags,
       comment: input.comment ? input.comment.trim() : null,
     },
   });
@@ -129,7 +134,7 @@ export async function getUserReviews(
       },
       order: {
         include: {
-          items: {
+          orderItems: {
             include: {
               bookListing: {
                 include: { bookCatalog: true },
@@ -185,7 +190,7 @@ export async function getUserReviews(
 
   const mappedReviews: ReviewItem[] = paginatedReviews.map((r: any) => {
     const bookTitles =
-      r.order?.items
+      r.order?.orderItems
         ?.map((item: any) => item.bookListing?.bookCatalog?.title || 'หนังสือ')
         .filter(Boolean) || [];
 
@@ -199,6 +204,7 @@ export async function getUserReviews(
       },
       rating: r.rating,
       is_condition_accurate: r.isConditionAccurate,
+      tags: Array.isArray(r.tags) ? r.tags : [],
       comment: r.comment,
       book_titles: bookTitles,
       created_at: r.createdAt,

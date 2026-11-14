@@ -3,9 +3,13 @@ import cors from 'cors';
 import helmet from 'helmet';
 import { env } from './config/env';
 import { healthRouter } from './routes/health';
+import { notificationRouter } from './routes/notifications';
 import { orderRouter } from './routes/orders';
 import { bookRouter } from './routes/books';
+import { sellerRouter, shopRouter } from './routes/seller';
+import { uploadRouter } from './routes/upload';
 import { userRouter } from './routes/users';
+import { webhookRouter } from './routes/webhooks';
 import { errorHandler } from './middlewares/errorHandler';
 
 const app = express();
@@ -19,8 +23,10 @@ app.use(
   })
 );
 
+// LINE Webhook (ต้องมาก่อน express.json เพื่อตรวจ Raw Body Signature)
+app.use('/api/webhooks', webhookRouter);
+
 // Body Parser Middleware
-// หมายเหตุ: สำหรับ LINE Webhook Route ในอนาคต จะต้อง bypass หรือใช้ raw body signature verification
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
@@ -29,6 +35,10 @@ app.use('/api/health', healthRouter);
 app.use('/api/orders', orderRouter);
 app.use('/api/books', bookRouter);
 app.use('/api/users', userRouter);
+app.use('/api/seller', sellerRouter);
+app.use('/api/shops', shopRouter);
+app.use('/api/upload', uploadRouter);
+app.use('/api/notifications', notificationRouter);
 
 // Root Endpoint
 app.get('/', (_req: Request, res: Response) => {

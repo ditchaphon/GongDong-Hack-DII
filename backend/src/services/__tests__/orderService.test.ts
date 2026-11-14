@@ -96,12 +96,13 @@ describe('OrderService - State Machine & Core Transactions', () => {
 
       // 2. ตรวจสอบการบันทึก Audit Trail
       expect(mockTx.creditTransaction.create).toHaveBeenCalledWith({
-        data: {
+        data: expect.objectContaining({
           userId: mockSellerId,
           amount: -1,
+          balanceAfter: 2,
           type: 'ORDER_ACCEPT',
           orderId: mockOrderId,
-        },
+        }),
       });
 
       // 3. ตรวจสอบการล็อกสต็อกหนังสือเป็น RESERVED
@@ -161,9 +162,10 @@ describe('OrderService - State Machine & Core Transactions', () => {
       );
     });
 
-    it('ต้องปฏิเสธหากผู้ขายยังไม่ผ่าน KYC ระดับ 2 (SELLER_NOT_VERIFIED)', async () => {
+    it('ต้องปฏิเสธออเดอร์จัดส่งพัสดุ (DELIVERY) หากผู้ขายยังไม่ผ่าน KYC (SELLER_NOT_VERIFIED)', async () => {
       mockTx.order.findUnique.mockResolvedValue({
         ...baseOrder,
+        shippingMethod: 'DELIVERY',
         seller: {
           ...baseOrder.seller,
           isVerifiedSeller: false,
@@ -171,8 +173,26 @@ describe('OrderService - State Machine & Core Transactions', () => {
       });
 
       await expect(acceptOrder(mockOrderId, mockSellerId, mockPrisma)).rejects.toThrow(
-        'ผู้ขายยังไม่ได้ยืนยันบัญชีรับเงิน (Frictionless KYC)'
+        'การจัดส่งพัสดุจำเป็นต้องยืนยันตัวตนผู้ขาย (KYC) ก่อนรับคำสั่งซื้อ'
       );
+    });
+
+    it('ต้องยอมรับออเดอร์นัดรับ (PICKUP) ได้แม้ผู้ขายยังไม่ผ่าน KYC (Selective KYC)', async () => {
+      mockTx.order.findUnique.mockResolvedValue({
+        ...baseOrder,
+        shippingMethod: 'PICKUP',
+        seller: {
+          ...baseOrder.seller,
+          isVerifiedSeller: false,
+          credits: 2,
+        },
+      });
+      mockTx.user.update.mockResolvedValue({ id: mockSellerId, credits: 1 });
+      mockTx.orderItem.findMany.mockResolvedValue([]);
+
+      const result = await acceptOrder(mockOrderId, mockSellerId, mockPrisma);
+      expect(result.status).toBe('ACCEPTED');
+      expect(result.remainingCredits).toBe(1);
     });
 
     it('ต้องปฏิเสธหากเครดิตผู้ขายไม่พอ (INSUFFICIENT_CREDITS)', async () => {

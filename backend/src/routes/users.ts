@@ -1,14 +1,21 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { authMiddleware } from '../middlewares/auth';
+import {
+  createUserAddress,
+  deleteUserAddress,
+  getUserAddresses,
+  updateUserAddress,
+} from '../services/addressService';
 import { getUserBookListings } from '../services/bookService';
 import { getUserOrders } from '../services/orderService';
 import { getUserReviews } from '../services/reviewService';
 import {
+  getCreditLedger,
   getUserProfile,
   processTopupSlip,
   updateUserProfile,
 } from '../services/userService';
-import { AppError } from '../types';
+import { getUserIdFromRequest } from '../utils/requestUser';
 
 export const userRouter = Router();
 
@@ -38,19 +45,6 @@ userRouter.get(
 
 // ใช้งาน Auth Middleware สำหรับทุก Route ภายใต้ /me
 userRouter.use('/me', authMiddleware);
-
-function getUserIdFromRequest(req: Request): string {
-  const userId =
-    req.userId ||
-    ((req as any).user?.id as string) ||
-    (req.headers['x-user-id'] as string);
-
-  if (!userId) {
-    throw new AppError('กรุณาเข้าสู่ระบบก่อนดำเนินการ (Unauthorized)', 401, 'UNAUTHORIZED');
-  }
-
-  return userId;
-}
 
 /**
  * GET /api/users/me
@@ -155,6 +149,104 @@ userRouter.get(
         success: true,
         data: result,
       });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * GET /api/users/me/credits/history
+ * ดูประวัติธุรกรรมเครดิตของผู้ใช้ (Credit Ledger)
+ */
+userRouter.get(
+  '/me/credits/history',
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const userId = getUserIdFromRequest(req);
+      const limit = req.query.limit ? Number(req.query.limit) : 50;
+      const offset = req.query.offset ? Number(req.query.offset) : 0;
+
+      const result = await getCreditLedger(userId, limit, offset);
+      res.status(200).json({ success: true, data: result });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * GET /api/users/me/addresses
+ * ดึงสมุดที่อยู่จัดส่งของผู้ใช้ (PDPA v4 - ไม่เก็บเบอร์โทร)
+ */
+userRouter.get(
+  '/me/addresses',
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const userId = getUserIdFromRequest(req);
+      const addresses = await getUserAddresses(userId);
+      res.status(200).json({ success: true, data: addresses });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * POST /api/users/me/addresses
+ * เพิ่มที่อยู่จัดส่งใหม่
+ */
+userRouter.post(
+  '/me/addresses',
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const userId = getUserIdFromRequest(req);
+      const created = await createUserAddress(userId, req.body);
+      res.status(201).json({
+        success: true,
+        data: created,
+        message: 'เพิ่มที่อยู่จัดส่งสำเร็จ',
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * PATCH /api/users/me/addresses/:id
+ * แก้ไขที่อยู่จัดส่งหรือตั้งเป็นค่าเริ่มต้น
+ */
+userRouter.patch(
+  '/me/addresses/:id',
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const userId = getUserIdFromRequest(req);
+      const id = String(req.params.id);
+      const updated = await updateUserAddress(userId, id, req.body);
+      res.status(200).json({
+        success: true,
+        data: updated,
+        message: 'อัปเดตที่อยู่จัดส่งสำเร็จ',
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * DELETE /api/users/me/addresses/:id
+ * ลบที่อยู่จัดส่ง
+ */
+userRouter.delete(
+  '/me/addresses/:id',
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const userId = getUserIdFromRequest(req);
+      const id = String(req.params.id);
+      const result = await deleteUserAddress(userId, id);
+      res.status(200).json({ success: true, ...result });
     } catch (error) {
       next(error);
     }

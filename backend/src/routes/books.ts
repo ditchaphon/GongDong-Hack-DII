@@ -1,26 +1,18 @@
 import { Router, Request, Response, NextFunction } from 'express';
+import { authMiddleware } from '../middlewares/auth';
 import {
   createBookListing,
   deleteBookListing,
   getBookListingDetail,
   getBookListings,
+  getRecommendedBooks,
+  updateBookListing,
 } from '../services/bookService';
 import { getBookByIsbn } from '../services/googleBooksService';
-import { AppError, BookGrade } from '../types';
+import { BookGrade } from '../types';
+import { getUserIdFromRequest } from '../utils/requestUser';
 
 export const bookRouter = Router();
-
-function getUserIdFromRequest(req: Request): string {
-  const userId =
-    (req.headers['x-user-id'] as string) ||
-    ((req as any).user?.id as string);
-
-  if (!userId) {
-    throw new AppError('กรุณาเข้าสู่ระบบก่อนดำเนินการ (Unauthorized)', 401, 'UNAUTHORIZED');
-  }
-
-  return userId;
-}
 
 /**
  * GET /api/books/isbn/:isbn
@@ -94,6 +86,23 @@ bookRouter.get(
 );
 
 /**
+ * GET /api/books/recommended
+ * ดึงรายการหนังสือแนะนำบนหน้าแรก (ต้องอยู่ก่อน /:id)
+ */
+bookRouter.get(
+  '/recommended',
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const limit = req.query.limit ? Number(req.query.limit) : 8;
+      const result = await getRecommendedBooks(limit);
+      res.status(200).json({ success: true, data: result });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
  * GET /api/books/:id
  * ดูรายละเอียดหนังสือรายเล่ม (หน้าจอ B2)
  */
@@ -120,6 +129,7 @@ bookRouter.get(
  */
 bookRouter.post(
   '/',
+  authMiddleware,
   async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const sellerId = getUserIdFromRequest(req);
@@ -131,6 +141,8 @@ bookRouter.post(
           id: result.id,
           title: result.title,
           category: result.category,
+          categories: result.categories,
+          is_set: result.isSet,
           grade: result.grade,
           price: result.price,
           recommended_price: result.recommendedPrice,
@@ -146,11 +158,36 @@ bookRouter.post(
 );
 
 /**
+ * PATCH /api/books/:id
+ * แก้ไขราคา รายละเอียด หรือซ่อนประกาศขายหนังสือ (HIDDEN)
+ */
+bookRouter.patch(
+  '/:id',
+  authMiddleware,
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const sellerId = getUserIdFromRequest(req);
+      const id = String(req.params.id);
+      const result = await updateBookListing(id, sellerId, req.body);
+
+      res.status(200).json({
+        success: true,
+        data: result,
+        message: 'อัปเดตรายการหนังสือสำเร็จ',
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
  * DELETE /api/books/:id
- * ลบรายการลงขายหนังสือ (เฉพาะเล่มที่สถานะเป็น AVAILABLE และเป็นเจ้าของ)
+ * ลบรายการลงขายหนังสือ (เฉพาะเล่มที่สถานะเป็น AVAILABLE หรือ HIDDEN และเป็นเจ้าของ)
  */
 bookRouter.delete(
   '/:id',
+  authMiddleware,
   async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const sellerId = getUserIdFromRequest(req);

@@ -135,6 +135,8 @@ describe('BookService - Marketplace & Listings Management', () => {
         id: 'bok_new_001',
         title: 'จิตวิทยาวาทะด้วยเงิน',
         category: 'จิตวิทยา / พัฒนาตนเอง',
+        categories: ['จิตวิทยา / พัฒนาตนเอง'],
+        isSet: false,
         grade: 'LIKE_NEW',
         price: 175,
         recommendedPrice: 217.5, // 290 * 0.75
@@ -247,6 +249,9 @@ describe('BookService - Marketplace & Listings Management', () => {
         title: 'Atomic Habits',
         author: 'James Clear',
         category: 'จิตวิทยา / พัฒนาตนเอง',
+        categories: ['จิตวิทยา / พัฒนาตนเอง'],
+        isSet: false,
+        totalVolumes: null,
         coverImageUrl: 'https://storage.com/front.webp',
         price: 220,
         originalPrice: 295,
@@ -254,9 +259,11 @@ describe('BookService - Marketplace & Listings Management', () => {
         allowPickup: true,
         pickupLocationName: 'หน้าหอสมุดกลาง มช.',
         allowDelivery: true,
+        codEnabled: true,
         seller: {
           id: 'usr_seller_1',
           nickname: 'นนท์',
+          shopName: null,
           avatarUrl: 'https://avatar.com/nont.webp',
           isVerifiedSeller: true,
         },
@@ -282,12 +289,21 @@ describe('BookService - Marketplace & Listings Management', () => {
       expect(mockDb.bookListing.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: expect.objectContaining({
-            status: 'AVAILABLE',
-            category: 'จิตวิทยา / พัฒนาตนเอง',
-            grade: 'LIKE_NEW',
-            allowPickup: true,
-            OR: expect.arrayContaining([
-              { bookCatalog: { title: { contains: 'Habits', mode: 'insensitive' } } },
+            AND: expect.arrayContaining([
+              { status: 'AVAILABLE' },
+              {
+                OR: [
+                  { category: 'จิตวิทยา / พัฒนาตนเอง' },
+                  { categories: { has: 'จิตวิทยา / พัฒนาตนเอง' } },
+                ],
+              },
+              { grade: 'LIKE_NEW' },
+              { allowPickup: true },
+              {
+                OR: expect.arrayContaining([
+                  { bookCatalog: { title: { contains: 'Habits', mode: 'insensitive' } } },
+                ]),
+              },
             ]),
           }),
           take: 10,
@@ -339,6 +355,7 @@ describe('BookService - Marketplace & Listings Management', () => {
       expect(result.seller).toEqual({
         id: 'usr_seller_1',
         nickname: 'นนท์',
+        shopName: null,
         avatarUrl: 'https://avatar.com/nont.webp',
         isVerifiedSeller: true,
       });

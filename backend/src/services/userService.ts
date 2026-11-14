@@ -1,6 +1,7 @@
 import { prisma as defaultPrisma } from '../config/prisma';
 import {
   AppError,
+  CreditLedgerItem,
   TopupSlipInput,
   TopupSlipResult,
   UpdateUserProfileInput,
@@ -54,6 +55,7 @@ export async function getUserProfile(
     verified_name: user.verifiedName,
     promptpay_id: user.promptpayId,
     is_verified_seller: user.isVerifiedSeller,
+    no_show_count: user.noShowCount ?? 0,
     credits: user.credits,
     created_at: user.createdAt,
   };
@@ -232,21 +234,24 @@ export async function processTopupSlip(
     });
 
     // 3.2 บันทึกประวัติลง credit_transactions
-    await tx.creditTransaction.create({
-      data: {
-        userId,
-        amount: addedCredits,
-        type: 'TOPUP',
-      },
-    });
-
-    // 3.3 อัปเดตเครดิต บันทึกชื่อยืนยัน และปรับ is_verified_seller = true
+    // 3.2 อัปเดตเครดิต บันทึกชื่อยืนยัน และปรับ is_verified_seller = true
     const updatedUser = await tx.user.update({
       where: { id: userId },
       data: {
         credits: { increment: addedCredits },
         verifiedName: senderName,
         isVerifiedSeller: true,
+      },
+    });
+
+    // 3.3 บันทึกประวัติธุรกรรมเครดิต (Credit Ledger)
+    await tx.creditTransaction.create({
+      data: {
+        userId,
+        amount: addedCredits,
+        balanceAfter: updatedUser.credits,
+        type: 'TOPUP',
+        note: `เติมเครดิต ${addedCredits} เครดิต (฿${Math.round(amount)})`,
       },
     });
 
@@ -257,4 +262,43 @@ export async function processTopupSlip(
       is_verified_seller: updatedUser.isVerifiedSeller,
     };
   });
+}
+
+/**
+ * ดึงประวัติธุรกรรมเครดิตของผู้ใช้ (GET /api/users/me/credits/history)
+ */
+export async function getCreditLedger(
+  userId: string,
+  limit = 50,
+  offset = 0,
+  prismaClient?: any
+): Promise<{ items: CreditLedgerItem[]; total: number }> {
+  const db = prismaClient || defaultPrisma;
+  const safeLimit = Math.min(Math.max(limit, 1), 100);
+  const safeOffset = Math.max(offset, 0);
+
+  const [rows, total] = await Promise.all([
+    db.creditTransaction.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+      take: safeLimit,
+      skip: safeOffset,
+    }),
+    db.creditTransaction.count({
+      where: { userId },
+    }),
+  ]);
+
+  return {
+    items: rows.map((row: any) => ({
+      id: row.id,
+      amount: row.amount,
+      balance_after: row.balanceAfter ?? null,
+      type: row.type,
+      order_id: row.orderId ?? null,
+      note: row.note ?? null,
+      created_at: row.createdAt,
+    })),
+    total,
+  };
 }
