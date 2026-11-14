@@ -49,7 +49,9 @@ erDiagram
         varchar(100) kyc_first_name "ชื่อจริง KYC (Admin เท่านั้น)"
         varchar(100) kyc_last_name "นามสกุล KYC (Admin เท่านั้น)"
         varchar(25) kyc_national_id_masked "เลขบัตร ปชช. แบบ Masked"
+        varchar(64) kyc_national_id_hash UK "HMAC-SHA256 เลขบัตร ปชช. กันซ้ำข้ามบัญชี"
         timestamptz kyc_verified_at "เวลาที่ยืนยัน KYC สำเร็จ"
+        timestamptz pdpa_consent_at "เวลาที่กดยินยอม PDPA"
         boolean is_blacklisted "สถานะถูกระงับ/แบน"
         integer no_show_count "จำนวนครั้งที่เทนัด"
         integer credits "เครดิตคงเหลือ (เริ่มต้น 1)"
@@ -176,6 +178,7 @@ erDiagram
         varchar(20) dispute_opened_by "BUYER หรือ SELLER"
         text dispute_reason "เหตุผลการแจ้งปัญหา"
         timestamptz disputed_at "เวลาแจ้งปัญหา"
+        varchar(128) idempotency_key UK "คีย์กันสั่งซื้อซ้ำระดับ DB"
         timestamptz created_at
         timestamptz updated_at
     }
@@ -219,6 +222,7 @@ erDiagram
         uuid order_id FK "อ้างอิงออเดอร์ (Nullable)"
         varchar(30) slip_type "ORDER_PAYMENT หรือ CREDIT_TOPUP"
         text slip_image_url "ลิงก์รูปสลิปใน Private Bucket"
+        text storage_path "path ไฟล์ใน Private Bucket สำหรับ re-sign URL"
         varchar(100) trans_ref UK "เลขอ้างอิงสลิป ธปท."
         decimal(10_2) amount "ยอดเงินในสลิป"
         varchar(255) receiver_name "ชื่อผู้รับเงิน"
@@ -282,7 +286,9 @@ erDiagram
 * `is_verified_seller` (BOOLEAN, DEFAULT FALSE): ผ่าน KYC แล้วหรือไม่ (ร้านที่ยังไม่ Verified ยังคงลงขายและรับออเดอร์แบบ **นัดรับ (`PICKUP`)** ได้ โดยระบบจะล็อกเฉพาะการจัดส่ง **พัสดุ (`DELIVERY`)**)
 * `kyc_first_name` / `kyc_last_name` (VARCHAR(100)): ชื่อจริง-นามสกุลจริงจากหน้า `/seller/setup` (**Admin เท่านั้น ห้ามส่งใน Public API**)
 * `kyc_national_id_masked` (VARCHAR(25)): เลขบัตรประชาชน 13 หลักแบบ Masked เช่น `x-xxxx-xxxxx-12-3` (ห้ามเก็บเลขดิบ)
+* `kyc_national_id_hash` (VARCHAR(64), UNIQUE, Nullable): HMAC-SHA256 hash ของเลขบัตรประชาชน 13 หลัก สำหรับกันยืนยัน KYC ซ้ำข้ามบัญชีโดยไม่เก็บเลขบัตรจริง
 * `kyc_verified_at` (TIMESTAMPTZ): วันเวลาที่ผ่านการตรวจ KYC
+* `pdpa_consent_at` (TIMESTAMPTZ, Nullable): วันเวลาที่ผู้ใช้กดยืนยอม PDPA ล่าสุด
 * `is_blacklisted` (BOOLEAN, DEFAULT FALSE): สถานะถูกแบน
 * `no_show_count` (INTEGER, DEFAULT 0): จำนวนครั้งที่ไม่มาตามนัด (แสดงฝั่งผู้ขายเพื่อประกอบการตัดสินใจ)
 * `credits` (INTEGER, DEFAULT 1, CHECK >= 0): เครดิตคงเหลือ
@@ -395,6 +401,7 @@ erDiagram
   * `total_price` (DECIMAL(10, 2), NOT NULL)
   * `status`: `REQUESTED`, `ACCEPTED`, `SCHEDULED`, `PAID`, `SHIPPED`, `COMPLETED`, `REJECTED`, `EXPIRED`, `CANCELLED`, `DISPUTED`
 * **ยกเลิก & ข้อพิพาท:** `cancel_reason`, `cancelled_by` (`BUYER` | `SELLER`), `disputed_by`, `dispute_opened_by`, `dispute_reason`, `disputed_at`
+* `idempotency_key` (VARCHAR(128), UNIQUE, Nullable): คีย์กันสั่งซื้อซ้ำระดับ DB (เช่น `${buyerId}:${mode}:${rawKey}:${sellerId}`)
 * `created_at` / `updated_at` (TIMESTAMPTZ)
 
 ---
@@ -431,7 +438,7 @@ erDiagram
 
 ### 2.12 ตาราง `payment_slips` (ระบบจัดการสลิปโอนเงิน Unified SlipOK)
 รองรับสลิป 2 ประเภท: `CREDIT_TOPUP` (เติมเครดิตผู้ขาย) และ `ORDER_PAYMENT` (ใช้เฉพาะออเดอร์โหมด `TRANSFER`):
-* `id`, `user_id`, `order_id` (Nullable), `slip_type`, `slip_image_url`, `trans_ref` (UNIQUE), `amount`, `receiver_name`, `verification_status`, `rejection_reason`, `verified_at`, `created_at`
+* `id`, `user_id`, `order_id` (Nullable), `slip_type`, `slip_image_url`, `storage_path` (Nullable, path ใน Bucket สำหรับ re-sign URL), `trans_ref` (UNIQUE), `amount`, `receiver_name`, `verification_status`, `rejection_reason`, `verified_at`, `created_at`
 
 ---
 
@@ -439,6 +446,7 @@ erDiagram
 * `id`, `order_id`, `reviewer_id`, `reviewee_id`, `rating` (1–5), `is_condition_accurate`
 * `tags` (TEXT[], DEFAULT '{}'): **ใหม่** เก็บป้ายกำกับ เช่น `['สภาพตรงเกรด', 'นัดตรงเวลา', 'แพ็กดี', 'คุยง่าย']`
 * `comment`, `created_at`
+* **Constraint:** `UNIQUE(order_id, reviewer_id)` กัน Race Condition ยิงรีวิวเบิ้ลต่อ 1 ออเดอร์
 
 ---
 
@@ -465,6 +473,7 @@ erDiagram
 ```sql
 -- 1. Authentication & Users
 CREATE UNIQUE INDEX idx_users_line_user_id ON users(line_user_id);
+CREATE UNIQUE INDEX idx_users_kyc_national_id_hash ON users(kyc_national_id_hash) WHERE kyc_national_id_hash IS NOT NULL;
 
 -- 2. Shop Profiles, Meetup Points & User Addresses
 CREATE UNIQUE INDEX idx_shop_profiles_user ON shop_profiles(user_id);
@@ -486,6 +495,7 @@ CREATE INDEX idx_book_listing_images_cover ON book_listing_images(book_listing_i
 CREATE INDEX idx_orders_buyer_status ON orders(buyer_id, status);
 CREATE INDEX idx_orders_seller_status ON orders(seller_id, status);
 CREATE INDEX idx_orders_status_created ON orders(status, created_at);
+CREATE UNIQUE INDEX idx_orders_idempotency_key ON orders(idempotency_key) WHERE idempotency_key IS NOT NULL;
 CREATE UNIQUE INDEX idx_order_delivery_details_order ON order_delivery_details(order_id);
 CREATE INDEX idx_order_delivery_details_tracking ON order_delivery_details(tracking_number) WHERE tracking_number IS NOT NULL;
 CREATE INDEX idx_order_items_order ON order_items(order_id);
@@ -499,6 +509,7 @@ CREATE UNIQUE INDEX idx_payment_slips_trans_ref ON payment_slips(trans_ref) WHER
 CREATE INDEX idx_payment_slips_order ON payment_slips(order_id) WHERE order_id IS NOT NULL;
 CREATE INDEX idx_payment_slips_user_type ON payment_slips(user_id, slip_type);
 CREATE INDEX idx_reviews_reviewee ON reviews(reviewee_id);
+CREATE UNIQUE INDEX idx_reviews_order_reviewer ON reviews(order_id, reviewer_id);
 CREATE INDEX idx_credit_transactions_user ON credit_transactions(user_id, created_at DESC);
 CREATE INDEX idx_notifications_user_role ON notifications(user_id, role, is_read, created_at DESC);
 ```
@@ -532,7 +543,9 @@ CREATE TABLE IF NOT EXISTS users (
     kyc_first_name VARCHAR(100),
     kyc_last_name VARCHAR(100),
     kyc_national_id_masked VARCHAR(25),
+    kyc_national_id_hash VARCHAR(64) UNIQUE,
     kyc_verified_at TIMESTAMPTZ,
+    pdpa_consent_at TIMESTAMPTZ,
     is_blacklisted BOOLEAN DEFAULT FALSE NOT NULL,
     no_show_count INTEGER DEFAULT 0 NOT NULL CHECK (no_show_count >= 0),
     credits INTEGER DEFAULT 1 NOT NULL CHECK (credits >= 0),
@@ -703,6 +716,7 @@ CREATE TABLE IF NOT EXISTS orders (
     dispute_opened_by VARCHAR(20) CHECK (dispute_opened_by IN ('BUYER', 'SELLER')),
     dispute_reason TEXT,
     disputed_at TIMESTAMPTZ,
+    idempotency_key VARCHAR(128) UNIQUE,
 
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
@@ -761,6 +775,7 @@ CREATE TABLE IF NOT EXISTS payment_slips (
     order_id UUID REFERENCES orders(id) ON DELETE CASCADE,
     slip_type VARCHAR(30) NOT NULL CHECK (slip_type IN ('ORDER_PAYMENT', 'CREDIT_TOPUP')),
     slip_image_url TEXT NOT NULL,
+    storage_path TEXT,
     trans_ref VARCHAR(100) UNIQUE,
     amount DECIMAL(10, 2) NOT NULL CHECK (amount >= 0),
     receiver_name VARCHAR(255),
@@ -789,7 +804,8 @@ CREATE TABLE IF NOT EXISTS reviews (
     tags TEXT[] DEFAULT '{}' NOT NULL,
     comment TEXT,
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    CONSTRAINT check_reviewer_not_reviewee CHECK (reviewer_id <> reviewee_id)
+    CONSTRAINT check_reviewer_not_reviewee CHECK (reviewer_id <> reviewee_id),
+    CONSTRAINT uq_reviews_order_reviewer UNIQUE (order_id, reviewer_id)
 );
 
 -- -----------------------------------------------------------------------------

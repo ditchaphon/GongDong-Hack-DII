@@ -173,6 +173,21 @@ export async function getRecommendedBooks(
   return { books: listings.map(mapBookFeedItem) };
 }
 
+async function getSellerParcelCapability(db: any, sellerId: string): Promise<boolean> {
+  if (!db?.user?.findUnique) return true;
+  const seller = await db.user.findUnique({
+    where: { id: sellerId },
+    select: {
+      isVerifiedSeller: true,
+      shopProfile: { select: { supportsParcel: true } },
+    },
+  });
+  if (!seller) {
+    throw new AppError('ไม่พบบัญชีผู้ขาย', 404, 'SELLER_NOT_FOUND');
+  }
+  return Boolean(seller.isVerifiedSeller && seller.shopProfile?.supportsParcel);
+}
+
 /**
  * Service ดูรายละเอียดหนังสือรายเล่ม (GET /api/books/:id)
  * ส่งข้อมูลร้านค้าแบบซ่อนเบอร์โทรศัพท์และชื่อ LINE ตามกฎ PDPA
@@ -204,7 +219,7 @@ export async function getBookListingDetail(
     },
   });
 
-  if (!item) {
+  if (!item || item.status === 'HIDDEN') {
     throw new AppError('ไม่พบหนังสือที่ระบุ', 404, 'BOOK_NOT_FOUND');
   }
 
@@ -265,9 +280,23 @@ export async function createBookListing(
 ) {
   const db = prismaClient || defaultPrisma;
 
+  if (typeof input.title !== 'string' || !input.title.trim()) {
+    throw new AppError('กรุณาระบุชื่อหนังสือ', 400, 'INVALID_TITLE');
+  }
+
   // 1. ตรวจสอบรูปภาพ 4 มุมบังคับ
   if (!input.images || !Array.isArray(input.images)) {
     throw new AppError('กรุณาแนบรูปภาพถ่ายหนังสือ', 400, 'MISSING_IMAGES');
+  }
+
+  if (
+    input.images.some(
+      (img) =>
+        typeof img?.imageUrl !== 'string' ||
+        !/^https?:\/\//i.test(img.imageUrl.trim())
+    )
+  ) {
+    throw new AppError('URL รูปภาพไม่ถูกต้อง', 400, 'INVALID_IMAGE_URL');
   }
 
   const imageTypesPresent = new Set(input.images.map((img) => img.imageType));
@@ -281,12 +310,37 @@ export async function createBookListing(
     );
   }
 
-  // 2. ตรวจสอบราคาขาย
-  if (typeof input.price !== 'number' || input.price < 0) {
-    throw new AppError('ราคาขายต้องเป็นตัวเลขและไม่ติดลบ', 400, 'INVALID_PRICE');
+  // 2. ตรวจสอบราคาขายและคำตอบสภาพหนังสือ
+  if (typeof input.price !== 'number' || !Number.isFinite(input.price) || input.price <= 0) {
+    throw new AppError('ราคาขายต้องเป็นตัวเลขและไม่ติดลบ (มากกว่า 0 บาท)', 400, 'INVALID_PRICE');
   }
 
-  // 3. คำนวณเกรดอัตโนมัติบน Server
+  if (!input.conditionAnswers || typeof input.conditionAnswers !== 'object') {
+    throw new AppError('กรุณาระบุข้อมูลสภาพหนังสือ', 400, 'INVALID_CONDITION_ANSWERS');
+  }
+
+  // 3. ตรวจสอบสิทธิ์ส่งพัสดุและช่องทางการส่งมอบ
+  const canParcel = await getSellerParcelCapability(db, sellerId);
+  const allowPickup = input.allowPickup ?? true;
+  const allowDelivery = input.allowDelivery ?? canParcel;
+
+  if (!allowPickup && !allowDelivery) {
+    throw new AppError(
+      'กรุณาเลือกช่องทางการส่งมอบอย่างน้อย 1 วิธี (นัดรับ หรือ ส่งพัสดุ)',
+      400,
+      'DELIVERY_METHOD_REQUIRED'
+    );
+  }
+
+  if (allowDelivery && !canParcel) {
+    throw new AppError(
+      'ร้านค้าต้องยืนยันตัวตนและเปิดรับส่งพัสดุในตั้งค่าร้านก่อน จึงจะลงขายแบบส่งพัสดุได้',
+      403,
+      'PARCEL_NOT_ALLOWED'
+    );
+  }
+
+  // 4. คำนวณเกรดอัตโนมัติบน Server
   const originalPriceForGrading =
     input.originalPrice && input.originalPrice > 0
       ? input.originalPrice
@@ -298,6 +352,7 @@ export async function createBookListing(
 
   const verifiedGrade = gradingResult.grade;
   const cleanIsbn = sanitizeIsbn(input.isbn);
+  const cleanTitle = input.title.trim();
   const categories =
     Array.isArray(input.categories) && input.categories.length > 0
       ? input.categories
@@ -306,21 +361,14 @@ export async function createBookListing(
       : ['ทั่วไป / ไลฟ์สไตล์'];
   const primaryCategory = input.category || categories[0];
 
-  // 4. บันทึกข้อมูลลงฐานข้อมูลแบบ Transaction
+  // 5. บันทึกข้อมูลลงฐานข้อมูลแบบ Transaction (ไม่เขียนทับแคตตาล็อกกลางที่มีอยู่แล้ว)
   return await db.$transaction(async (tx: any) => {
-    await tx.bookCatalog.upsert({
+    const catalog = await tx.bookCatalog.upsert({
       where: { isbn: cleanIsbn },
-      update: {
-        title: input.title,
-        author: input.author || null,
-        publisher: input.publisher || null,
-        category: primaryCategory,
-        coverUrl: input.coverUrl || null,
-        originalPrice: input.originalPrice ?? null,
-      },
+      update: {},
       create: {
         isbn: cleanIsbn,
-        title: input.title,
+        title: cleanTitle,
         author: input.author || null,
         publisher: input.publisher || null,
         category: primaryCategory,
@@ -347,11 +395,11 @@ export async function createBookListing(
             : [],
         defects: (input.defects ?? []) as any,
         photoChecks: (input.photoChecks ?? {}) as any,
-        allowPickup: input.allowPickup ?? true,
+        allowPickup,
         pickupLat: input.pickupLat ?? null,
         pickupLng: input.pickupLng ?? null,
         pickupLocationName: input.pickupLocationName ?? null,
-        allowDelivery: input.allowDelivery ?? true,
+        allowDelivery,
         codEnabled: input.codEnabled ?? true,
         status: 'AVAILABLE',
       },
@@ -369,7 +417,7 @@ export async function createBookListing(
 
     return {
       id: listing.id,
-      title: input.title,
+      title: catalog?.title || cleanTitle,
       category: listing.category,
       categories: listing.categories ?? categories,
       isSet: Boolean(listing.isSet),
@@ -410,8 +458,34 @@ export async function updateBookListing(
     );
   }
 
-  if (input.price !== undefined && (typeof input.price !== 'number' || input.price < 0)) {
-    throw new AppError('ราคาขายต้องเป็นตัวเลขและไม่ติดลบ', 400, 'INVALID_PRICE');
+  if (
+    input.price !== undefined &&
+    (typeof input.price !== 'number' || !Number.isFinite(input.price) || input.price <= 0)
+  ) {
+    throw new AppError('ราคาขายต้องเป็นตัวเลขและไม่ติดลบ (มากกว่า 0 บาท)', 400, 'INVALID_PRICE');
+  }
+
+  if (input.allowPickup !== undefined || input.allowDelivery !== undefined) {
+    const nextAllowPickup = input.allowPickup ?? Boolean(listing.allowPickup ?? true);
+    const nextAllowDelivery = input.allowDelivery ?? Boolean(listing.allowDelivery ?? false);
+    if (!nextAllowPickup && !nextAllowDelivery) {
+      throw new AppError(
+        'กรุณาเปิดรับการส่งมอบอย่างน้อย 1 ช่องทาง (นัดรับ หรือ ส่งพัสดุ)',
+        400,
+        'DELIVERY_METHOD_REQUIRED'
+      );
+    }
+  }
+
+  if (input.allowDelivery === true) {
+    const canParcel = await getSellerParcelCapability(db, sellerId);
+    if (!canParcel) {
+      throw new AppError(
+        'ร้านค้าต้องยืนยันตัวตนและเปิดรับส่งพัสดุในตั้งค่าร้านก่อน จึงจะเปิดส่งพัสดุได้',
+        403,
+        'PARCEL_NOT_ALLOWED'
+      );
+    }
   }
 
   const updateData: any = {};
@@ -477,15 +551,20 @@ export async function getUserBookListings(
   const books: UserBookListingItem[] = listings.map((item: any) => ({
     id: item.id,
     title: item.bookCatalog.title,
+    description: item.description ?? null,
     category: item.category,
     categories:
       Array.isArray(item.categories) && item.categories.length > 0
         ? item.categories
         : [item.category],
     isSet: Boolean(item.isSet),
+    totalVolumes: item.totalVolumes ?? null,
     price: Number(item.price),
     grade: item.grade as BookGrade,
     coverImageUrl: item.images[0]?.imageUrl || item.bookCatalog.coverUrl || '',
+    allowPickup: Boolean(item.allowPickup ?? true),
+    allowDelivery: Boolean(item.allowDelivery ?? false),
+    codEnabled: Boolean(item.codEnabled ?? true),
     status: item.status,
     createdAt: item.createdAt,
   }));

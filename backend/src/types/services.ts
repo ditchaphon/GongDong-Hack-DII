@@ -55,7 +55,13 @@ export interface PromptPayQRResult {
 /**
  * ประเภทข้อมูลส่วนตัวที่ถูกตรวจจับใน Data Masking
  */
-export type SensitiveDataType = 'PHONE' | 'BANK_ACCOUNT' | 'LINE_ID';
+export type SensitiveDataType =
+  | 'PHONE'
+  | 'BANK_ACCOUNT'
+  | 'LINE_ID'
+  | 'EMAIL'
+  | 'SOCIAL'
+  | 'OFF_APP';
 
 /**
  * ผลลัพธ์จากการตรวจจับและเซ็นเซอร์ข้อมูลส่วนตัวในข้อความ
@@ -298,12 +304,17 @@ export interface BookListingDetail {
 export interface UserBookListingItem {
   id: string;
   title: string;
+  description: string | null;
   category: string;
   categories: string[];
   isSet: boolean;
+  totalVolumes: number | null;
   price: number;
   grade: BookGrade;
   coverImageUrl: string;
+  allowPickup: boolean;
+  allowDelivery: boolean;
+  codEnabled: boolean;
   status: string;
   createdAt: Date;
 }
@@ -379,11 +390,19 @@ export interface OrderDetail {
   handoverCode?: string | null;
   receivedPhotoUrl: string | null;
   receivedAt: Date | null;
+  missedMeetingReportedAt?: Date | null;
   cancelReason: string | null;
   dispute: {
     reason: string;
     openedBy: string | null;
     openedAt: Date;
+  } | null;
+  review?: {
+    rating: number;
+    isConditionAccurate: boolean | null;
+    tags: string[];
+    comment: string | null;
+    createdAt: Date;
   } | null;
   items: Array<{
     bookId: string;
@@ -418,6 +437,7 @@ export interface OrderDetail {
     parcelImageUrl: string | null;
     shippedAt: Date | null;
   } | null;
+  paymentSlipUrl?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -464,6 +484,7 @@ export interface ReceiveOrderInput {
  */
 export interface PaymentSlipInput {
   slipImageUrl: string;
+  storagePath?: string;
   transRef?: string;
   amount?: number;
   receiverName?: string;
@@ -483,6 +504,7 @@ export interface UserProfileResponse {
   verified_name: string | null;
   promptpay_id: string | null;
   is_verified_seller: boolean;
+  pdpa_consent_at?: Date | null;
   no_show_count: number;
   credits: number;
   created_at: Date;
@@ -496,6 +518,7 @@ export interface UpdateUserProfileInput {
   avatar_url?: string | null;
   phone_number?: string | null;
   promptpay_id?: string | null;
+  pdpa_consent?: boolean;
 }
 
 /**
@@ -503,6 +526,9 @@ export interface UpdateUserProfileInput {
  */
 export interface TopupSlipInput {
   slip_image_url: string;
+  storage_path?: string;
+  pack_id?: string;
+  packId?: string;
 }
 
 /**
@@ -628,19 +654,23 @@ export interface SellerKycInput {
   firstName: string;
   lastName: string;
   nationalId: string;
+  pdpaConsent?: boolean;
 }
 
 /**
  * User Address Types (PDPA v4)
  */
 export interface UserAddressInput {
-  fullName: string;
+  fullName?: string;
+  full_name?: string;
   province: string;
   district: string;
   subdistrict: string;
-  postalCode: string;
+  postalCode?: string;
+  postal_code?: string;
   detail: string;
   isDefault?: boolean;
+  is_default?: boolean;
 }
 
 /**

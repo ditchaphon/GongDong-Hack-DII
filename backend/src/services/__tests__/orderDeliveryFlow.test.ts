@@ -385,6 +385,34 @@ describe('OrderService - Delivery Flow & PDPA Protection', () => {
       expect(mockDb.$transaction).toHaveBeenCalledTimes(1);
     });
 
+    it('ควรคืนผลลัพธ์เดิมจาก DB (Order.idempotencyKey) หากพบรายการที่บันทึกไว้แล้วแม้รีสตาร์ทเซิร์ฟเวอร์', async () => {
+      mockDb.order.findMany = vi.fn().mockResolvedValue([
+        {
+          id: 'ord_persisted_1',
+          idempotencyKey: `${buyerId}:single:persisted-key-1:${sellerA}`,
+          totalPrice: 150,
+          shippingFee: 0,
+          paymentMethod: 'COD',
+          status: 'REQUESTED',
+          createdAt: new Date('2026-11-14T10:00:00Z'),
+        },
+      ]);
+
+      const persisted = await createOrder(
+        buyerId,
+        {
+          sellerId: sellerA,
+          bookIds: ['bok_1'],
+          shippingMethod: 'PICKUP',
+          idempotencyKey: 'persisted-key-1',
+        },
+        mockDb
+      );
+
+      expect(persisted.orderId).toBe('ord_persisted_1');
+      expect(mockDb.$transaction).not.toHaveBeenCalled();
+    });
+
     it('All-or-Nothing Rollback: หากร้านที่ 2 มีหนังสือไม่พร้อมขาย ต้อง Error พร้อม details.invalidBookIds และ rollback ทั้งก้อน', async () => {
       mockDb.user.findUnique.mockResolvedValue({ id: buyerId, phoneNumber: null });
       mockDb.order.count.mockResolvedValue(0);
@@ -514,7 +542,8 @@ describe('OrderService - Delivery Flow & PDPA Protection', () => {
 
       expect(result.deliveryDetails).toBeNull();
       expect(result.buyer.phoneNumber).toBeNull();
-      expect(result.buyer.nickname).toBe('กานต์'); // เห็นเฉพาะชื่อเล่น
+      expect(result.buyer.nickname).toBe('ผู้ซื้อ #_123');
+      expect(result.buyer.avatarUrl).toBeNull();
     });
 
     it('ผู้ขายดูออเดอร์ TRANSFER สถานะ ACCEPTED: ยังคงต้องซ่อนที่อยู่จัดส่งจนกว่าจะชำระเงิน', async () => {
@@ -786,12 +815,134 @@ describe('OrderService - Delivery Flow & PDPA Protection', () => {
 
       const result = await reportMissedMeeting('ord_pickup_1', 'usr_seller_1', mockDb);
 
+      expect(result.status).toBe('DISPUTED');
       expect(result.missedMeetingReportedAt).toBeDefined();
       expect(mockDb.order.update).toHaveBeenCalledWith({
         where: { id: 'ord_pickup_1' },
         data: expect.objectContaining({
+          status: 'DISPUTED',
+          disputeOpenedBy: 'SELLER',
           missedMeetingReportedAt: expect.any(Date),
         }),
+      });
+    });
+
+    it('บล็อก verifyOrderPaymentSlip หากออเดอร์เป็นแบบ COD (COD_ORDER_NO_SLIP)', async () => {
+      mockDb.order.findUnique.mockResolvedValue({
+        id: 'ord_cod_block',
+        buyerId: 'usr_buyer_1',
+        sellerId: 'usr_seller_1',
+        shippingMethod: 'DELIVERY',
+        paymentMethod: 'COD',
+        status: 'ACCEPTED',
+        totalPrice: 215,
+        seller: { verifiedName: 'นนทภัทร สุขใจ' },
+      });
+
+      await expect(
+        verifyOrderPaymentSlip(
+          'ord_cod_block',
+          'usr_buyer_1',
+          {
+            slipImageUrl: 'https://storage/slip.webp',
+            transRef: 'REF_COD_TEST',
+            amount: 215,
+            receiverName: 'นนทภัทร สุขใจ',
+          },
+          mockDb
+        )
+      ).rejects.toMatchObject({
+        statusCode: 400,
+        code: 'COD_ORDER_NO_SLIP',
+      });
+    });
+
+    it('PDPA E4 & Review Mapping: ผู้ขายต้องไม่เห็น buyer.phoneNumber ในทุกสถานะ และ getOrderDetail คืนค่า missedMeetingReportedAt กับ review', async () => {
+      mockDb.order.findUnique.mockResolvedValue({
+        id: 'ord_pdpa_detail_1',
+        buyerId: 'usr_buyer_1',
+        sellerId: 'usr_seller_1',
+        shippingMethod: 'DELIVERY',
+        paymentMethod: 'COD',
+        shippingFee: 35,
+        totalPrice: 235,
+        status: 'COMPLETED',
+        pickupLat: null,
+        pickupLng: null,
+        pickupLocationName: null,
+        scheduledAt: null,
+        scheduleDateIso: null,
+        scheduleTimeLabel: null,
+        scheduleProposedBy: null,
+        scheduleConfirmedByBuyer: false,
+        handoverCode: null,
+        receivedPhotoUrl: 'https://storage/rec.webp',
+        receivedAt: new Date(),
+        missedMeetingReportedAt: new Date('2026-11-12T10:00:00Z'),
+        cancelReason: null,
+        disputeReason: null,
+        disputeOpenedBy: null,
+        disputedAt: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        buyer: {
+          id: 'usr_buyer_1',
+          nickname: 'นัท',
+          avatarUrl: 'https://img/buyer.webp',
+          phoneNumber: '0891112222',
+          noShowCount: 1,
+        },
+        seller: {
+          id: 'usr_seller_1',
+          nickname: 'ร้านหนังสือ',
+          avatarUrl: null,
+          promptpayId: null,
+          verifiedName: 'สมหญิง จริงใจ',
+          isVerifiedSeller: true,
+          shopProfile: { shopName: 'ร้านหนังสือดี' },
+        },
+        deliveryDetail: {
+          recipientName: 'นัท ใจดี',
+          recipientPhone: '0891112222',
+          province: 'เชียงใหม่',
+          deliveryAddress: '123 ถ.สุเทพ',
+          courierName: 'Flash',
+          trackingNumber: 'TH999',
+          parcelImageUrl: null,
+          shippedAt: new Date(),
+        },
+        reviews: [
+          {
+            reviewerId: 'usr_buyer_1',
+            rating: 5,
+            isConditionAccurate: true,
+            tags: ['สภาพดีมาก'],
+            comment: 'ห่อดีมากครับ',
+            createdAt: new Date('2026-11-12T12:00:00Z'),
+          },
+        ],
+        orderItems: [
+          {
+            bookListingId: 'bok_1',
+            price: 200,
+            bookListing: {
+              grade: 'LIKE_NEW',
+              bookCatalog: { title: 'Clean Architecture', coverUrl: 'https://img/book.webp' },
+              images: [],
+            },
+          },
+        ],
+      });
+
+      const sellerView = await getOrderDetail('ord_pdpa_detail_1', 'usr_seller_1', mockDb);
+      expect(sellerView.buyer.phoneNumber).toBeNull();
+      expect(sellerView.deliveryDetails).toBeNull();
+      expect(sellerView.missedMeetingReportedAt).toEqual(new Date('2026-11-12T10:00:00Z'));
+      expect(sellerView.review).toMatchObject({
+        rating: 5,
+        isConditionAccurate: true,
+        tags: ['สภาพดีมาก'],
+        comment: 'ห่อดีมากครับ',
       });
     });
   });

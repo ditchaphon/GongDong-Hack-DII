@@ -1,10 +1,11 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { TopBar } from '@/components/layout/TopBar';
 import { EmptyState } from '@/components/ui';
 import { api } from '@/lib/api';
+import { useLiff } from '@/hooks/useLiff';
 import {
   AppNotificationItem,
   BackendNotification,
@@ -13,34 +14,45 @@ import {
 import { Package, Bell, Sparkles, Store, ShoppingBag, Coins } from 'lucide-react';
 
 export default function NotificationsPage() {
+  const { isReady, isLoggedIn, idToken } = useLiff();
   const [notifications, setNotifications] = useState<AppNotificationItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<'BUYER' | 'SELLER'>('BUYER');
 
-  const loadNotifications = async (role: 'BUYER' | 'SELLER') => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await api.get<{ notifications: BackendNotification[] }>(
-        `/api/notifications?role=${role}&limit=50`
-      );
-      setNotifications((res.notifications ?? []).map(mapBackendNotificationToItem));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'โหลดการแจ้งเตือนไม่สำเร็จ');
-    } finally {
-      setLoading(false);
-    }
-  };
+  const loadNotifications = useCallback(
+    async (role: 'BUYER' | 'SELLER') => {
+      if (!isReady) return;
+      if (!isLoggedIn || !idToken) {
+        setNotifications([]);
+        setLoading(false);
+        return;
+      }
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await api.get<{ items: BackendNotification[]; unreadCount: number }>(
+          `/api/notifications?role=${role}&limit=50`,
+          { token: idToken }
+        );
+        setNotifications((res.items ?? []).map(mapBackendNotificationToItem));
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'โหลดการแจ้งเตือนไม่สำเร็จ');
+      } finally {
+        setLoading(false);
+      }
+    },
+    [isReady, isLoggedIn, idToken]
+  );
 
   useEffect(() => {
     loadNotifications(view);
-  }, [view]);
+  }, [view, loadNotifications]);
 
   const markAllAsRead = async () => {
     setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
     try {
-      await api.patch('/api/notifications/read-all');
+      await api.patch(`/api/notifications/read-all?role=${view}`, { token: idToken });
     } catch {
       // Keep UI responsive
     }
@@ -51,7 +63,7 @@ export default function NotificationsPage() {
       prev.map((n) => (n.id === id ? { ...n, isRead: true } : n))
     );
     try {
-      await api.patch(`/api/notifications/${id}/read`);
+      await api.patch(`/api/notifications/${id}/read`, { token: idToken });
     } catch {
       // Ignore transient error during navigation
     }

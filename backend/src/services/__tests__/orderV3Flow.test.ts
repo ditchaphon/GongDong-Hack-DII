@@ -8,6 +8,7 @@ import {
   openDispute,
   receiveOrder,
   shipOrder,
+  verifyHandoverCode,
 } from '../orderService';
 import { createBookListing, updateBookListing } from '../bookService';
 
@@ -125,7 +126,14 @@ describe('v3.0.0 Flows (Dual Payment COD, Cancel, Receive, Dispute, Book Set/INN
     expect(receiveTx.review.create).toHaveBeenCalled();
   });
 
-  it('COD Meetup: ผู้ขายปิดออเดอร์ด้วย completeMeetupCodOrder และรองรับ cancelOrder คืนหนังสือ + คืน 1 เครดิตเมื่อผู้ซื้อยกเลิก', async () => {
+  it('COD Meetup: บล็อก completeMeetupCodOrder (HANDOVER_CODE_REQUIRED), ปิดด้วย verifyHandoverCode และรองรับ cancelOrder คืนหนังสือ + คืน 1 เครดิต', async () => {
+    await expect(
+      completeMeetupCodOrder('ord-m1', 'seller-1')
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      code: 'HANDOVER_CODE_REQUIRED',
+    });
+
     const completeTx = {
       order: {
         findUnique: vi.fn().mockResolvedValue({
@@ -134,6 +142,7 @@ describe('v3.0.0 Flows (Dual Payment COD, Cancel, Receive, Dispute, Book Set/INN
           sellerId: 'seller-1',
           shippingMethod: 'PICKUP',
           status: 'SCHEDULED',
+          handoverCode: '482910',
           orderItems: [{ bookListingId: 'b1' }],
         }),
         update: vi.fn(),
@@ -141,13 +150,37 @@ describe('v3.0.0 Flows (Dual Payment COD, Cancel, Receive, Dispute, Book Set/INN
       bookListing: { updateMany: vi.fn() },
       orderMessage: { create: vi.fn() },
     };
-    const completeRes = await completeMeetupCodOrder(
+    const completeRes = await verifyHandoverCode(
       'ord-m1',
       'seller-1',
+      '482910',
       { $transaction: vi.fn(async (cb: any) => cb(completeTx)) }
     );
     expect(completeRes.status).toBe('COMPLETED');
     expect(completeRes.soldBookIds).toEqual(['b1']);
+
+    await expect(
+      receiveOrder(
+        'ord-m1',
+        'buyer-1',
+        { receivedPhotoUrl: 'https://storage/photo.webp' },
+        {
+          order: {
+            findUnique: vi.fn().mockResolvedValue({
+              id: 'ord-m1',
+              buyerId: 'buyer-1',
+              sellerId: 'seller-1',
+              shippingMethod: 'PICKUP',
+              status: 'SCHEDULED',
+              orderItems: [{ bookListingId: 'b1' }],
+            }),
+          },
+        }
+      )
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      code: 'PICKUP_USE_HANDOVER_CODE',
+    });
 
     const cancelTx = {
       order: {
@@ -181,14 +214,15 @@ describe('v3.0.0 Flows (Dual Payment COD, Cancel, Receive, Dispute, Book Set/INN
     });
   });
 
-  it('Dispute & Missed Meeting Dispute: เปลี่ยนสถานะเป็น DISPUTED อย่างถูกต้อง', async () => {
+  it('Dispute & Missed Meeting Rebuttal: ผู้ซื้อโต้แย้งได้แม้ผู้ขายรายงาน No-show แล้วเปลี่ยนเป็น DISPUTED ทันที', async () => {
     const db = {
       order: {
         findUnique: vi.fn().mockResolvedValue({
           id: 'ord-d1',
           buyerId: 'buyer-1',
           sellerId: 'seller-1',
-          status: 'SCHEDULED',
+          status: 'DISPUTED',
+          disputeReason: 'ผู้ขายรายงานว่าผู้ซื้อไม่มาตามนัด',
           missedMeetingReportedAt: new Date(),
         }),
         update: vi.fn(),
@@ -198,8 +232,22 @@ describe('v3.0.0 Flows (Dual Payment COD, Cancel, Receive, Dispute, Book Set/INN
 
     const disputeRes = await disputeMissedMeeting('ord-d1', 'buyer-1', 'รออยู่หน้าประตูหลังครับ', db);
     expect(disputeRes.status).toBe('DISPUTED');
+    expect(disputeRes.disputeReason).toContain('[คำโต้แย้งจากผู้ซื้อ]: รออยู่หน้าประตูหลังครับ');
 
-    const openRes = await openDispute('ord-d1', 'seller-1', 'สินค้าเสียหายระหว่างขนส่ง', db);
+    const dbScheduled = {
+      order: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: 'ord-d2',
+          buyerId: 'buyer-1',
+          sellerId: 'seller-1',
+          status: 'SHIPPED',
+        }),
+        update: vi.fn(),
+      },
+      orderMessage: { create: vi.fn() },
+    };
+
+    const openRes = await openDispute('ord-d2', 'seller-1', 'สินค้าเสียหายระหว่างขนส่ง', dbScheduled);
     expect(openRes.status).toBe('DISPUTED');
   });
 

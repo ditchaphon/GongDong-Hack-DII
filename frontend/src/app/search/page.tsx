@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { SearchBar, Chip, BookCard, EmptyState, BottomSheet, Button } from '@/components/ui';
 import { TopBar } from '@/components/layout/TopBar';
 import { api } from '@/lib/api';
+import { toV4Grade } from '@/lib/catalog';
 import { BackendBookFeedItem, mapBackendBookToBook } from '@/lib/mappers';
 import { Book } from '@/types';
 import { Filter, SlidersHorizontal, MapPin } from 'lucide-react';
@@ -31,6 +32,20 @@ export default function SearchPage() {
   ];
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const initialQ = params.get('q');
+    const initialGrade = params.get('grade');
+    const initialShipping = params.get('shipping');
+    if (initialQ) setQuery(initialQ);
+    if (initialGrade && ['A', 'B', 'C', 'D'].includes(initialGrade)) {
+      setGradeFilter(initialGrade as 'A' | 'B' | 'C' | 'D');
+    }
+    if (initialShipping === 'MEETUP' || initialShipping === 'PARCEL') {
+      setDeliveryFilter(initialShipping);
+    }
+  }, []);
+
+  useEffect(() => {
     let active = true;
     const timer = setTimeout(async () => {
       setLoading(true);
@@ -39,8 +54,7 @@ export default function SearchPage() {
         const params = new URLSearchParams({ limit: '50' });
         if (query.trim()) params.set('q', query.trim());
         if (gradeFilter !== 'ALL') {
-          const gradeMap = { A: 'LIKE_NEW', B: 'GOOD', C: 'READABLE', D: 'ACCEPTABLE' } as const;
-          params.set('grade', gradeMap[gradeFilter]);
+          params.set('grade', toV4Grade(gradeFilter));
         }
         if (deliveryFilter === 'MEETUP') params.set('shipping', 'PICKUP');
         if (deliveryFilter === 'PARCEL') params.set('shipping', 'DELIVERY');

@@ -29,6 +29,9 @@ const envSchema = z.object({
   SLIPOK_BRANCH_ID: z.string().optional(),
   PLATFORM_PROMPTPAY_ID: z.string().optional(),
   PLATFORM_RECIPIENT_NAME: z.string().default('กองดอง · บัญชีรับชำระ'),
+
+  // Security & KYC Hashing
+  KYC_HASH_PEPPER: z.string().optional(),
 });
 
 export const env = envSchema.parse(process.env);

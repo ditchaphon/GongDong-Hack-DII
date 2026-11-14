@@ -31,7 +31,9 @@ model User {
   kycFirstName        String?   @map("kyc_first_name") @db.VarChar(100)
   kycLastName         String?   @map("kyc_last_name") @db.VarChar(100)
   kycNationalIdMasked String?   @map("kyc_national_id_masked") @db.VarChar(25)
+  kycNationalIdHash   String?   @unique @map("kyc_national_id_hash") @db.VarChar(64)
   kycVerifiedAt       DateTime? @map("kyc_verified_at") @db.Timestamptz
+  pdpaConsentAt       DateTime? @map("pdpa_consent_at") @db.Timestamptz
   isBlacklisted       Boolean   @default(false) @map("is_blacklisted")
   noShowCount         Int       @default(0) @map("no_show_count")
   credits             Int       @default(1)
@@ -236,6 +238,7 @@ model Order {
   disputeOpenedBy          String?   @map("dispute_opened_by") @db.VarChar(20) // BUYER, SELLER
   disputeReason            String?   @map("dispute_reason") @db.Text
   disputedAt               DateTime? @map("disputed_at") @db.Timestamptz
+  idempotencyKey           String?   @unique @map("idempotency_key") @db.VarChar(128)
   createdAt                DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt                DateTime  @updatedAt @map("updated_at") @db.Timestamptz
 
@@ -327,6 +330,7 @@ model PaymentSlip {
   orderId            String?   @map("order_id") @db.Uuid
   slipType           String    @map("slip_type") @db.VarChar(30) // ORDER_PAYMENT, CREDIT_TOPUP
   slipImageUrl       String    @map("slip_image_url") @db.Text
+  storagePath        String?   @map("storage_path") @db.Text
   transRef           String?   @unique @map("trans_ref") @db.VarChar(100)
   amount             Decimal   @db.Decimal(10, 2)
   receiverName       String?   @map("receiver_name") @db.VarChar(255)
@@ -363,6 +367,7 @@ model Review {
   reviewer User  @relation("Reviewer", fields: [reviewerId], references: [id], onDelete: Restrict)
   reviewee User  @relation("Reviewee", fields: [revieweeId], references: [id], onDelete: Restrict)
 
+  @@unique([orderId, reviewerId])
   @@index([revieweeId])
   @@map("reviews")
 }

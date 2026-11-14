@@ -69,12 +69,17 @@ export interface BackendBookDetail extends BackendBookFeedItem {
 export interface BackendUserBookItem {
   id: string;
   title: string;
+  description?: string | null;
   category: string;
   categories?: string[];
   isSet?: boolean;
+  totalVolumes?: number | null;
   price: number;
   grade: string;
   coverImageUrl: string;
+  allowPickup?: boolean;
+  allowDelivery?: boolean;
+  codEnabled?: boolean;
   status: string;
   createdAt: string;
 }
@@ -198,6 +203,14 @@ export interface BackendOrderDetail {
     reason: string;
     opened_by: string | null;
     opened_at: string;
+  } | null;
+  missed_meeting_reported_at?: string | null;
+  review?: {
+    rating: number;
+    is_condition_accurate: boolean | null;
+    tags: string[];
+    comment: string | null;
+    created_at: string;
   } | null;
   items: Array<{
     book_id: string;
@@ -392,12 +405,19 @@ export function mapBackendUserBookToSellerListing(
   user: { id: string; displayName: string; pictureUrl?: string; isVerifiedSeller: boolean }
 ): SellerListing {
   const cover = item.coverImageUrl || FALLBACK_BOOK_COVER;
+  const deliveryMethods: ('MEETUP' | 'PARCEL')[] = [];
+  if (item.allowPickup ?? true) deliveryMethods.push('MEETUP');
+  if (item.allowDelivery) deliveryMethods.push('PARCEL');
+  if (deliveryMethods.length === 0) deliveryMethods.push('MEETUP');
+
   return {
     id: item.id,
     title: item.title,
     author: '',
+    description: item.description ?? undefined,
     categories: item.categories?.length ? item.categories : item.category ? [item.category] : [],
     isSet: Boolean(item.isSet),
+    totalVolumes: item.totalVolumes ?? undefined,
     price: Number(item.price),
     grade: toUiBookGrade(item.grade),
     checklist: conditionAnswersToChecklist(null),
@@ -408,11 +428,11 @@ export function mapBackendUserBookToSellerListing(
       nameTag: cover,
     },
     sellerId: user.id,
-    sellerName: shop?.shopName || user.displayName,
-    sellerRating: 5.0,
-    sellerAvatar: shop?.avatar || user.pictureUrl,
+    sellerName: shop?.shopName || 'ร้านค้ากองดอง',
+    sellerRating: 0,
+    sellerAvatar: shop?.avatar,
     isPromptPayVerified: shop?.payeeVerified ?? user.isVerifiedSeller,
-    deliveryMethods: shop?.supportsParcel ? ['MEETUP', 'PARCEL'] : ['MEETUP'],
+    deliveryMethods,
     meetupZones: shop?.meetupPoints.map((p) => p.name) ?? [],
     createdAt: new Date(item.createdAt).toLocaleDateString('th-TH', {
       day: 'numeric',
@@ -613,7 +633,17 @@ export function mapBackendOrderDetailToV4Order(
           openedAtISO: detail.dispute.opened_at,
         }
       : undefined,
+    missedMeetingReportedAtISO: detail.missed_meeting_reported_at ?? undefined,
     cancelReason: detail.cancel_reason ?? undefined,
+    review: detail.review
+      ? {
+          rating: detail.review.rating,
+          isGradeMatched: Boolean(detail.review.is_condition_accurate),
+          tags: detail.review.tags ?? [],
+          comment: detail.review.comment ?? '',
+          reviewedAtISO: detail.review.created_at,
+        }
+      : undefined,
     receivedPhoto: detail.received_photo_url ?? undefined,
     receivedAtISO: detail.received_at ?? undefined,
     creditSpent: detail.status !== 'REQUESTED' && detail.status !== 'REJECTED',
@@ -637,10 +667,10 @@ export function mapBackendOrderMessageToChatMessage(
     text: msg.text,
     sentAtISO: msg.createdAt,
     kind:
-      msg.kind === 'SYSTEM' || msg.senderRole === 'SYSTEM'
-        ? 'SYSTEM'
-        : msg.kind === 'SCHEDULE_CARD'
+      msg.kind === 'SCHEDULE_CARD'
         ? 'SCHEDULE_CARD'
+        : msg.kind === 'SYSTEM' || msg.senderRole === 'SYSTEM'
+        ? 'SYSTEM'
         : 'TEXT',
   };
 }
@@ -672,25 +702,32 @@ export function mapBackendNotificationToItem(
   };
 }
 
+const BACKEND_CREDIT_TYPE_MAP: Record<string, CreditReason> = {
+  SIGNUP_BONUS: 'SIGNUP_BONUS',
+  ACCEPT_ORDER: 'ACCEPT_ORDER',
+  ORDER_ACCEPT: 'ACCEPT_ORDER',
+  NO_SHOW_REFUND: 'NO_SHOW_REFUND',
+  REFUND_CANCEL: 'REFUND_CANCEL',
+  TOPUP: 'TOPUP',
+};
+
 export function mapBackendCreditLedgerRow(
   row: BackendCreditLedgerRow
 ): CreditEntry {
-  const allowed: CreditReason[] = [
-    'SIGNUP_BONUS',
-    'ACCEPT_ORDER',
-    'NO_SHOW_REFUND',
-    'TOPUP',
-  ];
-  const reason: CreditReason = allowed.includes(row.type as CreditReason)
-    ? (row.type as CreditReason)
-    : 'TOPUP';
+  const reason: CreditReason = BACKEND_CREDIT_TYPE_MAP[row.type] ?? 'TOPUP';
+  const fallbackBalance =
+    row.balance_after !== null && row.balance_after !== undefined
+      ? row.balance_after
+      : reason === 'SIGNUP_BONUS'
+      ? row.amount
+      : 0;
 
   return {
     id: row.id,
     atISO: row.created_at,
     reason,
     delta: row.amount,
-    balanceAfter: row.balance_after ?? 0,
+    balanceAfter: fallbackBalance,
     orderId: row.order_id ?? undefined,
     note: row.note ?? undefined,
   };

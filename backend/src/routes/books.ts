@@ -9,10 +9,30 @@ import {
   updateBookListing,
 } from '../services/bookService';
 import { getBookByIsbn } from '../services/googleBooksService';
-import { BookGrade } from '../types';
+import { AppError, BookGrade } from '../types';
 import { getUserIdFromRequest } from '../utils/requestUser';
 
 export const bookRouter = Router();
+
+const VALID_GRADES = new Set<BookGrade>([
+  'LIKE_NEW',
+  'GENTLY_READ',
+  'WELL_LOVED',
+  'WORN_BUT_READABLE',
+]);
+
+function parsePaginationInt(raw: unknown, field: string): number | undefined {
+  if (raw === undefined || raw === '') return undefined;
+  const str = String(raw).trim();
+  if (!/^\d+$/.test(str)) {
+    throw new AppError(
+      `พารามิเตอร์ ${field} ต้องเป็นจำนวนเต็มที่ไม่ติดลบ`,
+      400,
+      'INVALID_PAGINATION'
+    );
+  }
+  return Number(str);
+}
 
 /**
  * GET /api/books/isbn/:isbn
@@ -66,13 +86,23 @@ bookRouter.get(
     try {
       const { q, category, grade, shipping, limit, offset } = req.query;
 
+      const gradeStr = grade ? String(grade) : undefined;
+      if (gradeStr && !VALID_GRADES.has(gradeStr as BookGrade)) {
+        throw new AppError('ค่าเกรดหนังสือไม่ถูกต้อง', 400, 'INVALID_FILTER');
+      }
+
+      const shippingStr = shipping ? String(shipping) : undefined;
+      if (shippingStr && shippingStr !== 'PICKUP' && shippingStr !== 'DELIVERY') {
+        throw new AppError('รูปแบบการจัดส่งไม่ถูกต้อง (PICKUP หรือ DELIVERY)', 400, 'INVALID_FILTER');
+      }
+
       const result = await getBookListings({
         q: q ? String(q) : undefined,
         category: category ? String(category) : undefined,
-        grade: grade ? (String(grade) as BookGrade) : undefined,
-        shipping: shipping ? (String(shipping) as 'PICKUP' | 'DELIVERY') : undefined,
-        limit: limit ? Number(limit) : undefined,
-        offset: offset ? Number(offset) : undefined,
+        grade: gradeStr as BookGrade | undefined,
+        shipping: shippingStr as 'PICKUP' | 'DELIVERY' | undefined,
+        limit: parsePaginationInt(limit, 'limit'),
+        offset: parsePaginationInt(offset, 'offset'),
       });
 
       res.status(200).json({
@@ -93,7 +123,7 @@ bookRouter.get(
   '/recommended',
   async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const limit = req.query.limit ? Number(req.query.limit) : 8;
+      const limit = parsePaginationInt(req.query.limit, 'limit') ?? 8;
       const result = await getRecommendedBooks(limit);
       res.status(200).json({ success: true, data: result });
     } catch (error) {

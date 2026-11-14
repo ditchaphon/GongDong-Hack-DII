@@ -5,6 +5,7 @@ import {
   ReviewItem,
   UserReviewsResult,
 } from '../types';
+import { maskSensitiveData } from './dataMaskingService';
 
 /**
  * ส่งคะแนนและรีวิวคำสั่งซื้อ (POST /api/orders/:id/review)
@@ -21,88 +22,100 @@ export async function createOrderReview(
 ) {
   const db = prismaClient || defaultPrisma;
 
-  // 1. ตรวจสอบว่ามี Order อยู่จริง
-  const order = await db.order.findUnique({
-    where: { id: orderId },
-  });
+  const runInTx = async (tx: any) => {
+    // 1. ตรวจสอบว่ามี Order อยู่จริง
+    const order = await tx.order.findUnique({
+      where: { id: orderId },
+    });
 
-  if (!order) {
-    throw new AppError('ไม่พบคำสั่งซื้อที่ระบุ', 404, 'ORDER_NOT_FOUND');
-  }
+    if (!order) {
+      throw new AppError('ไม่พบคำสั่งซื้อที่ระบุ', 404, 'ORDER_NOT_FOUND');
+    }
 
-  // 2. คำสั่งซื้อต้องอยู่ในสถานะ COMPLETED
-  if (order.status !== 'COMPLETED') {
-    throw new AppError(
-      `สามารถรีวิวได้เฉพาะคำสั่งซื้อที่เสร็จสิ้นสมบูรณ์ (COMPLETED) เท่านั้น (สถานะปัจจุบัน: ${order.status})`,
-      400,
-      'INVALID_ORDER_STATUS'
-    );
-  }
-
-  // 3. ตรวจสอบสิทธิ์ผู้รีวิว (ต้องเป็น buyer หรือ seller เท่านั้น)
-  const isBuyer = order.buyerId === reviewerId;
-  const isSeller = order.sellerId === reviewerId;
-
-  if (!isBuyer && !isSeller) {
-    throw new AppError('คุณไม่มีสิทธิ์ส่งรีวิวสำหรับคำสั่งซื้อนี้', 403, 'FORBIDDEN');
-  }
-
-  // 4. ตรวจสอบว่าเคยส่งรีวิวสำหรับออเดอร์นี้แล้วหรือยัง (One-time write)
-  const existingReview = await db.review.findFirst({
-    where: {
-      orderId,
-      reviewerId,
-    },
-  });
-
-  if (existingReview) {
-    throw new AppError('คุณได้ส่งรีวิวสำหรับคำสั่งซื้อนี้ไปแล้ว', 400, 'ALREADY_REVIEWED');
-  }
-
-  // 5. ตรวจสอบคะแนนดาว (1-5)
-  const rating = Math.round(Number(input.rating));
-  if (isNaN(rating) || rating < 1 || rating > 5) {
-    throw new AppError('คะแนนรีวิวต้องเป็นจำนวนเต็มระหว่าง 1 ถึง 5 ดาว', 400, 'INVALID_RATING');
-  }
-
-  // 6. ตรวจสอบ is_condition_accurate สำหรับผู้ซื้อ
-  let isConditionAccurate: boolean | null = null;
-  let revieweeId: string;
-
-  if (isBuyer) {
-    revieweeId = order.sellerId;
-    if (typeof input.is_condition_accurate !== 'boolean') {
+    // 2. คำสั่งซื้อต้องอยู่ในสถานะ COMPLETED
+    if (order.status !== 'COMPLETED') {
       throw new AppError(
-        'กรุณาระบุว่าสภาพหนังสือตรงตามเกรดหรือไม่ (is_condition_accurate)',
+        `สามารถรีวิวได้เฉพาะคำสั่งซื้อที่เสร็จสิ้นสมบูรณ์ (COMPLETED) เท่านั้น (สถานะปัจจุบัน: ${order.status})`,
         400,
-        'CONDITION_ACCURACY_REQUIRED'
+        'INVALID_ORDER_STATUS'
       );
     }
-    isConditionAccurate = input.is_condition_accurate;
-  } else {
-    // ผู้ขายรีวิวผู้ซื้อ
-    revieweeId = order.buyerId;
-    isConditionAccurate = null;
-  }
 
-  // 7. บันทึกรีวิวลงฐานข้อมูล
-  const tags = Array.isArray(input.tags)
-    ? input.tags.map((t) => String(t).trim()).filter(Boolean)
-    : [];
+    // 3. ตรวจสอบสิทธิ์ผู้รีวิว (ต้องเป็น buyer หรือ seller เท่านั้น)
+    const isBuyer = order.buyerId === reviewerId;
+    const isSeller = order.sellerId === reviewerId;
 
-  const review = await db.review.create({
-    data: {
-      orderId,
-      reviewerId,
-      revieweeId,
-      rating,
-      isConditionAccurate,
-      tags,
-      comment: input.comment ? input.comment.trim() : null,
-    },
-  });
+    if (!isBuyer && !isSeller) {
+      throw new AppError('คุณไม่มีสิทธิ์ส่งรีวิวสำหรับคำสั่งซื้อนี้', 403, 'FORBIDDEN');
+    }
 
-  return review;
+    // 4. ตรวจสอบว่าเคยส่งรีวิวสำหรับออเดอร์นี้แล้วหรือยัง (One-time write)
+    const existingReview = await tx.review.findFirst({
+      where: {
+        orderId,
+        reviewerId,
+      },
+    });
+
+    if (existingReview) {
+      throw new AppError('คุณได้ส่งรีวิวสำหรับคำสั่งซื้อนี้ไปแล้ว', 400, 'ALREADY_REVIEWED');
+    }
+
+    // 5. ตรวจสอบคะแนนดาว (1-5)
+    const rating = Math.round(Number(input.rating));
+    if (isNaN(rating) || rating < 1 || rating > 5) {
+      throw new AppError('คะแนนรีวิวต้องเป็นจำนวนเต็มระหว่าง 1 ถึง 5 ดาว', 400, 'INVALID_RATING');
+    }
+
+    // 6. ตรวจสอบ is_condition_accurate สำหรับผู้ซื้อ
+    let isConditionAccurate: boolean | null = null;
+    let revieweeId: string;
+
+    if (isBuyer) {
+      revieweeId = order.sellerId;
+      if (typeof input.is_condition_accurate !== 'boolean') {
+        throw new AppError(
+          'กรุณาระบุว่าสภาพหนังสือตรงตามเกรดหรือไม่ (is_condition_accurate)',
+          400,
+          'CONDITION_ACCURACY_REQUIRED'
+        );
+      }
+      isConditionAccurate = input.is_condition_accurate;
+    } else {
+      // ผู้ขายรีวิวผู้ซื้อ
+      revieweeId = order.buyerId;
+      isConditionAccurate = null;
+    }
+
+    // 7. เซ็นเซอร์ข้อมูลติดต่อในคอมเมนต์และบันทึกรีวิวลงฐานข้อมูล
+    const tags = Array.isArray(input.tags)
+      ? input.tags.map((t) => String(t).trim()).filter(Boolean)
+      : [];
+    const maskedComment = input.comment
+      ? maskSensitiveData(input.comment.trim()).maskedText
+      : null;
+
+    try {
+      return await tx.review.create({
+        data: {
+          orderId,
+          reviewerId,
+          revieweeId,
+          rating,
+          isConditionAccurate,
+          tags,
+          comment: maskedComment,
+        },
+      });
+    } catch (err: any) {
+      if (err?.code === 'P2002') {
+        throw new AppError('คุณได้ส่งรีวิวสำหรับคำสั่งซื้อนี้ไปแล้ว', 400, 'ALREADY_REVIEWED');
+      }
+      throw err;
+    }
+  };
+
+  return typeof db.$transaction === 'function' ? db.$transaction(runInTx) : runInTx(db);
 }
 
 /**

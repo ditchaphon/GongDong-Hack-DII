@@ -208,6 +208,14 @@ orderRouter.get(
   }
 );
 
+orderRouter.param('id', (_req: Request, _res: Response, next: NextFunction, id: string) => {
+  if (!UUID_REGEX.test(String(id || ''))) {
+    next(new AppError('รหัสคำสั่งซื้อไม่ถูกต้อง', 400, 'INVALID_ORDER_ID'));
+    return;
+  }
+  next();
+});
+
 /**
  * GET /api/orders/:id
  * ดูรายละเอียดคำสั่งซื้อ (หน้าจอ B5 สำหรับผู้ซื้อ / S4 สำหรับผู้ขาย) พร้อม PDPA
@@ -242,6 +250,16 @@ orderRouter.get(
           received_photo_url: orderDetail.receivedPhotoUrl,
           received_at: orderDetail.receivedAt,
           cancel_reason: orderDetail.cancelReason,
+          missed_meeting_reported_at: orderDetail.missedMeetingReportedAt ?? null,
+          review: orderDetail.review
+            ? {
+                rating: orderDetail.review.rating,
+                is_condition_accurate: orderDetail.review.isConditionAccurate,
+                tags: orderDetail.review.tags,
+                comment: orderDetail.review.comment,
+                created_at: orderDetail.review.createdAt,
+              }
+            : null,
           dispute: orderDetail.dispute
             ? {
                 reason: orderDetail.dispute.reason,
@@ -283,6 +301,7 @@ orderRouter.get(
                 shipped_at: orderDetail.deliveryDetails.shippedAt,
               }
             : null,
+          payment_slip_url: orderDetail.paymentSlipUrl ?? null,
           created_at: orderDetail.createdAt,
           updated_at: orderDetail.updatedAt,
         },
@@ -470,10 +489,11 @@ orderRouter.post(
     try {
       const orderId = String(req.params.id);
       const buyerId = getUserIdFromRequest(req);
-      const { slip_image_url, trans_ref, amount, receiver_name } = req.body;
+      const { slip_image_url, storage_path, trans_ref, amount, receiver_name } = req.body;
 
       const result = await verifyOrderPaymentSlip(orderId, buyerId, {
         slipImageUrl: slip_image_url,
+        storagePath: storage_path,
         transRef: trans_ref,
         amount: amount ? Number(amount) : undefined,
         receiverName: receiver_name,
@@ -558,8 +578,12 @@ async function handleMissedMeeting(req: Request, res: Response, next: NextFuncti
   try {
     const orderId = String(req.params.id);
     const sellerId = getUserIdFromRequest(req);
+    const reason =
+      typeof req.body?.reason === 'string' && req.body.reason.trim().length > 0
+        ? req.body.reason.trim()
+        : undefined;
 
-    const result = await reportMissedMeeting(orderId, sellerId);
+    const result = await reportMissedMeeting(orderId, sellerId, reason);
 
     res.status(200).json({
       success: true,

@@ -1,10 +1,61 @@
+import crypto from 'crypto';
+import { env } from '../config/env';
 import { prisma as defaultPrisma } from '../config/prisma';
+import { maskSensitiveData } from './dataMaskingService';
 import {
   AppError,
   MeetupPointInput,
   SellerKycInput,
   UpsertShopInput,
 } from '../types';
+
+function normalizeWhitespace(raw: string | null | undefined): string {
+  return (raw ?? '').trim().replace(/\s+/g, ' ');
+}
+
+function isValidPersonName(raw: string): boolean {
+  const clean = normalizeWhitespace(raw);
+  if (clean.length < 2 || clean.length > 100) return false;
+  if (!/^[\u0E00-\u0E7FA-Za-z\s.'-]+$/.test(clean)) return false;
+  if (clean.replace(/[\s.'-]/g, '').length < 2) return false;
+  return !maskSensitiveData(clean).hasMaskedData;
+}
+
+function sanitizeAvatarUrl(raw: string | null | undefined): string | null {
+  const clean = raw?.trim() || '';
+  if (!clean) return null;
+  if (clean.length > 1000 || !/^(https?:\/\/|\/)/i.test(clean)) {
+    throw new AppError('ลิงก์รูปโปรไฟล์ร้านไม่ถูกต้อง', 400, 'INVALID_AVATAR_URL');
+  }
+  return clean;
+}
+
+function sanitizeScheduleValues(values: unknown, label: string): string[] {
+  if (values === undefined || values === null) return [];
+  if (!Array.isArray(values)) {
+    throw new AppError(`รูปแบบข้อมูล ${label} ไม่ถูกต้อง`, 400, 'INVALID_SCHEDULE_FORMAT');
+  }
+  const seen = new Set<string>();
+  const cleaned: string[] = [];
+  for (const item of values) {
+    if (typeof item !== 'string') continue;
+    const text = normalizeWhitespace(item);
+    if (!text) continue;
+    if (text.length > 50 || maskSensitiveData(text).hasMaskedData) {
+      throw new AppError(
+        `${label} ต้องยาวไม่เกิน 50 ตัวอักษรและห้ามมีข้อมูลติดต่อภายนอก`,
+        400,
+        'CONTACT_INFO_NOT_ALLOWED'
+      );
+    }
+    if (!seen.has(text)) {
+      seen.add(text);
+      cleaned.push(text);
+    }
+    if (cleaned.length >= 20) break;
+  }
+  return cleaned;
+}
 
 /**
  * ตรวจสอบความถูกต้องของเลขบัตรประชาชน 13 หลัก (Mod-11 Checksum)
@@ -28,6 +79,28 @@ export function isValidThaiNationalId(raw: string): boolean {
 export function maskThaiNationalId(raw: string): string {
   const digits = raw.replace(/\D/g, '');
   return `x-xxxx-xxxxx-${digits.slice(10, 12)}-${digits.slice(12, 13)}`;
+}
+
+/**
+ * สร้าง HMAC-SHA256 Hash ของเลขบัตรประชาชน 13 หลักเพื่อตรวจซ้ำข้ามบัญชีโดยไม่เก็บเลขบัตรดิบ
+ */
+export function hashThaiNationalId(raw: string): string {
+  const digits = raw.replace(/\D/g, '');
+  if (!isValidThaiNationalId(digits)) {
+    throw new AppError('เลขบัตรประชาชน 13 หลักไม่ถูกต้อง', 400, 'INVALID_NATIONAL_ID');
+  }
+
+  const configuredPepper = env.KYC_HASH_PEPPER?.trim();
+  if (!configuredPepper && env.NODE_ENV === 'production') {
+    throw new AppError(
+      'ระบบยังไม่ได้ตั้งค่าคีย์เข้ารหัสข้อมูลยืนยันตัวตน (Missing KYC_HASH_PEPPER)',
+      503,
+      'KYC_HASH_NOT_CONFIGURED'
+    );
+  }
+
+  const secret = configuredPepper || 'gongdong-dev-kyc-pepper';
+  return crypto.createHmac('sha256', secret).update(digits).digest('hex');
 }
 
 /**
@@ -100,41 +173,78 @@ export async function upsertMyShop(
 ) {
   const db = prismaClient || defaultPrisma;
 
-  if (!input.shopName || !input.shopName.trim()) {
+  const shopName = normalizeWhitespace(input.shopName);
+  if (!shopName) {
     throw new AppError('กรุณาระบุชื่อร้านค้า', 400, 'MISSING_SHOP_NAME');
   }
+  if (shopName.length < 2 || shopName.length > 120) {
+    throw new AppError('ชื่อร้านค้าต้องมี 2–120 ตัวอักษร', 400, 'INVALID_SHOP_NAME');
+  }
+  if (maskSensitiveData(shopName).hasMaskedData) {
+    throw new AppError(
+      'ชื่อร้านค้าห้ามมีเบอร์โทรศัพท์ ไลน์ไอดี เลขบัญชี หรือช่องทางติดต่อภายนอก',
+      400,
+      'CONTACT_INFO_NOT_ALLOWED'
+    );
+  }
+
+  const description = input.description?.trim() || null;
+  if (description) {
+    if (description.length > 1000) {
+      throw new AppError('คำอธิบายร้านต้องยาวไม่เกิน 1,000 ตัวอักษร', 400, 'INVALID_SHOP_DESCRIPTION');
+    }
+    if (maskSensitiveData(description).hasMaskedData) {
+      throw new AppError(
+        'คำอธิบายร้านห้ามมีเบอร์โทรศัพท์ ไลน์ไอดี เลขบัญชี หรือช่องทางติดต่อภายนอก',
+        400,
+        'CONTACT_INFO_NOT_ALLOWED'
+      );
+    }
+  }
+
+  const avatarUrl = sanitizeAvatarUrl(input.avatarUrl);
+  const province = normalizeWhitespace(input.province) || 'เชียงใหม่';
+  if (province.length > 100 || maskSensitiveData(province).hasMaskedData) {
+    throw new AppError('ชื่อจังหวัดไม่ถูกต้อง', 400, 'INVALID_PROVINCE');
+  }
+
+  const shipMode = input.shipMode ?? 'AFTER_ACCEPT';
+  if (shipMode !== 'DAILY' && shipMode !== 'AFTER_ACCEPT') {
+    throw new AppError('รูปแบบรอบจัดส่งไม่ถูกต้อง (DAILY หรือ AFTER_ACCEPT)', 400, 'INVALID_SHIP_MODE');
+  }
+
+  const rawShipDays = input.shipWithinDays !== undefined ? Number(input.shipWithinDays) : 2;
+  if (!Number.isInteger(rawShipDays) || rawShipDays < 1 || rawShipDays > 14) {
+    throw new AppError('จำนวนวันจัดส่งต้องเป็นจำนวนเต็มระหว่าง 1–14 วัน', 400, 'INVALID_SHIP_WITHIN_DAYS');
+  }
+
+  const availableDays = sanitizeScheduleValues(input.availableDays, 'วันที่สะดวกนัดรับ/ส่ง');
+  const availableSlots = sanitizeScheduleValues(input.availableSlots, 'ช่วงเวลาที่สะดวก');
 
   const user = await db.user.findUnique({ where: { id: userId } });
   if (!user) {
     throw new AppError('ไม่พบข้อมูลผู้ใช้ในระบบ', 404, 'USER_NOT_FOUND');
   }
 
+  const shopData = {
+    shopName,
+    description,
+    avatarUrl,
+    province,
+    availableDays,
+    availableSlots,
+    supportsParcel: Boolean(input.supportsParcel),
+    shipMode,
+    shipWithinDays: rawShipDays,
+    setupComplete: true,
+  };
+
   const shop = await db.shopProfile.upsert({
     where: { userId },
-    update: {
-      shopName: input.shopName.trim(),
-      description: input.description?.trim() ?? null,
-      avatarUrl: input.avatarUrl ?? null,
-      province: input.province || 'เชียงใหม่',
-      availableDays: input.availableDays ?? [],
-      availableSlots: input.availableSlots ?? [],
-      supportsParcel: Boolean(input.supportsParcel),
-      shipMode: input.shipMode || 'AFTER_ACCEPT',
-      shipWithinDays: input.shipWithinDays ?? 2,
-      setupComplete: true,
-    },
+    update: shopData,
     create: {
       userId,
-      shopName: input.shopName.trim(),
-      description: input.description?.trim() ?? null,
-      avatarUrl: input.avatarUrl ?? null,
-      province: input.province || 'เชียงใหม่',
-      availableDays: input.availableDays ?? [],
-      availableSlots: input.availableSlots ?? [],
-      supportsParcel: Boolean(input.supportsParcel),
-      shipMode: input.shipMode || 'AFTER_ACCEPT',
-      shipWithinDays: input.shipWithinDays ?? 2,
-      setupComplete: true,
+      ...shopData,
     },
     include: {
       meetupPoints: { orderBy: { createdAt: 'asc' } },
@@ -174,8 +284,34 @@ export async function addMeetupPoint(
 ) {
   const db = prismaClient || defaultPrisma;
 
-  if (!input.name || !input.province || input.lat === undefined || input.lng === undefined) {
+  const name = normalizeWhitespace(input.name);
+  const province = normalizeWhitespace(input.province);
+  const note = input.note?.trim() || null;
+
+  if (!name || !province || input.lat === undefined || input.lng === undefined) {
     throw new AppError('กรุณาระบุชื่อสถานที่ จังหวัด และพิกัดจุดนัดรับให้ครบถ้วน', 400, 'MISSING_REQUIRED_FIELDS');
+  }
+
+  const lat = Number(input.lat);
+  const lng = Number(input.lng);
+  if (!Number.isFinite(lat) || lat < -90 || lat > 90 || !Number.isFinite(lng) || lng < -180 || lng > 180) {
+    throw new AppError('พิกัดละติจูด/ลองจิจูดไม่ถูกต้อง', 400, 'INVALID_COORDINATES');
+  }
+
+  if (name.length > 120 || province.length > 100 || (note && note.length > 300)) {
+    throw new AppError('ชื่อจุดนัดรับ จังหวัด หรือหมายเหตุยาวเกินกำหนด', 400, 'INVALID_MEETUP_POINT');
+  }
+
+  if (
+    maskSensitiveData(name).hasMaskedData ||
+    maskSensitiveData(province).hasMaskedData ||
+    (note && maskSensitiveData(note).hasMaskedData)
+  ) {
+    throw new AppError(
+      'จุดนัดรับห้ามมีเบอร์โทรศัพท์ ไลน์ไอดี เลขบัญชี หรือช่องทางติดต่อภายนอก',
+      400,
+      'CONTACT_INFO_NOT_ALLOWED'
+    );
   }
 
   let shop = await db.shopProfile.findUnique({ where: { userId } });
@@ -184,23 +320,31 @@ export async function addMeetupPoint(
     if (!user) {
       throw new AppError('ไม่พบข้อมูลผู้ใช้ในระบบ', 404, 'USER_NOT_FOUND');
     }
-    shop = await db.shopProfile.create({
-      data: {
-        userId,
-        shopName: user.nickname || user.displayName,
-        province: input.province,
-      },
-    });
+    try {
+      shop = await db.shopProfile.create({
+        data: {
+          userId,
+          shopName: user.nickname || 'ร้านค้าใหม่',
+          province,
+        },
+      });
+    } catch (error: any) {
+      if (error?.code === 'P2002') {
+        shop = await db.shopProfile.findUnique({ where: { userId } });
+      } else {
+        throw error;
+      }
+    }
   }
 
   const point = await db.shopMeetupPoint.create({
     data: {
       shopProfileId: shop.id,
-      name: input.name.trim(),
-      province: input.province.trim(),
-      lat: input.lat,
-      lng: input.lng,
-      note: input.note?.trim() ?? null,
+      name,
+      province,
+      lat,
+      lng,
+      note,
     },
   });
 
@@ -252,11 +396,15 @@ export async function submitSellerKyc(
 ) {
   const db = prismaClient || defaultPrisma;
 
-  const firstName = input.firstName?.trim() ?? '';
-  const lastName = input.lastName?.trim() ?? '';
+  const firstName = normalizeWhitespace(input.firstName);
+  const lastName = normalizeWhitespace(input.lastName);
 
-  if (firstName.length < 2 || lastName.length < 2) {
-    throw new AppError('กรุณาระบุชื่อจริงและนามสกุลให้ครบถ้วน', 400, 'INVALID_NAME');
+  if (!isValidPersonName(firstName) || !isValidPersonName(lastName)) {
+    throw new AppError(
+      'กรุณาระบุชื่อจริงและนามสกุลให้ถูกต้อง (ตัวอักษรไทย/อังกฤษเท่านั้น ห้ามมีตัวเลขหรือช่องทางติดต่อ)',
+      400,
+      'INVALID_NAME'
+    );
   }
 
   if (!input.nationalId || !isValidThaiNationalId(input.nationalId)) {
@@ -264,19 +412,79 @@ export async function submitSellerKyc(
   }
 
   const maskedId = maskThaiNationalId(input.nationalId);
-  const now = new Date();
+  const nationalIdHash = hashThaiNationalId(input.nationalId);
 
-  const updated = await db.user.update({
-    where: { id: userId },
-    data: {
-      kycFirstName: firstName,
-      kycLastName: lastName,
-      kycNationalIdMasked: maskedId,
-      kycVerifiedAt: now,
-      verifiedName: `${firstName} ${lastName}`,
-      isVerifiedSeller: true,
-    },
-  });
+  if (typeof db.user?.findUnique === 'function') {
+    const hashOwner = await db.user.findUnique({
+      where: { kycNationalIdHash: nationalIdHash },
+      select: { id: true },
+    });
+    if (hashOwner && hashOwner.id !== userId) {
+      throw new AppError(
+        'เลขบัตรประชาชนนี้ถูกใช้ยืนยันตัวตนกับบัญชีอื่นแล้ว',
+        409,
+        'DUPLICATE_KYC_IDENTITY'
+      );
+    }
+  }
+
+  if (typeof db.user?.findMany === 'function') {
+    const candidates = await db.user.findMany({
+      where: {
+        id: { not: userId },
+        kycNationalIdMasked: maskedId,
+        kycVerifiedAt: { not: null },
+      },
+      select: {
+        id: true,
+        kycFirstName: true,
+        kycLastName: true,
+      },
+    });
+
+    const normalizedFirst = firstName.toLowerCase();
+    const normalizedLast = lastName.toLowerCase();
+    const hasDuplicateIdentity = (candidates || []).some(
+      (candidate: { kycFirstName?: string | null; kycLastName?: string | null }) =>
+        normalizeWhitespace(candidate.kycFirstName).toLowerCase() === normalizedFirst &&
+        normalizeWhitespace(candidate.kycLastName).toLowerCase() === normalizedLast
+    );
+
+    if (hasDuplicateIdentity) {
+      throw new AppError(
+        'ชื่อ-นามสกุลและเลขบัตรประชาชนนี้ถูกใช้ยืนยันตัวตนกับบัญชีอื่นแล้ว',
+        409,
+        'DUPLICATE_KYC_IDENTITY'
+      );
+    }
+  }
+
+  const now = new Date();
+  let updated: any;
+  try {
+    updated = await db.user.update({
+      where: { id: userId },
+      data: {
+        kycFirstName: firstName,
+        kycLastName: lastName,
+        kycNationalIdMasked: maskedId,
+        kycNationalIdHash: nationalIdHash,
+        kycVerifiedAt: now,
+        verifiedName: `${firstName} ${lastName}`,
+        isVerifiedSeller: true,
+        ...(input.pdpaConsent === true ? { pdpaConsentAt: now } : {}),
+      },
+    });
+  } catch (error: any) {
+    if (error?.code === 'P2002') {
+      throw new AppError(
+        'เลขบัตรประชาชนนี้ถูกใช้ยืนยันตัวตนกับบัญชีอื่นแล้ว',
+        409,
+        'DUPLICATE_KYC_IDENTITY'
+      );
+    }
+    throw error;
+  }
 
   return {
     is_verified_seller: updated.isVerifiedSeller,
@@ -342,17 +550,21 @@ export async function getPublicShop(idOrUserId: string, prismaClient?: any) {
   ]);
 
   const shop = user.shopProfile;
+  const totalReviews = reviewAgg._count?.id ?? 0;
 
   return {
     id: shop?.id ?? user.id,
     seller_id: user.id,
     shop_name: shop?.shopName || user.nickname || 'ร้านค้ากองดอง',
     description: shop?.description ?? null,
-    avatar_url: shop?.avatarUrl || user.avatarUrl || null,
+    avatar_url: shop?.avatarUrl || (!shop ? user.avatarUrl : null) || null,
     province: shop?.province || 'เชียงใหม่',
     payee_verified: user.isVerifiedSeller,
-    rating: reviewAgg._avg?.rating ? Math.round(reviewAgg._avg.rating * 10) / 10 : 5.0,
-    total_reviews: reviewAgg._count?.id ?? 0,
+    rating:
+      totalReviews > 0 && reviewAgg._avg?.rating
+        ? Math.round(reviewAgg._avg.rating * 10) / 10
+        : 0,
+    total_reviews: totalReviews,
     completed_sales: completedSales,
     member_since: user.createdAt,
     supports_parcel: shop?.supportsParcel ?? false,

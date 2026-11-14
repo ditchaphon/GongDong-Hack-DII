@@ -6,19 +6,23 @@ import { useRouter } from 'next/navigation';
 import { SearchBar, Chip, BookCard, BottomSheet, EmptyState } from '@/components/ui';
 import { BottomTab } from '@/components/layout/BottomTab';
 import { api } from '@/lib/api';
-import { BackendBookFeedItem, mapBackendBookToBook } from '@/lib/mappers';
+import { BackendBookFeedItem, BackendNotification, mapBackendBookToBook } from '@/lib/mappers';
 import { Book } from '@/types';
 import { Bell, MoreHorizontal, BookOpen, ChevronRight, Sparkles, ShoppingBag } from 'lucide-react';
 import { useCart } from '@/hooks/useCart';
+import { useLiff } from '@/hooks/useLiff';
 import { useV4Orders } from '@/hooks/useV4Orders';
 import { isTerminal } from '@/lib/orderStateMachine';
 
 export default function HomePage() {
   const router = useRouter();
+  const { isReady, isLoggedIn, idToken } = useLiff();
   const { items: cartItems } = useCart();
   const { orders, isMineAsBuyer } = useV4Orders();
   const [books, setBooks] = useState<Book[]>([]);
   const [recommendedBook, setRecommendedBook] = useState<Book | null>(null);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [homeSearch, setHomeSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeCategory, setActiveCategory] = useState<string>('all');
@@ -49,23 +53,49 @@ export default function HomePage() {
     loadFeed();
   }, []);
 
+  useEffect(() => {
+    if (!isReady || !isLoggedIn || !idToken) {
+      setUnreadCount(0);
+      return;
+    }
+    let active = true;
+    api
+      .get<{ items: BackendNotification[]; unreadCount: number }>(
+        '/api/notifications?limit=1',
+        { token: idToken }
+      )
+      .then((res) => {
+        if (active) setUnreadCount(res.unreadCount ?? 0);
+      })
+      .catch(() => {
+        if (active) setUnreadCount(0);
+      });
+    return () => {
+      active = false;
+    };
+  }, [isReady, isLoggedIn, idToken]);
+
   const categories = [
     { id: 'all', label: 'ทั้งหมด' },
-    { id: 'meetup', label: '🤝 นัดรับ มช. ฿0', isHighlight: true },
+    { id: 'meetup', label: '🤝 นัดรับ ฿0', isHighlight: true },
     { id: 'parcel', label: '📦 ส่งพัสดุ' },
-    { id: 'self-help', label: 'พัฒนาตนเอง' },
-    { id: 'manga', label: 'การ์ตูนยกชุด' },
+    { id: 'นิยาย', label: 'นิยาย' },
+    { id: 'วิชาการ', label: 'วิชาการ' },
+    { id: 'การ์ตูน', label: 'การ์ตูน' },
+    { id: 'หนังสือเรียน', label: 'หนังสือเรียน' },
   ];
 
   const filteredBooks = books.filter((b) => {
+    if (activeCategory === 'all') return true;
     if (activeCategory === 'meetup') return b.deliveryMethods.includes('MEETUP');
     if (activeCategory === 'parcel') return b.deliveryMethods.includes('PARCEL');
-    if (activeCategory === 'self-help') {
-      return (b.categories ?? []).some((c) => c.includes('พัฒนา'));
-    }
-    if (activeCategory === 'manga') return b.isSet;
-    return true;
+    return (b.categories ?? []).includes(activeCategory);
   });
+
+  const handleHomeSearch = (rawQuery: string) => {
+    const trimmed = rawQuery.trim();
+    router.push(trimmed ? `/search?q=${encodeURIComponent(trimmed)}` : '/search');
+  };
 
   const spotlightBook = filteredBooks[0] ?? recommendedBook ?? books[0] ?? null;
   const activeCategoryLabel =
@@ -99,7 +129,11 @@ export default function HomePage() {
             className="p-2 text-slate-500 hover:text-slate-800 rounded-full hover:bg-slate-100 transition relative"
           >
             <Bell className="w-5 h-5" />
-            <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-rose-500 ring-2 ring-white" />
+            {unreadCount > 0 && (
+              <span className="absolute top-1 right-1 min-w-4 h-4 px-1 rounded-full bg-rose-500 text-white text-[10px] font-bold flex items-center justify-center ring-2 ring-white">
+                {unreadCount > 9 ? '9+' : unreadCount}
+              </span>
+            )}
           </Link>
 
           <Link
@@ -126,18 +160,24 @@ export default function HomePage() {
         </div>
       </header>
 
-      {/* Search Bar Hotspot (Clicks to /search) */}
+      {/* Search Bar */}
       <div className="p-4 bg-white border-b border-slate-100">
-        <div
-          role="button"
-          tabIndex={0}
-          onClick={() => router.push('/search')}
-          className="cursor-pointer"
-        >
-          <SearchBar
-            placeholder="🔍 ค้นชื่อหนังสือ ผู้แต่ง หรือ ISBN..."
-            disabled
-          />
+        <div className="flex items-center gap-2">
+          <div className="flex-1">
+            <SearchBar
+              value={homeSearch}
+              onChange={setHomeSearch}
+              onSearch={handleHomeSearch}
+              placeholder="ค้นชื่อหนังสือ ผู้แต่ง หรือ ISBN..."
+            />
+          </div>
+          <button
+            type="button"
+            onClick={() => handleHomeSearch(homeSearch)}
+            className="shrink-0 min-h-[44px] px-3.5 rounded-2xl bg-[#8B5E3C] text-white text-xs font-bold hover:bg-[#764e31] transition"
+          >
+            ค้นหา
+          </button>
         </div>
 
         {/* Filter Categories */}

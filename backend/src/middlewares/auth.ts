@@ -70,6 +70,46 @@ async function findUserByMockIdentifier(identifier: string) {
   return prisma.user.findUnique({ where: { lineUserId: `line_${identifier}` } });
 }
 
+async function findOrCreateFirstLoginUser(data: {
+  lineUserId: string;
+  displayName: string;
+  pictureUrl?: string | null;
+}) {
+  try {
+    return await prisma.$transaction(async (tx: any) => {
+      const createdUser = await tx.user.create({
+        data: {
+          lineUserId: data.lineUserId,
+          displayName: data.displayName,
+          ...(data.pictureUrl !== undefined ? { pictureUrl: data.pictureUrl } : {}),
+          credits: 1,
+          isVerifiedSeller: false,
+        },
+      });
+
+      await tx.creditTransaction.create({
+        data: {
+          userId: createdUser.id,
+          amount: 1,
+          balanceAfter: 1,
+          type: 'SIGNUP_BONUS',
+          note: 'เครดิตฟรีสำหรับผู้ใช้ใหม่',
+        },
+      });
+
+      return createdUser;
+    });
+  } catch (err: any) {
+    if (err?.code === 'P2002') {
+      const existing = await prisma.user.findUnique({
+        where: { lineUserId: data.lineUserId },
+      });
+      if (existing) return existing;
+    }
+    throw err;
+  }
+}
+
 export interface AuthMiddlewareOptions {
   tokenVerifier?: (token: string) => Promise<LineTokenPayload>;
 }
@@ -118,26 +158,10 @@ export function createAuthMiddleware(options: AuthMiddlewareOptions = {}) {
           return next();
         }
 
-        // กรณีเป็น mock token ใหม่ที่ต้องการ auto-create ในการทดสอบ
-        const newUser = await prisma.$transaction(async (tx: any) => {
-          const created = await tx.user.create({
-            data: {
-              lineUserId: `line_${mockTargetId}`,
-              displayName: `Mock User (${mockTargetId})`,
-              credits: 1,
-              isVerifiedSeller: false,
-            },
-          });
-
-          await tx.creditTransaction.create({
-            data: {
-              userId: created.id,
-              amount: 1,
-              type: 'SIGNUP_BONUS',
-            },
-          });
-
-          return created;
+        // กรณีเป็น mock token ใหม่ที่ต้องการ auto-create ในการทดสอบ (รองรับ Concurrent P2002)
+        const newUser = await findOrCreateFirstLoginUser({
+          lineUserId: `line_${mockTargetId}`,
+          displayName: `Mock User (${mockTargetId})`,
         });
 
         req.user = newUser;
@@ -156,28 +180,12 @@ export function createAuthMiddleware(options: AuthMiddlewareOptions = {}) {
         where: { lineUserId },
       });
 
-      // 4. หากเป็นผู้ใช้ใหม่ (First Login) ➔ Auto-create พร้อมแจก 1 เครดิตฟรี
+      // 4. หากเป็นผู้ใช้ใหม่ (First Login) ➔ Auto-create พร้อมแจก 1 เครดิตฟรี (รองรับ Concurrent P2002)
       if (!user) {
-        user = await prisma.$transaction(async (tx: any) => {
-          const createdUser = await tx.user.create({
-            data: {
-              lineUserId,
-              displayName: payload.name || 'LINE User',
-              pictureUrl: payload.picture || null,
-              credits: 1,
-              isVerifiedSeller: false,
-            },
-          });
-
-          await tx.creditTransaction.create({
-            data: {
-              userId: createdUser.id,
-              amount: 1,
-              type: 'SIGNUP_BONUS',
-            },
-          });
-
-          return createdUser;
+        user = await findOrCreateFirstLoginUser({
+          lineUserId,
+          displayName: payload.name || 'LINE User',
+          pictureUrl: payload.picture || null,
         });
       }
 

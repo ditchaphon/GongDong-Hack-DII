@@ -22,6 +22,7 @@ export default function NoShowPage({
     loading,
     reportMissedMeeting,
     disputeMissedMeeting,
+    isMineAsBuyer,
   } = useV4Orders();
 
   const order = getOrder(resolvedParams.id);
@@ -37,10 +38,12 @@ export default function NoShowPage({
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [devBypass, setDevBypass] = useState(false);
 
+  const enableDemoControls = process.env.NEXT_PUBLIC_ENABLE_DEMO_CONTROLS === 'true';
+
   useEffect(() => {
-    const search = new URLSearchParams(window.location.search);
-    setRole(search.get('role') === 'buyer' ? 'BUYER' : 'SELLER');
-  }, []);
+    if (!order) return;
+    setRole(isMineAsBuyer(order) ? 'BUYER' : 'SELLER');
+  }, [order, isMineAsBuyer]);
 
   if (!order) {
     return (
@@ -53,7 +56,8 @@ export default function NoShowPage({
     );
   }
 
-  const alreadyDisputed = order.status === 'DISPUTED';
+  const alreadyDisputed =
+    order.status === 'DISPUTED' || !!order.missedMeetingReportedAtISO;
 
   // ตรวจสอบเงื่อนไขว่าเลยเวลานัดหมายมาแล้วอย่างน้อย 15 นาทีหรือไม่
   const checkCanReport = () => {
@@ -158,15 +162,17 @@ export default function NoShowPage({
                   <p className="leading-relaxed">
                     ระบบล็อกปุ่มแจ้งไม่มาตามนัดไว้จนกว่าจะเลยเวลานัด 15 นาที (จะสามารถกดแจ้งได้เวลา <strong>{reportTimeStr}</strong> เป็นต้นไป)
                   </p>
-                  <div className="pt-1 border-t border-slate-200">
-                    <button
-                      type="button"
-                      onClick={() => setDevBypass(true)}
-                      className="text-[10px] text-indigo-600 font-semibold hover:underline"
-                    >
-                      ⚡ ข้ามเวลา 15 นาทีทันที (สำหรับทดสอบในโหมดเดโม)
-                    </button>
-                  </div>
+                  {enableDemoControls && (
+                    <div className="pt-1 border-t border-slate-200">
+                      <button
+                        type="button"
+                        onClick={() => setDevBypass(true)}
+                        className="text-[10px] text-indigo-600 font-semibold hover:underline"
+                      >
+                        ⚡ ข้ามเวลา 15 นาทีทันที (สำหรับทดสอบในโหมดเดโม)
+                      </button>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="flex items-start gap-2 p-3 rounded-xl bg-amber-50 border border-amber-200 text-[11px] text-amber-900 leading-relaxed">
@@ -188,10 +194,10 @@ export default function NoShowPage({
               <Button
                 fullWidth
                 size="lg"
-                disabled={!canReport}
+                disabled={!canReport || submitting}
                 onClick={() => setConfirmOpen(true)}
               >
-                แจ้งผู้ซื้อไม่มาตามนัด
+                {submitting ? 'กำลังส่งรายงาน...' : 'แจ้งผู้ซื้อไม่มาตามนัด'}
               </Button>
             </>
           )
@@ -217,8 +223,8 @@ export default function NoShowPage({
                   placeholder="อธิบายสถานการณ์ เช่น ไปถึงจุดนัดแล้วแต่หาไม่เจอ หรือติดธุระด่วน"
                   className="w-full text-xs p-3 rounded-xl border border-slate-200 focus:outline-none focus:border-[var(--color-primary)]"
                 />
-                <Button fullWidth onClick={handleRebuttal}>
-                  ส่งคำชี้แจงให้แอดมิน
+                <Button fullWidth onClick={handleRebuttal} disabled={submitting}>
+                  {submitting ? 'กำลังส่งคำชี้แจง...' : 'ส่งคำชี้แจงให้แอดมิน'}
                 </Button>
               </div>
             )}

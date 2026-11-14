@@ -451,5 +451,62 @@ describe('OrderService - State Machine & Core Transactions', () => {
         verifyHandoverCode(mockOrderId, mockSellerId, '482910', mockPrisma)
       ).rejects.toThrow('ออเดอร์ต้องอยู่ในสถานะ SCHEDULED เท่านั้นเพื่อตรวจรหัสส่งมอบ');
     });
+
+    it('Concurrency Guard: reject 409 ORDER_STATUS_CONFLICT หาก cancelOrder ชนพร้อมกันเพื่อไม่คืนเครดิตซ้ำ', async () => {
+      const { cancelOrder } = await import('../orderService');
+      const raceTx = {
+        order: {
+          findUnique: vi.fn().mockResolvedValue({
+            id: 'ord_race_1',
+            buyerId: 'buyer-1',
+            sellerId: 'seller-1',
+            status: 'ACCEPTED',
+            orderItems: [{ bookListingId: 'b1' }],
+          }),
+          updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+          update: vi.fn(),
+        },
+        user: { update: vi.fn() },
+        bookListing: { updateMany: vi.fn() },
+      };
+
+      await expect(
+        cancelOrder('ord_race_1', 'buyer-1', 'ซ้ำ', {
+          $transaction: vi.fn(async (cb: any) => cb(raceTx)),
+        })
+      ).rejects.toMatchObject({
+        statusCode: 409,
+        code: 'ORDER_STATUS_CONFLICT',
+      });
+      expect(raceTx.user.update).not.toHaveBeenCalled();
+    });
+
+    it('Concurrency Guard: acceptOrder ปฏิเสธ INSUFFICIENT_CREDITS เมื่อ user.updateMany เงื่อนไข credits >= 1 ไม่ผ่าน', async () => {
+      const raceTx = {
+        order: {
+          findUnique: vi.fn().mockResolvedValue({
+            id: 'ord_cred_race',
+            sellerId: 'usr_seller_123',
+            buyerId: 'usr_buyer_999',
+            status: 'REQUESTED',
+            shippingMethod: 'PICKUP',
+            seller: { id: 'usr_seller_123', isVerifiedSeller: true, credits: 1 },
+            orderItems: [{ bookListingId: 'b1', bookListing: { id: 'b1', status: 'AVAILABLE' } }],
+          }),
+        },
+        user: {
+          updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+        },
+      };
+
+      await expect(
+        acceptOrder('ord_cred_race', 'usr_seller_123', {
+          $transaction: vi.fn(async (cb: any) => cb(raceTx)),
+        })
+      ).rejects.toMatchObject({
+        statusCode: 400,
+        code: 'INSUFFICIENT_CREDITS',
+      });
+    });
   });
 });

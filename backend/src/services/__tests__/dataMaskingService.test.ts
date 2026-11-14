@@ -96,6 +96,21 @@ describe('DataMaskingService - Chat & Note Contact Masking', () => {
     });
   });
 
+  it('maskSensitiveData: เซ็นเซอร์อีเมล โซเชียลมีเดีย และคีย์เวิร์ดนัดคุย/โอนนอกแอป', () => {
+    const emailRes = maskSensitiveData('ส่งเมลมาที่ buyer.test@example.com ได้เลย');
+    expect(emailRes.hasMaskedData).toBe(true);
+    expect(emailRes.detectedTypes).toContain('EMAIL');
+    expect(emailRes.maskedText).not.toContain('buyer.test@example.com');
+
+    const socialRes = maskSensitiveData('ทัก ig: @my_bookshop หรือ fb.com/bookshop');
+    expect(socialRes.hasMaskedData).toBe(true);
+    expect(socialRes.detectedTypes).toContain('SOCIAL');
+
+    const offAppRes = maskSensitiveData('ขอทักแชทส่วนตัวและโอนตรงนะครับ');
+    expect(offAppRes.hasMaskedData).toBe(true);
+    expect(offAppRes.detectedTypes).toContain('OFF_APP');
+  });
+
   it('maskAccountHolderName: เซ็นเซอร์ชื่อบัญชีผู้รับตามหลัก PDPA โดยคงตัวอักษรนำหน้าไว้เตือน Human Firewall', () => {
     expect(maskAccountHolderName('สมชาย ใจดี')).toBe('สม••• ใจ•••');
     expect(maskAccountHolderName('ป้า')).toBe('ป้•••');

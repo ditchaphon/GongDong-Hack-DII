@@ -1,4 +1,4 @@
-import { BookCatalogData } from '../types';
+import { AppError, BookCatalogData } from '../types';
 import { prisma as defaultPrisma } from '../config/prisma';
 
 export interface GoogleBooksVolumeInfo {
@@ -37,7 +37,11 @@ export interface GoogleBooksServiceOptions {
 export function sanitizeIsbn(rawIsbn: string): string {
   const clean = rawIsbn.replace(/[-\s]/g, '').trim().toUpperCase();
   if (!/^(?:\d{9}[\dX]|\d{13})$/.test(clean)) {
-    throw new Error(`รหัส ISBN ไม่ถูกต้อง: "${rawIsbn}" (ต้องเป็นตัวเลข 10 หรือ 13 หลัก)`);
+    throw new AppError(
+      `รหัส ISBN ไม่ถูกต้อง: "${rawIsbn}" (ต้องเป็นตัวเลข 10 หรือ 13 หลัก)`,
+      400,
+      'INVALID_ISBN'
+    );
   }
   return clean;
 }

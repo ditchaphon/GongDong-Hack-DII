@@ -24,8 +24,8 @@ export default function AddressesPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await api.get<{ addresses: BackendAddress[] }>('/api/users/me/addresses');
-      setAddresses((res.addresses ?? []).map(mapBackendAddressToAddress));
+      const res = await api.get<BackendAddress[]>('/api/users/me/addresses');
+      setAddresses((Array.isArray(res) ? res : []).map(mapBackendAddressToAddress));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'โหลดที่อยู่ไม่สำเร็จ');
     } finally {
@@ -54,7 +54,7 @@ export default function AddressesPage() {
 
   const handleSetDefault = async (id: string) => {
     try {
-      await api.patch(`/api/users/me/addresses/${id}`, { is_default: true });
+      await api.patch(`/api/users/me/addresses/${id}`, { isDefault: true });
       setAddresses((prev) => prev.map((a) => ({ ...a, isDefault: a.id === id })));
       setToastMessage('ตั้งเป็นที่อยู่เริ่มต้นแล้ว ✓');
       await refreshAddresses();
@@ -163,9 +163,10 @@ export default function AddressesPage() {
             fullWidth
             size="lg"
             leftIcon={<Plus className="w-4 h-4" />}
+            disabled={addresses.length >= 5}
             onClick={() => router.push('/addresses/edit')}
           >
-            เพิ่มที่อยู่จัดส่งใหม่
+            {addresses.length >= 5 ? 'ครบโควต้า 5 ที่อยู่แล้ว' : 'เพิ่มที่อยู่จัดส่งใหม่'}
           </Button>
         </div>
       </div>

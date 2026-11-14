@@ -20,31 +20,7 @@ import { getUserIdFromRequest } from '../utils/requestUser';
 
 export const userRouter = Router();
 
-/**
- * GET /api/users/:id/reviews
- * ดูคะแนนและรีวิวของผู้ขาย (Public endpoint สำหรับผู้ซื้อดู Trust Score ก่อนตัดสินใจซื้อ)
- */
-userRouter.get(
-  '/:id/reviews',
-  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-    try {
-      const userId = String(req.params.id);
-      const limit = req.query.limit ? parseInt(String(req.query.limit), 10) : 10;
-      const offset = req.query.offset ? parseInt(String(req.query.offset), 10) : 0;
-
-      const result = await getUserReviews(userId, { limit, offset });
-
-      res.status(200).json({
-        success: true,
-        data: result,
-      });
-    } catch (error) {
-      next(error);
-    }
-  }
-);
-
-// ใช้งาน Auth Middleware สำหรับทุก Route ภายใต้ /me
+// ใช้งาน Auth Middleware สำหรับทุก Route ภายใต้ /me (ต้องประกาศก่อน /:id/reviews เพื่อไม่ให้ /me/reviews ทะลุ Auth)
 userRouter.use('/me', authMiddleware);
 
 /**
@@ -278,6 +254,31 @@ userRouter.delete(
       const id = String(req.params.id);
       const result = await deleteUserAddress(userId, id);
       res.status(200).json({ success: true, ...result });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * GET /api/users/:id/reviews
+ * ดูคะแนนและรีวิวของผู้ขาย (Public endpoint สำหรับผู้ซื้อดู Trust Score ก่อนตัดสินใจซื้อ; /me/reviews ผ่าน authMiddleware ด้านบนแล้ว)
+ */
+userRouter.get(
+  '/:id/reviews',
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const rawId = String(req.params.id);
+      const userId = rawId === 'me' ? getUserIdFromRequest(req) : rawId;
+      const limit = req.query.limit ? parseInt(String(req.query.limit), 10) : 10;
+      const offset = req.query.offset ? parseInt(String(req.query.offset), 10) : 0;
+
+      const result = await getUserReviews(userId, { limit, offset });
+
+      res.status(200).json({
+        success: true,
+        data: result,
+      });
     } catch (error) {
       next(error);
     }

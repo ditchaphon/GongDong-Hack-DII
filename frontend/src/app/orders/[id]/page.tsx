@@ -10,6 +10,8 @@ import {
   ChatRoom,
   ConfirmSheet,
   OrderSteps,
+  HandoverCode,
+  CodeInput,
 } from '@/components/v4';
 import { useV4Orders } from '@/hooks/useV4Orders';
 import { useSeller } from '@/hooks/useSeller';
@@ -72,7 +74,7 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
     acceptOrder,
     rejectOrder,
     cancelOrder,
-    complete,
+    verifyHandover,
     openDispute,
     isMineAsBuyer,
   } = useV4Orders();
@@ -102,6 +104,9 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
   const [rejectOpen, setRejectOpen] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [disputeOpen, setDisputeOpen] = useState(false);
+  const [handoverCodeInput, setHandoverCodeInput] = useState('');
+  const [verifyingHandover, setVerifyingHandover] = useState(false);
+  const [handoverError, setHandoverError] = useState<string | null>(null);
 
   if (!order) {
     return (
@@ -123,10 +128,10 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
   const headline = (() => {
     const s = order.status;
     if (s === 'REQUESTED') return isBuyer ? 'รอผู้ขายตอบรับคำขอ' : 'มีคำขอซื้อใหม่ · ตอบรับเพื่อเริ่มขาย';
-    if (s === 'SCHEDULED') return isBuyer ? 'นัดรับแล้ว · จ่ายเงินสดหน้างาน' : 'นัดรับแล้ว · เก็บเงินสดและยืนยันส่งมอบ';
+    if (s === 'SCHEDULED') return isBuyer ? 'นัดรับแล้ว · จ่ายเงินสดหน้างานและแสดงรหัส 6 หลัก' : 'นัดรับแล้ว · เก็บเงินสดและกรอกรหัส 6 หลัก';
     if (s === 'ACCEPTED') return isBuyer ? 'ผู้ขายรับคำขอแล้ว · รอยืนยันการส่ง' : 'ยืนยันการส่งหนังสือ';
-    if (s === 'PAID') return isBuyer ? 'รอรับของ · จ่ายเงินปลายทาง' : 'ส่งแล้ว · รอเก็บเงินปลายทาง';
-    if (s === 'SHIPPED') return isBuyer ? 'รอรับของ · จ่ายเงินปลายทาง' : 'ส่งแล้ว · รอเก็บเงินปลายทาง';
+    if (s === 'PAID') return isBuyer ? 'ชำระเงินแล้ว · รอผู้ขายจัดส่งพัสดุ' : 'ผู้ซื้อชำระเงินแล้ว · รอผู้ขายจัดส่ง';
+    if (s === 'SHIPPED') return isBuyer ? 'ผู้ขายจัดส่งแล้ว · รอรับของ' : 'จัดส่งแล้ว · รอผู้ซื้อยืนยันรับของ';
     if (s === 'COMPLETED') return isBuyer ? 'ได้รับหนังสือแล้ว' : 'ปิดการขายสำเร็จ';
     return meta.label;
   })();
@@ -137,9 +142,21 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
     setToast(result.ok ? 'รับออเดอร์แล้ว · ใช้ 1 เครดิต แชทเปิดแล้ว' : result.error || 'รับออเดอร์ไม่สำเร็จ');
   };
 
-  const handleComplete = async () => {
-    const result = await complete(order.id);
-    setToast(result.ok ? 'ยืนยันส่งมอบแล้ว · ปิดการขายสำเร็จ' : result.error || 'ยืนยันไม่สำเร็จ');
+  const handleVerifyHandover = async () => {
+    if (handoverCodeInput.trim().length !== 6) {
+      setHandoverError('กรุณากรอกรหัสส่งมอบ 6 หลักให้ครบถ้วน');
+      return;
+    }
+    setHandoverError(null);
+    setVerifyingHandover(true);
+    const result = await verifyHandover(order.id, handoverCodeInput.trim());
+    setVerifyingHandover(false);
+    if (!result.ok) {
+      setHandoverError(result.error || 'รหัสส่งมอบ 6 หลักไม่ถูกต้อง');
+      return;
+    }
+    setHandoverCodeInput('');
+    setToast('ยืนยันรหัสส่งมอบสำเร็จ · ปิดการขายเรียบร้อยแล้ว');
   };
 
   const copy = async (text: string) => {
@@ -266,10 +283,10 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 
         {isBuyer && order.status === 'SCHEDULED' && (
           <>
+            {order.handoverCode && <HandoverCode code={order.handoverCode} />}
             <Panel icon={<Package className="w-4 h-4 text-emerald-700" />} title="จ่ายเงินสดเมื่อรับหนังสือ">
               <p className="text-[11px] text-slate-500 leading-relaxed">
-                ตรวจหนังสือให้ตรงเกรด แล้วจ่ายเงินสดให้ผู้ขายหน้างาน
-                · ระบบไม่มี QR หรือสลิปในออเดอร์นี้
+                ตรวจหนังสือให้ตรงเกรด แล้วจ่ายเงินสดให้ผู้ขายหน้างาน จากนั้นแสดงรหัส 6 หลักด้านบนให้ผู้ขายกรอกเพื่อปิดออเดอร์
               </p>
               <p className="text-xs font-bold text-slate-800">
                 ยอดที่ต้องจ่าย ฿{order.total.toLocaleString()}
@@ -277,6 +294,9 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
             </Panel>
             <Panel icon={<MapPin className="w-4 h-4 text-teal-600" />} title="รายละเอียดการนัดรับ">
               {meetupCard}
+              <Button variant="outline" fullWidth onClick={() => router.push(`/orders/${order.id}/schedule`)}>
+                ปรับเปลี่ยน / ยืนยันเวลานัดรับ
+              </Button>
             </Panel>
           </>
         )}
@@ -287,7 +307,7 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
               ผู้ขายรับออเดอร์แล้ว · ยืนยันหรือปรับเปลี่ยนวันเวลาและจุดนัดรับ เพื่อให้ระบบสร้างรหัสยืนยันส่งมอบ
             </p>
             {meetupCard}
-            <Button fullWidth onClick={() => router.push(`/orders/${order.id}/schedule?role=buyer`)}>
+            <Button fullWidth onClick={() => router.push(`/orders/${order.id}/schedule`)}>
               จัดการเวลานัดรับ / ยืนยันนัดหมาย
             </Button>
           </Panel>
@@ -302,7 +322,15 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
           </Panel>
         )}
 
-        {isBuyer && (order.status === 'PAID' || order.status === 'SHIPPED') && (
+        {isBuyer && order.status === 'PAID' && (
+          <Panel icon={<Hourglass className="w-4 h-4 text-sky-600" />} title="ชำระเงินแล้ว · รอผู้ขายจัดส่ง">
+            <p className="text-[11px] text-slate-500 leading-relaxed">
+              ตรวจสอบการชำระเงินเรียบร้อยแล้ว · รอผู้ขายแพ็กหนังสือและแจ้งเลขติดตามพัสดุ
+            </p>
+          </Panel>
+        )}
+
+        {isBuyer && order.status === 'SHIPPED' && (
           <Panel icon={<Truck className="w-4 h-4 text-violet-600" />} title="รอรับของ · จ่ายเงินปลายทาง">
             {trackingCard}
             <Button fullWidth leftIcon={<Camera className="w-4 h-4" />} onClick={() => router.push(`/orders/${order.id}/receive`)}>
@@ -311,6 +339,19 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
             <p className="text-[10px] text-slate-400 text-center">
               จ่ายเงินสดให้ผู้ขาย/ขนส่งเมื่อรับของ แล้วถ่ายรูปและให้คะแนน
             </p>
+          </Panel>
+        )}
+
+        {order.status === 'DISPUTED' && (
+          <Panel icon={<AlertTriangle className="w-4 h-4 text-rose-600" />} title="อยู่ระหว่างตรวจสอบข้อพิพาท">
+            <p className="text-[11px] text-slate-700 leading-relaxed whitespace-pre-line">
+              {order.dispute?.reason || 'อยู่ระหว่างการตรวจสอบจากทีมงานแอดมิน · เวลาทั้งหมดของออเดอร์ถูกหยุดชั่วคราว'}
+            </p>
+            {isBuyer && (order.missedMeetingReportedAtISO || order.delivery === 'MEETUP') && (
+              <Button fullWidth onClick={() => router.push(`/orders/${order.id}/no-show`)}>
+                ชี้แจง / โต้แย้งรายงานไม่มาตามนัด
+              </Button>
+            )}
           </Panel>
         )}
 
@@ -362,24 +403,33 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 
         {!isBuyer && order.status === 'SCHEDULED' && (
           <>
-            <Panel icon={<Package className="w-4 h-4 text-teal-700" />} title="เก็บเงินสดและยืนยันส่งมอบ">
+            <Panel icon={<Package className="w-4 h-4 text-teal-700" />} title="เก็บเงินสดและกรอกรหัสส่งมอบ 6 หลัก">
               <p className="text-[11px] text-slate-500 leading-relaxed">
-                ให้ผู้ซื้อตรวจหนังสือและจ่ายเงินสดก่อน แล้วกดยืนยันเพื่อปิดการขาย
-                · ระบบไม่มีการโอนเงินออนไลน์
+                ให้ผู้ซื้อตรวจหนังสือและจ่ายเงินสดหน้างาน จากนั้นขอรหัส 6 หลักจากหน้าจอผู้ซื้อมากรอกเพื่อปิดการขาย
               </p>
-              <Button fullWidth onClick={handleComplete}>
-                ยืนยันส่งมอบแล้ว
-              </Button>
+              <CodeInput
+                value={handoverCodeInput}
+                onChange={(next) => {
+                  setHandoverCodeInput(next);
+                  setHandoverError(null);
+                }}
+                onSubmit={handleVerifyHandover}
+                isLoading={verifyingHandover}
+                error={handoverError || undefined}
+              />
               <button
                 type="button"
-                onClick={() => router.push(`/orders/${order.id}/no-show?role=seller`)}
-                className="w-full text-[11px] font-semibold text-amber-700 hover:underline"
+                onClick={() => router.push(`/orders/${order.id}/no-show`)}
+                className="w-full text-[11px] font-semibold text-amber-700 hover:underline pt-1"
               >
                 ผู้ซื้อไม่มาตามนัด?
               </button>
             </Panel>
             <Panel icon={<MapPin className="w-4 h-4 text-teal-600" />} title="รายละเอียดการนัดรับ">
               {meetupCard}
+              <Button variant="outline" fullWidth onClick={() => router.push(`/orders/${order.id}/schedule`)}>
+                ปรับเปลี่ยนเวลานัดรับ
+              </Button>
             </Panel>
           </>
         )}
@@ -390,29 +440,31 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
               ออเดอร์นี้เป็นแบบนัดรับ · กดยืนยันหรือเสนอเวลานัดหมายใหม่กับผู้ซื้อก่อนเจอกัน (จ่ายเงินสดหน้างาน)
             </p>
             {meetupCard}
-            <Button fullWidth onClick={() => router.push(`/orders/${order.id}/schedule?role=seller`)}>
+            <Button fullWidth onClick={() => router.push(`/orders/${order.id}/schedule`)}>
               กำหนด / ยืนยันนัดหมาย
             </Button>
           </Panel>
         )}
 
-        {!isBuyer && order.status === 'ACCEPTED' && order.delivery === 'PARCEL' && (
+        {!isBuyer && (order.status === 'ACCEPTED' || order.status === 'PAID') && order.delivery === 'PARCEL' && (
           <Panel icon={<Truck className="w-4 h-4 text-sky-600" />} title="ยืนยันการส่ง">
             <p className="text-[11px] text-slate-500 leading-relaxed">
-              เตรียมหนังสือและจัดส่ง · ผู้ซื้อจ่ายเงินสดตอนรับพัสดุ
+              {order.status === 'PAID'
+                ? 'ผู้ซื้อชำระเงินเรียบร้อยแล้ว · กรุณาจัดส่งพัสดุและกรอกเลขติดตามพัสดุ'
+                : 'เตรียมหนังสือและจัดส่ง · ผู้ซื้อจ่ายเงินสดตอนรับพัสดุ'}
             </p>
             <AddressBlock order={order} />
-            <Button fullWidth onClick={() => router.push(`/orders/${order.id}/tracking?role=seller`)}>
+            <Button fullWidth onClick={() => router.push(`/orders/${order.id}/tracking`)}>
               ยืนยันการส่งและใส่เลขพัสดุ
             </Button>
           </Panel>
         )}
 
-        {!isBuyer && (order.status === 'PAID' || order.status === 'SHIPPED') && (
-          <Panel icon={<Package className="w-4 h-4 text-violet-600" />} title="รอเก็บเงินปลายทาง">
+        {!isBuyer && order.status === 'SHIPPED' && (
+          <Panel icon={<Package className="w-4 h-4 text-violet-600" />} title="ส่งแล้ว · รอผู้ซื้อรับของ">
             {trackingCard}
             <p className="text-[11px] text-slate-500 leading-relaxed">
-              ส่งแล้ว · รอผู้ซื้อรับของและจ่ายเงินสด · ระบบไม่พักเงิน
+              จัดส่งพัสดุแล้ว · รอผู้ซื้อได้รับหนังสือและกดยืนยันรับของ
             </p>
           </Panel>
         )}

@@ -45,7 +45,7 @@ export const EMPTY_DRAFT: ListingDraft = {
   checklist: EMPTY_CHECKLIST,
   defects: [],
   price: 0,
-  deliveryMethods: ['MEETUP', 'PARCEL'],
+  deliveryMethods: ['MEETUP'],
   parcelShippingFee: 40,
   codEnabled: false,
 };
@@ -101,10 +101,27 @@ export const ListingProvider: React.FC<{ children: ReactNode }> = ({
     }));
 
   const removeDefect = (id: string) =>
-    setDraft((prev) => ({
-      ...prev,
-      defects: prev.defects.filter((d) => d.id !== id),
-    }));
+    setDraft((prev) => {
+      const removed = prev.defects.find((d) => d.id === id);
+      let removedOnePhoto = false;
+      const nextDefectPhotos = removed?.photo
+        ? prev.photos.defects.filter((url) => {
+            if (!removedOnePhoto && url === removed.photo) {
+              removedOnePhoto = true;
+              return false;
+            }
+            return true;
+          })
+        : prev.photos.defects;
+      return {
+        ...prev,
+        defects: prev.defects.filter((d) => d.id !== id),
+        photos: {
+          ...prev.photos,
+          defects: nextDefectPhotos,
+        },
+      };
+    });
 
   const toggleDelivery = (method: DeliveryMethod) =>
     setDraft((prev) => {

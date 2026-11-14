@@ -173,6 +173,72 @@ describe('userService', () => {
         code: 'INVALID_PROMPTPAY_ID',
       });
     });
+
+    it('ควรป้องกันข้อมูลติดต่อใน nickname และสามารถล้าง phone_number / promptpay_id ด้วย null ได้', async () => {
+      const existingUser = { id: 'usr-1', phoneNumber: '0811111111', promptpayId: '0811111111' };
+      const updateMock = vi.fn().mockResolvedValue({
+        id: 'usr-1',
+        nickname: 'คนรักหนังสือ',
+        avatarUrl: null,
+        phoneNumber: null,
+        promptpayId: null,
+      });
+      const mockPrisma = {
+        user: {
+          findUnique: vi.fn().mockResolvedValue(existingUser),
+          update: updateMock,
+        },
+      };
+
+      await expect(
+        updateUserProfile('usr-1', { nickname: 'แอดไลน์ @myshop99' }, mockPrisma)
+      ).rejects.toMatchObject({
+        statusCode: 400,
+        code: 'CONTACT_INFO_NOT_ALLOWED',
+      });
+
+      const cleared = await updateUserProfile(
+        'usr-1',
+        { phone_number: null, promptpay_id: '' },
+        mockPrisma
+      );
+
+      expect(updateMock).toHaveBeenCalledWith({
+        where: { id: 'usr-1' },
+        data: {
+          phoneNumber: null,
+          promptpayId: null,
+        },
+      });
+      expect(cleared.phone_number).toBeNull();
+      expect(cleared.promptpay_id).toBeNull();
+    });
+
+    it('ควรบันทึก pdpaConsentAt ลงฐานข้อมูลเมื่อส่ง pdpa_consent: true และไม่ทับหากเคยยินยอมแล้ว', async () => {
+      const updateMock = vi.fn().mockResolvedValue({
+        id: 'usr-1',
+        nickname: 'คนอ่าน',
+        avatarUrl: null,
+        phoneNumber: null,
+        promptpayId: null,
+        pdpaConsentAt: new Date('2026-11-14T12:00:00Z'),
+      });
+      const mockPrisma = {
+        user: {
+          findUnique: vi.fn().mockResolvedValue({ id: 'usr-1', pdpaConsentAt: null }),
+          update: updateMock,
+        },
+      };
+
+      const res = await updateUserProfile('usr-1', { pdpa_consent: true }, mockPrisma);
+      expect(res.pdpa_consent_at).toEqual(new Date('2026-11-14T12:00:00Z'));
+      expect(updateMock).toHaveBeenCalledWith({
+        where: { id: 'usr-1' },
+        data: {
+          pdpaConsentAt: expect.any(Date),
+        },
+      });
+    });
   });
 
   describe('processTopupSlip (Frictionless KYC Level 2)', () => {
@@ -313,6 +379,75 @@ describe('userService', () => {
       expect(result.total_credits).toBe(11);
       expect(result.verified_name).toBe('นาย เตชินท์ เกียรติคุณ');
       expect(result.is_verified_seller).toBe(true);
+    });
+
+    it('ไม่เขียนทับ verifiedName ที่มีอยู่แล้วจาก KYC และกันสลิปซ้ำด้วย slipImageUrl', async () => {
+      const userUpdateMock = vi.fn().mockResolvedValue({
+        id: 'usr-1',
+        credits: 13,
+        verifiedName: 'สมชาย ใจดี',
+        isVerifiedSeller: true,
+      });
+
+      const mockPrisma = {
+        user: {
+          findUnique: vi.fn().mockResolvedValue({
+            id: 'usr-1',
+            displayName: 'LINE Name',
+            verifiedName: 'สมชาย ใจดี',
+            credits: 3,
+          }),
+        },
+        $transaction: vi.fn().mockImplementation(async (callback) => {
+          const tx = {
+            paymentSlip: {
+              findFirst: vi.fn().mockResolvedValue(null),
+              create: vi.fn().mockResolvedValue({ id: 'slip-2' }),
+            },
+            creditTransaction: { create: vi.fn().mockResolvedValue({ id: 'ctx-2' }) },
+            user: { update: userUpdateMock },
+          };
+          return callback(tx);
+        }),
+      };
+
+      const res = await processTopupSlip(
+        'usr-1',
+        {
+          slip_image_url: 'https://example.com/slip-pack.webp',
+          pack_id: 'bookworm',
+        },
+        mockPrisma
+      );
+
+      expect(res.added_credits).toBe(10);
+      expect(res.verified_name).toBe('สมชาย ใจดี');
+      expect(userUpdateMock).toHaveBeenCalledWith({
+        where: { id: 'usr-1' },
+        data: {
+          credits: { increment: 10 },
+          isVerifiedSeller: true,
+        },
+      });
+
+      const dupImagePrisma = {
+        user: {
+          findUnique: vi.fn().mockResolvedValue({ id: 'usr-1', displayName: 'A', verifiedName: null }),
+        },
+        $transaction: vi.fn().mockImplementation(async (callback) => {
+          return callback({
+            paymentSlip: { findFirst: vi.fn().mockResolvedValue({ id: 'existing' }) },
+          });
+        }),
+      };
+
+      await expect(
+        processTopupSlip(
+          'usr-1',
+          { slip_image_url: 'https://example.com/slip-pack.webp', pack_id: 'starter' },
+          dupImagePrisma
+        )
+      ).rejects.toMatchObject({ statusCode: 400, code: 'DUPLICATE_SLIP' });
     });
   });
 

@@ -27,7 +27,7 @@ export default function SellerListStep4Page() {
   const { publishListing, shop } = useSeller();
 
   const isSet = draft.mode === 'SET';
-  const canParcel = shop?.payeeVerified ?? false;
+  const canParcel = Boolean(shop?.payeeVerified && shop?.supportsParcel);
   const hasMeetup = draft.deliveryMethods.includes('MEETUP');
   const hasParcel = draft.deliveryMethods.includes('PARCEL') && canParcel;
 
@@ -52,8 +52,8 @@ export default function SellerListStep4Page() {
     setPublishing(true);
     try {
       update({ price });
-      await publishListing({ ...draft, price });
-      router.push('/seller/list/success');
+      const created = await publishListing({ ...draft, price });
+      router.push(`/seller/list/success?id=${encodeURIComponent(created.id)}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'ลงประกาศขายไม่สำเร็จ');
     } finally {
@@ -111,7 +111,7 @@ export default function SellerListStep4Page() {
               onApplyPrice={(suggested) => {
                 setPriceInput(String(suggested));
                 update({ price: suggested });
-                setToastMessage('ใช้ราคาแนะนำแล้ว (TPRICE)');
+                setToastMessage('ใช้ราคาแนะนำแล้ว');
               }}
             />
           )}
@@ -187,7 +187,7 @@ export default function SellerListStep4Page() {
               <span className="block text-[11px] text-slate-500 mt-0.5">
                 {canParcel
                   ? 'ค่าส่งแยกจากค่าหนังสือ · เก็บเงินปลายทางเมื่อรับพัสดุ'
-                  : 'ต้องยืนยันตัวตน (KYC) ก่อนเปิดส่งพัสดุ'}
+                  : 'ต้องยืนยันตัวตน (KYC) และเปิดรับส่งพัสดุในตั้งค่าร้านก่อน'}
               </span>
             </span>
             <span className="text-[11px] font-bold text-slate-500">ระบบคำนวณ</span>

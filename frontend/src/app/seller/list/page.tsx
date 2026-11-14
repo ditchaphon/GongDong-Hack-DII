@@ -20,7 +20,7 @@ import {
   BookOpen,
   Layers,
   Plus,
-  Trash2,
+  Minus,
   ShieldAlert,
   ChevronRight,
   Check,
@@ -36,7 +36,6 @@ export default function SellerListStep1Page() {
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [isMissingOpen, setIsMissingOpen] = useState(false);
   const [manualIsbn, setManualIsbn] = useState('');
-  const [volumes, setVolumes] = useState<{ volume: number; isbn: string }[]>([]);
   const [lookingUp, setLookingUp] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -83,13 +82,12 @@ export default function SellerListStep1Page() {
     setIsScannerOpen(true);
   };
 
-  const handleAddVolume = () => {
-    const nextVolume = volumes.length + 1;
-    setVolumes((prev) => [
-      ...prev,
-      { volume: nextVolume, isbn: `97861657512${String(nextVolume).padStart(2, '0')}` },
-    ]);
-    update({ totalVolumes: Math.max(draft.totalVolumes, nextVolume) });
+  const handleSetTotalVolumes = (nextTotal: number) => {
+    const clamped = Math.max(2, Math.min(99, nextTotal));
+    update({
+      totalVolumes: clamped,
+      missingVolumes: draft.missingVolumes.filter((v) => v <= clamped),
+    });
   };
 
   const handleNext = () => {
@@ -135,9 +133,9 @@ export default function SellerListStep1Page() {
         <div className="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-slate-100 border border-slate-200 text-[11px] text-slate-600">
           <span className="inline-flex items-center gap-1.5">
             <Info className="w-3.5 h-3.5 text-slate-400" />
-            วันนี้ลงขายแล้ว 2 / 10 รายการ
+            ลงขายฟรี · ไม่จำกัดจำนวน
           </span>
-          <span className="text-slate-400">ลงขายฟรี · จำกัดวันละ 10</span>
+          <span className="text-slate-400">ใช้ 1 เครดิตเมื่อรับออเดอร์</span>
         </div>
       </div>
 
@@ -146,10 +144,7 @@ export default function SellerListStep1Page() {
         <div className="grid grid-cols-2 gap-2">
           <button
             type="button"
-            onClick={() => {
-              resetDraft('SINGLE');
-              setVolumes([]);
-            }}
+            onClick={() => resetDraft('SINGLE')}
             className={`p-3 rounded-2xl border text-left transition ${
               !isSet
                 ? 'border-[#8B5E3C] bg-emerald-50/60 ring-2 ring-[#8B5E3C]/20'
@@ -274,70 +269,56 @@ export default function SellerListStep1Page() {
           </div>
         )}
 
-        {/* Set volumes list (S2B) */}
+        {/* Set volumes configuration */}
         {isSet && (
           <div className="bg-white rounded-2xl border border-slate-200 p-4 space-y-3">
             <div className="flex items-center justify-between">
               <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-                เล่มที่สแกนแล้ว ({volumes.length}/{draft.totalVolumes})
+                รายละเอียดชุดหนังสือ
               </h3>
               <button
                 type="button"
                 onClick={() => setIsMissingOpen(true)}
                 className="text-[11px] font-semibold text-sky-600 hover:underline"
               >
-                เล่มที่ขาดหาย
+                แจ้งเล่มที่ขาดหาย
               </button>
             </div>
 
-            {volumes.length === 0 ? (
-              <p className="text-xs text-slate-500 leading-relaxed">
-                สแกนบาร์โค้ดทีละเล่ม ระบบจะนับจำนวนเล่มและตรวจเล่มที่ขาดให้อัตโนมัติ
-                · ชื่อเล่มแก้ได้ทีละเล่มตามเลขเล่ม
-              </p>
-            ) : (
-              <div className="divide-y divide-slate-100">
-                {volumes.map((v) => (
-                  <div
-                    key={v.volume}
-                    className="py-2.5 flex items-center justify-between text-xs"
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="w-7 h-7 rounded-md bg-slate-100 text-slate-600 font-bold flex items-center justify-center">
-                        {v.volume}
-                      </span>
-                      <span className="font-mono text-slate-600">{v.isbn}</span>
-                    </div>
-                    <button
-                      type="button"
-                      aria-label={`ลบเล่มที่ ${v.volume}`}
-                      onClick={() =>
-                        setVolumes((prev) => prev.filter((x) => x.volume !== v.volume))
-                      }
-                      className="p-1.5 text-slate-400 hover:text-rose-500"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                ))}
+            <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-200">
+              <div>
+                <div className="text-xs font-bold text-slate-800">จำนวนเล่มทั้งหมดในชุด</div>
+                <div className="text-[11px] text-slate-500">ระบุจำนวนเล่มเต็มของซีรีส์หรือชุดนี้</div>
               </div>
-            )}
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  aria-label="ลดจำนวนเล่ม"
+                  disabled={draft.totalVolumes <= 2}
+                  onClick={() => handleSetTotalVolumes(draft.totalVolumes - 1)}
+                  className="w-8 h-8 rounded-lg border border-slate-200 bg-white flex items-center justify-center text-slate-700 disabled:opacity-40"
+                >
+                  <Minus className="w-3.5 h-3.5" />
+                </button>
+                <span className="w-8 text-center text-sm font-black text-slate-900">
+                  {draft.totalVolumes}
+                </span>
+                <button
+                  type="button"
+                  aria-label="เพิ่มจำนวนเล่ม"
+                  onClick={() => handleSetTotalVolumes(draft.totalVolumes + 1)}
+                  className="w-8 h-8 rounded-lg border border-slate-200 bg-white flex items-center justify-center text-slate-700"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
 
             {draft.missingVolumes.length > 0 && (
               <div className="p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-[11px] text-amber-800">
-                แจ้งไว้แล้วว่าเล่มที่ขาด: {draft.missingVolumes.join(', ')}
+                แจ้งไว้แล้วว่าขาดเล่ม: {draft.missingVolumes.join(', ')}
               </div>
             )}
-
-            <Button
-              variant="outline"
-              size="sm"
-              fullWidth
-              leftIcon={<Plus className="w-4 h-4" />}
-              onClick={handleAddVolume}
-            >
-              สแกนเล่มถัดไป
-            </Button>
           </div>
         )}
 
@@ -361,18 +342,18 @@ export default function SellerListStep1Page() {
         </div>
       </div>
 
-      {/* S2M — type ISBN manually */}
+      {/* Type ISBN manually */}
       <BottomSheet
         isOpen={isManualIsbnOpen}
         onClose={() => setIsManualIsbnOpen(false)}
-        title="พิมพ์เลข ISBN เอง (S2M)"
+        title="พิมพ์เลข ISBN เอง"
         footer={
           <Button
             fullWidth
             size="lg"
-            disabled={manualIsbn.replace(/\D/g, '').length < 10}
+            disabled={manualIsbn.replace(/[^0-9Xx]/g, '').length < 10}
             onClick={() => {
-              applyLookup(manualIsbn.replace(/\D/g, ''));
+              applyLookup(manualIsbn.replace(/[^0-9Xx]/g, '').toUpperCase());
               setIsManualIsbnOpen(false);
               setManualIsbn('');
             }}
@@ -384,8 +365,8 @@ export default function SellerListStep1Page() {
         <div className="space-y-3 py-1">
           <Input
             label="เลข ISBN (10 หรือ 13 หลัก)"
-            placeholder="เช่น 9786160838257"
-            inputMode="numeric"
+            placeholder="เช่น 9786160838257 หรือ 014044913X"
+            inputMode="text"
             value={manualIsbn}
             onChange={(e) => setManualIsbn(e.target.value)}
             helperText="ดูเลข ISBN ได้ที่ด้านหลังปก ใต้บาร์โค้ด"
@@ -396,11 +377,11 @@ export default function SellerListStep1Page() {
         </div>
       </BottomSheet>
 
-      {/* TMISSING — mark missing volumes */}
+      {/* Mark missing volumes */}
       <BottomSheet
         isOpen={isMissingOpen}
         onClose={() => setIsMissingOpen(false)}
-        title="แจ้งเล่มที่ขาดหาย (TMISSING)"
+        title="แจ้งเล่มที่ขาดหาย"
         footer={
           <Button fullWidth size="lg" onClick={() => setIsMissingOpen(false)}>
             บันทึกเล่มที่ขาด

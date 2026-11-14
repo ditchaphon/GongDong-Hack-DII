@@ -139,9 +139,18 @@ export default function SellerShopPage({
               {shop.shopName}
             </h1>
             <div className="flex items-center gap-1.5 text-[11px] text-slate-500 flex-wrap">
-              <span className="flex items-center text-amber-500 font-bold">
-                <Star className="w-3.5 h-3.5 fill-amber-400 stroke-amber-400 mr-1" />
-                {shop.rating} / 5.0
+              <span className="flex items-center font-bold">
+                {shop.rating > 0 ? (
+                  <span className="flex items-center text-amber-500">
+                    <Star className="w-3.5 h-3.5 fill-amber-400 stroke-amber-400 mr-1" />
+                    {shop.rating.toFixed(1)} / 5.0
+                  </span>
+                ) : (
+                  <span className="flex items-center text-slate-400 font-semibold">
+                    <Star className="w-3.5 h-3.5 stroke-slate-300 mr-1" />
+                    ยังไม่มีคะแนน
+                  </span>
+                )}
               </span>
               <span>•</span>
               <span>ขายแล้ว {shop.completedSales} ครั้ง</span>
@@ -275,17 +284,17 @@ export default function SellerShopPage({
       <ConfirmSheet
         isOpen={isReportOpen}
         onClose={() => setIsReportOpen(false)}
-        title="รายงานร้านนี้?"
-        description="ใช้เมื่อพบรูปปลอม ราคาผิด หรือข้อความชวนโอนนอกระบบ · แอดมินจะตรวจสอบ"
-        confirmLabel="ส่งรายงาน"
-        tone="danger"
+        title="รายงานร้านนี้ · ฟีเจอร์กำลังพัฒนา"
+        description="ระบบส่งรายงานร้านค้าอัตโนมัติกำลังพัฒนา หากพบร้านค้าที่น่าสงสัย รูปปลอม หรือชวนโอนนอกระบบ สามารถแจ้งทีมงานผ่านหน้าช่วยเหลือได้ทันที"
+        confirmLabel="ไปหน้าช่วยเหลือ"
+        cancelLabel="ปิด"
         onConfirm={() => {
           setIsReportOpen(false);
-          setToastMessage('ส่งรายงานร้านให้แอดมินแล้ว');
+          router.push('/help');
         }}
       >
         <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-[11px] text-slate-600">
-          ร้าน: {shop?.shopName || sellerInfo.sellerName}
+          ร้าน: {shop?.shopName || sellerInfo?.sellerName || 'ร้านค้ากองดอง'}
         </div>
       </ConfirmSheet>
 

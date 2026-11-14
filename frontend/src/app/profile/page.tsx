@@ -22,7 +22,6 @@ import {
   ShieldCheck,
   ShieldAlert,
   Flag,
-  LogOut,
 } from 'lucide-react';
 
 const rowClass =
@@ -31,7 +30,7 @@ const rowClass =
 export default function ProfilePage() {
   const router = useRouter();
   const { mode, setMode } = useAppMode();
-  const { user, logout } = useLiff();
+  const { user } = useLiff();
   const { nickname, avatar } = useProfile();
   const { shop, isShopSetup, credits } = useSeller();
 
@@ -186,10 +185,6 @@ export default function ProfilePage() {
             <span className="flex-1">ติดต่อเรา</span>
             <ChevronRight className="w-4 h-4 text-slate-300" />
           </a>
-          <button type="button" onClick={logout} className={rowClass}>
-            <LogOut className="w-4 h-4 text-slate-500" />
-            <span className="flex-1">ออกจากระบบ</span>
-          </button>
         </div>
       </div>
 

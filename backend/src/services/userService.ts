@@ -1,6 +1,8 @@
 import { env } from '../config/env';
 import { prisma as defaultPrisma } from '../config/prisma';
+import { maskSensitiveData } from './dataMaskingService';
 import { generatePromptPayQR } from './promptPayService';
+import { extractStoragePathFromUrl } from './uploadService';
 import {
   AppError,
   CreditLedgerItem,
@@ -62,8 +64,16 @@ export async function getTopupPaymentQr(options: {
     );
   }
 
-  if (!selectedPackage && options.amount !== undefined && !isNaN(Number(options.amount))) {
-    const rounded = Math.round(Number(options.amount));
+  if (!selectedPackage && options.amount !== undefined) {
+    const numAmount = Number(options.amount);
+    if (!Number.isFinite(numAmount)) {
+      throw new AppError(
+        'ยอดเงินเติมเครดิตไม่ถูกต้อง (รองรับ ฿20 = 3 เครดิต, ฿50 = 10 เครดิต, ฿100 = 25 เครดิต)',
+        400,
+        'INVALID_TOPUP_AMOUNT'
+      );
+    }
+    const rounded = Math.round(numAmount);
     selectedPackage = TOPUP_CREDIT_PACKAGES.find((pkg) => pkg.price === rounded);
     if (!selectedPackage) {
       throw new AppError(
@@ -132,6 +142,7 @@ export async function getUserProfile(
     verified_name: user.verifiedName,
     promptpay_id: user.promptpayId,
     is_verified_seller: user.isVerifiedSeller,
+    pdpa_consent_at: user.pdpaConsentAt ?? null,
     no_show_count: user.noShowCount ?? 0,
     credits: user.credits,
     created_at: user.createdAt,
@@ -150,6 +161,7 @@ export async function updateUserProfile(
   avatar_url: string | null;
   phone_number: string | null;
   promptpay_id: string | null;
+  pdpa_consent_at?: Date | null;
 }> {
   const db = prismaClient || defaultPrisma;
 
@@ -164,12 +176,21 @@ export async function updateUserProfile(
   const updateData: {
     nickname?: string | null;
     avatarUrl?: string | null;
-    phoneNumber?: string;
-    promptpayId?: string;
+    phoneNumber?: string | null;
+    promptpayId?: string | null;
+    pdpaConsentAt?: Date;
   } = {};
 
   if (input.nickname !== undefined) {
-    updateData.nickname = input.nickname ? input.nickname.trim() : null;
+    const cleanNickname = input.nickname ? input.nickname.trim() : '';
+    if (cleanNickname && maskSensitiveData(cleanNickname).hasMaskedData) {
+      throw new AppError(
+        'ชื่อเล่นห้ามมีเบอร์โทรศัพท์ ไลน์ไอดี เลขบัญชี หรือช่องทางติดต่อภายนอก',
+        400,
+        'CONTACT_INFO_NOT_ALLOWED'
+      );
+    }
+    updateData.nickname = cleanNickname || null;
   }
 
   if (input.avatar_url !== undefined) {
@@ -178,7 +199,9 @@ export async function updateUserProfile(
 
   if (input.phone_number !== undefined) {
     const rawPhone = input.phone_number ? input.phone_number.trim() : '';
-    if (rawPhone) {
+    if (!rawPhone) {
+      updateData.phoneNumber = null;
+    } else {
       const cleanPhone = rawPhone.replace(/[-\s]/g, '');
       if (!/^0\d{8,9}$/.test(cleanPhone)) {
         throw new AppError(
@@ -193,7 +216,9 @@ export async function updateUserProfile(
 
   if (input.promptpay_id !== undefined) {
     const rawPromptPay = input.promptpay_id ? input.promptpay_id.trim() : '';
-    if (rawPromptPay) {
+    if (!rawPromptPay) {
+      updateData.promptpayId = null;
+    } else {
       const cleanPromptPay = rawPromptPay.replace(/[-\s]/g, '');
       if (!/^\d{10}$|^\d{13}$/.test(cleanPromptPay)) {
         throw new AppError(
@@ -206,6 +231,10 @@ export async function updateUserProfile(
     }
   }
 
+  if (input.pdpa_consent === true) {
+    updateData.pdpaConsentAt = user.pdpaConsentAt ?? new Date();
+  }
+
   const updated = await db.user.update({
     where: { id: userId },
     data: updateData,
@@ -216,6 +245,7 @@ export async function updateUserProfile(
     avatar_url: updated.avatarUrl,
     phone_number: updated.phoneNumber,
     promptpay_id: updated.promptpayId,
+    ...(updated.pdpaConsentAt !== undefined ? { pdpa_consent_at: updated.pdpaConsentAt } : {}),
   };
 }
 
@@ -247,8 +277,12 @@ export async function processTopupSlip(
 ): Promise<TopupSlipResult> {
   const db = prismaClient || defaultPrisma;
 
-  if (!input.slip_image_url) {
+  const slipImageUrl = input.slip_image_url?.trim() || '';
+  if (!slipImageUrl) {
     throw new AppError('กรุณาแนบรูปลิงก์สลิปโอนเงิน (slip_image_url)', 400, 'MISSING_SLIP_IMAGE');
+  }
+  if (!/^https?:\/\//i.test(slipImageUrl)) {
+    throw new AppError('ลิงก์รูปสลิปโอนเงินไม่ถูกต้อง', 400, 'INVALID_SLIP_IMAGE_URL');
   }
 
   const user = await db.user.findUnique({
@@ -259,69 +293,127 @@ export async function processTopupSlip(
     throw new AppError('ไม่พบข้อมูลผู้ใช้ในระบบ', 404, 'USER_NOT_FOUND');
   }
 
-  let transRef = input.transRef;
+  let transRef = input.transRef?.trim() || '';
   let amount = input.amount;
-  let senderName = input.senderName;
+  let senderName = input.senderName?.trim() || undefined;
 
   // หากมี custom verifier ให้ทำการ verify
   if (slipVerifier) {
-    const verified = await slipVerifier(input.slip_image_url, { log: true });
+    const verified = await slipVerifier(slipImageUrl, { log: true });
     transRef = verified.transRef;
     amount = verified.amount;
     senderName = verified.senderName;
   } else {
-    // โหมดเริ่มต้น (Default / Mock Verifier สำหรับ Test & Development)
+    if (env.NODE_ENV === 'production' && !env.SLIPOK_API_KEY) {
+      throw new AppError(
+        'ระบบตรวจสลิปอัตโนมัติยังไม่ได้เปิดใช้งานใน Production (Missing SLIPOK_API_KEY)',
+        503,
+        'SLIP_VERIFIER_NOT_CONFIGURED'
+      );
+    }
+
+    const requestedPackId = (input.pack_id || input.packId || '').trim().toLowerCase();
+    if (requestedPackId) {
+      const matchedPack = TOPUP_CREDIT_PACKAGES.find((pkg) => pkg.id === requestedPackId);
+      if (!matchedPack) {
+        throw new AppError(
+          'แพ็กเกจเครดิตไม่ถูกต้อง (รองรับ starter, bookworm, merchant)',
+          400,
+          'INVALID_TOPUP_PACKAGE'
+        );
+      }
+      if (amount !== undefined && Math.round(Number(amount)) !== matchedPack.price) {
+        throw new AppError('ยอดเงินในสลิปไม่ตรงกับแพ็กเกจที่เลือก', 400, 'SLIP_AMOUNT_MISMATCH');
+      }
+      amount = matchedPack.price;
+    }
+
+    // โหมดเริ่มต้น (Default / Mock Verifier สำหรับ Test & Localhost Development)
     if (!transRef) {
-      transRef = `TOPUP_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+      transRef = `TOPUP_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
     }
     if (amount === undefined) {
       amount = 20; // ค่าเริ่มต้นแพ็กเกจ ฿20
     }
-    if (!senderName) {
-      senderName = user.displayName || 'ผู้ใช้กองดอง';
-    }
   }
 
-  // 1. ตรวจสอบสลิปซ้ำ (Anti-Replay)
-  const existingSlip = await db.paymentSlip.findUnique({
-    where: { transRef },
-  });
-
-  if (existingSlip) {
-    throw new AppError('สลิปนี้เคยถูกใช้งานในระบบไปแล้ว (Duplicate Slip)', 400, 'DUPLICATE_SLIP');
-  }
-
-  // 2. คำนวณเครดิตตามแพ็กเกจ
+  // 1. คำนวณเครดิตตามแพ็กเกจก่อนเปิด Transaction
   const addedCredits = calculateTopupCredits(amount);
+  const storagePath =
+    input.storage_path?.trim() || extractStoragePathFromUrl('slips', slipImageUrl);
+  const resolvedVerifiedName =
+    user.verifiedName || senderName || user.displayName || 'ผู้ใช้กองดอง';
 
-  // 3. ปฏิบัติการใน ACID Transaction
-  return await db.$transaction(async (tx: any) => {
-    // 3.1 บันทึกสลิปลง payment_slips
-    await tx.paymentSlip.create({
-      data: {
-        userId,
-        slipType: 'CREDIT_TOPUP',
-        slipImageUrl: input.slip_image_url,
-        transRef,
-        amount,
-        receiverName: 'กองดอง (GongDong)',
-        verificationStatus: 'AUTO_VERIFIED',
-        verifiedAt: new Date(),
-      },
-    });
+  // 2. ตรวจสอบสลิปซ้ำ (Anti-Replay) + บันทึกข้อมูลแบบ Atomic ใน Transaction
+  const runInTx =
+    typeof db.$transaction === 'function'
+      ? (fn: (tx: any) => Promise<TopupSlipResult>) => db.$transaction(fn)
+      : (fn: (tx: any) => Promise<TopupSlipResult>) => fn(db);
 
-    // 3.2 บันทึกประวัติลง credit_transactions
-    // 3.2 อัปเดตเครดิต บันทึกชื่อยืนยัน และปรับ is_verified_seller = true
+  return await runInTx(async (tx: any) => {
+    const slipReader = tx?.paymentSlip?.findFirst
+      ? tx.paymentSlip
+      : db.paymentSlip;
+
+    if (typeof slipReader?.findFirst === 'function') {
+      const duplicate = await slipReader.findFirst({
+        where: {
+          OR: [{ transRef }, { slipImageUrl }],
+        },
+      });
+      if (duplicate) {
+        throw new AppError('สลิปนี้เคยถูกใช้งานในระบบไปแล้ว (Duplicate Slip)', 400, 'DUPLICATE_SLIP');
+      }
+    } else if (typeof slipReader?.findUnique === 'function') {
+      const duplicate = await slipReader.findUnique({
+        where: { transRef },
+      });
+      if (duplicate) {
+        throw new AppError('สลิปนี้เคยถูกใช้งานในระบบไปแล้ว (Duplicate Slip)', 400, 'DUPLICATE_SLIP');
+      }
+    }
+
+    // 2.1 บันทึกสลิปลง payment_slips
+    try {
+      await tx.paymentSlip.create({
+        data: {
+          userId,
+          slipType: 'CREDIT_TOPUP',
+          slipImageUrl,
+          ...(storagePath ? { storagePath } : {}),
+          transRef,
+          amount,
+          receiverName: 'กองดอง (GongDong)',
+          verificationStatus: 'AUTO_VERIFIED',
+          verifiedAt: new Date(),
+        },
+      });
+    } catch (error: any) {
+      if (error?.code === 'P2002') {
+        throw new AppError('สลิปนี้เคยถูกใช้งานในระบบไปแล้ว (Duplicate Slip)', 400, 'DUPLICATE_SLIP');
+      }
+      throw error;
+    }
+
+    // 2.2 อัปเดตเครดิตและปลดล็อก is_verified_seller (ห้ามทับ verifiedName หากมีจาก KYC แล้ว)
+    const userUpdateData: {
+      credits: { increment: number };
+      isVerifiedSeller: boolean;
+      verifiedName?: string;
+    } = {
+      credits: { increment: addedCredits },
+      isVerifiedSeller: true,
+    };
+    if (!user.verifiedName) {
+      userUpdateData.verifiedName = resolvedVerifiedName;
+    }
+
     const updatedUser = await tx.user.update({
       where: { id: userId },
-      data: {
-        credits: { increment: addedCredits },
-        verifiedName: senderName,
-        isVerifiedSeller: true,
-      },
+      data: userUpdateData,
     });
 
-    // 3.3 บันทึกประวัติธุรกรรมเครดิต (Credit Ledger)
+    // 2.3 บันทึกประวัติธุรกรรมเครดิต (Credit Ledger)
     await tx.creditTransaction.create({
       data: {
         userId,
@@ -335,7 +427,7 @@ export async function processTopupSlip(
     return {
       added_credits: addedCredits,
       total_credits: updatedUser.credits,
-      verified_name: updatedUser.verifiedName || senderName,
+      verified_name: updatedUser.verifiedName || resolvedVerifiedName,
       is_verified_seller: updatedUser.isVerifiedSeller,
     };
   });
@@ -351,8 +443,10 @@ export async function getCreditLedger(
   prismaClient?: any
 ): Promise<{ items: CreditLedgerItem[]; total: number }> {
   const db = prismaClient || defaultPrisma;
-  const safeLimit = Math.min(Math.max(limit, 1), 100);
-  const safeOffset = Math.max(offset, 0);
+  const numericLimit = Number.isFinite(limit) ? Math.trunc(limit) : 50;
+  const numericOffset = Number.isFinite(offset) ? Math.trunc(offset) : 0;
+  const safeLimit = Math.min(Math.max(numericLimit, 1), 100);
+  const safeOffset = Math.max(numericOffset, 0);
 
   const [rows, total] = await Promise.all([
     db.creditTransaction.findMany({

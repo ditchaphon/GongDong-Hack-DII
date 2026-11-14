@@ -208,6 +208,7 @@ export interface UserProfile {
   isSeller: boolean;
   credits: number;
   isVerifiedSeller: boolean;
+  pdpaConsentAt?: string | null;
   promptPayName?: string;
   phone?: string;
 }

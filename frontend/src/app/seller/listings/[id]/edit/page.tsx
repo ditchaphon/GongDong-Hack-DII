@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, use } from 'react';
+import React, { useEffect, useState, use } from 'react';
 import { useRouter } from 'next/navigation';
 import { TopBar } from '@/components/layout/TopBar';
 import { Button, GradeBadge, Toast } from '@/components/ui';
@@ -22,25 +22,36 @@ export default function EditListingPage({
 }) {
   const resolvedParams = use(params);
   const router = useRouter();
-  const { listings, updateListing, setListingStatus } = useSeller();
+  const { listings, shop, updateListing, setListingStatus } = useSeller();
   const { orders, isMineAsBuyer } = useV4Orders();
 
   const listing = listings.find((item) => item.id === resolvedParams.id);
+  const canParcel = Boolean(shop?.payeeVerified && shop?.supportsParcel);
   const hasActiveOrder = listing
     ? orders.some(
         (order) =>
           !isMineAsBuyer(order) &&
           ['REQUESTED', 'ACCEPTED', 'PAID', 'SHIPPED', 'SCHEDULED'].includes(order.status) &&
-          order.books.some((book) => book.title === listing.title)
+          order.books.some((book) => book.id === listing.id)
       )
     : false;
 
+  const [hydratedId, setHydratedId] = useState<string | null>(null);
   const [price, setPrice] = useState(listing ? String(listing.price) : '');
   const [meetup, setMeetup] = useState(listing?.deliveryMethods.includes('MEETUP') ?? true);
   const [parcel, setParcel] = useState(listing?.deliveryMethods.includes('PARCEL') ?? false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (listing && hydratedId !== listing.id) {
+      setPrice(String(listing.price));
+      setMeetup(listing.deliveryMethods.includes('MEETUP'));
+      setParcel(listing.deliveryMethods.includes('PARCEL'));
+      setHydratedId(listing.id);
+    }
+  }, [listing, hydratedId]);
 
   if (!listing) {
     return (
@@ -103,8 +114,7 @@ export default function EditListingPage({
               {listing.title}
             </h1>
             <p className="text-[11px] text-slate-500">
-              {listing.isSet ? `ยกชุด ${listing.totalVolumes} เล่ม` : 'เล่มเดียว'} ·{' '}
-              {listing.views} วิว · {listing.savedCount} คนบันทึก
+              {listing.isSet ? `ยกชุด ${listing.totalVolumes || 2} เล่ม` : 'เล่มเดียว'}
             </p>
             <GradeBadge grade={listing.grade} size="sm" />
           </div>
@@ -139,7 +149,7 @@ export default function EditListingPage({
             />
           </div>
           <p className="text-[11px] text-slate-400">
-            เปลี่ยนราคาแล้ว ผู้ซื้อที่กำลังขออยู่จะเห็นราคาใหม่ในออเดอร์
+            ราคาใหม่จะมีผลกับคำสั่งซื้อใหม่ (ออเดอร์ที่มีอยู่แล้วจะยึดตามราคาตอนสั่งซื้อ)
           </p>
         </div>
 
@@ -173,8 +183,11 @@ export default function EditListingPage({
 
           <button
             type="button"
-            disabled={locked}
-            onClick={() => setParcel((prev) => !prev)}
+            disabled={locked || (!canParcel && !parcel)}
+            onClick={() => {
+              if (!canParcel && !parcel) return;
+              setParcel((prev) => !prev);
+            }}
             className={`w-full flex items-center gap-2.5 p-3 rounded-xl border text-left disabled:opacity-50 ${
               parcel
                 ? 'border-[var(--color-primary)] bg-emerald-50/50'
@@ -191,7 +204,14 @@ export default function EditListingPage({
               {parcel && <Check className="w-3.5 h-3.5 stroke-[3]" />}
             </span>
             <Truck className="w-4 h-4 text-slate-500" />
-            <span className="text-xs font-bold text-slate-800 flex-1">ส่งพัสดุ</span>
+            <span className="text-xs font-bold text-slate-800 flex-1">
+              ส่งพัสดุ
+              {!canParcel && (
+                <span className="block text-[10px] font-normal text-slate-400">
+                  ต้องยืนยันตัวตน (KYC) และเปิดรับส่งพัสดุในตั้งค่าร้านก่อน
+                </span>
+              )}
+            </span>
           </button>
 
           {parcel && (
@@ -209,6 +229,7 @@ export default function EditListingPage({
           <Button
             variant="outline"
             fullWidth
+            disabled={locked}
             leftIcon={<Eye className="w-4 h-4" />}
             onClick={async () => {
               try {

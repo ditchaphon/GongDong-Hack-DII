@@ -1,6 +1,21 @@
 import { prisma as defaultPrisma } from '../config/prisma';
 import { AppError, UserAddressInput } from '../types';
 
+const MAX_USER_ADDRESSES = 5;
+const POSTAL_CODE_REGEX = /^\d{5}$/;
+
+function normalizeAddressInput(input: Partial<UserAddressInput>) {
+  return {
+    fullName: input.fullName ?? input.full_name,
+    province: input.province,
+    district: input.district,
+    subdistrict: input.subdistrict,
+    postalCode: input.postalCode ?? input.postal_code,
+    detail: input.detail,
+    isDefault: input.isDefault ?? input.is_default,
+  };
+}
+
 /**
  * ดึงรายการที่อยู่จัดส่งทั้งหมดของผู้ซื้อ (GET /api/users/me/addresses)
  */
@@ -30,10 +45,11 @@ export async function getUserAddresses(userId: string, prismaClient?: any) {
  */
 export async function createUserAddress(
   userId: string,
-  input: UserAddressInput,
+  rawInput: UserAddressInput,
   prismaClient?: any
 ) {
   const db = prismaClient || defaultPrisma;
+  const input = normalizeAddressInput(rawInput);
 
   if (
     !input.fullName?.trim() ||
@@ -46,8 +62,21 @@ export async function createUserAddress(
     throw new AppError('กรุณากรอกข้อมูลที่อยู่จัดส่งให้ครบถ้วน', 400, 'MISSING_REQUIRED_FIELDS');
   }
 
+  const trimmedPostalCode = input.postalCode.trim();
+  if (!POSTAL_CODE_REGEX.test(trimmedPostalCode)) {
+    throw new AppError('รหัสไปรษณีย์ต้องเป็นตัวเลข 5 หลัก', 400, 'INVALID_POSTAL_CODE');
+  }
+
   return await db.$transaction(async (tx: any) => {
     const existingCount = await tx.userAddress.count({ where: { userId } });
+    if (existingCount >= MAX_USER_ADDRESSES) {
+      throw new AppError(
+        `บันทึกที่อยู่ได้สูงสุด ${MAX_USER_ADDRESSES} รายการ กรุณาลบที่อยู่เดิมก่อนเพิ่มใหม่`,
+        400,
+        'MAX_ADDRESSES_REACHED'
+      );
+    }
+
     const shouldBeDefault = Boolean(input.isDefault) || existingCount === 0;
 
     if (shouldBeDefault) {
@@ -60,12 +89,12 @@ export async function createUserAddress(
     const created = await tx.userAddress.create({
       data: {
         userId,
-        fullName: input.fullName.trim(),
-        province: input.province.trim(),
-        district: input.district.trim(),
-        subdistrict: input.subdistrict.trim(),
-        postalCode: input.postalCode.trim(),
-        detail: input.detail.trim(),
+        fullName: input.fullName!.trim(),
+        province: input.province!.trim(),
+        district: input.district!.trim(),
+        subdistrict: input.subdistrict!.trim(),
+        postalCode: trimmedPostalCode,
+        detail: input.detail!.trim(),
         isDefault: shouldBeDefault,
       },
     });
@@ -90,10 +119,11 @@ export async function createUserAddress(
 export async function updateUserAddress(
   userId: string,
   addressId: string,
-  input: Partial<UserAddressInput>,
+  rawInput: Partial<UserAddressInput>,
   prismaClient?: any
 ) {
   const db = prismaClient || defaultPrisma;
+  const input = normalizeAddressInput(rawInput);
 
   const existing = await db.userAddress.findUnique({ where: { id: addressId } });
   if (!existing) {
@@ -101,6 +131,10 @@ export async function updateUserAddress(
   }
   if (existing.userId !== userId) {
     throw new AppError('คุณไม่มีสิทธิ์แก้ไขที่อยู่นี้', 403, 'FORBIDDEN');
+  }
+
+  if (input.postalCode !== undefined && !POSTAL_CODE_REGEX.test(input.postalCode.trim())) {
+    throw new AppError('รหัสไปรษณีย์ต้องเป็นตัวเลข 5 หลัก', 400, 'INVALID_POSTAL_CODE');
   }
 
   return await db.$transaction(async (tx: any) => {

@@ -86,4 +86,85 @@ describe('addressService (PDPA v4 No-Phone Addresses)', () => {
       code: 'FORBIDDEN',
     });
   });
+
+  it('รองรับ payload แบบ snake_case และปฏิเสธรหัสไปรษณีย์ที่ไม่ใช่ตัวเลข 5 หลัก', async () => {
+    const tx = {
+      userAddress: {
+        count: vi.fn().mockResolvedValue(1),
+        updateMany: vi.fn(),
+        create: vi.fn().mockResolvedValue({
+          id: 'addr-2',
+          fullName: 'สมชาย รักอ่าน',
+          province: 'กรุงเทพมหานคร',
+          district: 'ปทุมวัน',
+          subdistrict: 'วังใหม่',
+          postalCode: '10330',
+          detail: '99 ถ.พญาไท',
+          isDefault: false,
+          createdAt: new Date(),
+        }),
+      },
+    };
+    const mockPrisma = {
+      $transaction: vi.fn(async (cb: any) => cb(tx)),
+    };
+
+    const res = await createUserAddress(
+      'usr-1',
+      {
+        full_name: 'สมชาย รักอ่าน',
+        province: 'กรุงเทพมหานคร',
+        district: 'ปทุมวัน',
+        subdistrict: 'วังใหม่',
+        postal_code: '10330',
+        detail: '99 ถ.พญาไท',
+        is_default: false,
+      },
+      mockPrisma
+    );
+
+    expect(res.full_name).toBe('สมชาย รักอ่าน');
+    expect(res.postal_code).toBe('10330');
+
+    await expect(
+      createUserAddress(
+        'usr-1',
+        {
+          fullName: 'สมชาย',
+          province: 'เชียงใหม่',
+          district: 'เมือง',
+          subdistrict: 'สุเทพ',
+          postalCode: '5020',
+          detail: '1/1',
+        },
+        mockPrisma
+      )
+    ).rejects.toMatchObject({ statusCode: 400, code: 'INVALID_POSTAL_CODE' });
+  });
+
+  it('จำกัดจำนวนที่อยู่จัดส่งสูงสุด 5 รายการต่อผู้ใช้', async () => {
+    const tx = {
+      userAddress: {
+        count: vi.fn().mockResolvedValue(5),
+      },
+    };
+    const mockPrisma = {
+      $transaction: vi.fn(async (cb: any) => cb(tx)),
+    };
+
+    await expect(
+      createUserAddress(
+        'usr-1',
+        {
+          fullName: 'นภัทร ใจดี',
+          province: 'เชียงใหม่',
+          district: 'เมืองเชียงใหม่',
+          subdistrict: 'สุเทพ',
+          postalCode: '50200',
+          detail: '239 ถ.ห้วยแก้ว',
+        },
+        mockPrisma
+      )
+    ).rejects.toMatchObject({ statusCode: 400, code: 'MAX_ADDRESSES_REACHED' });
+  });
 });

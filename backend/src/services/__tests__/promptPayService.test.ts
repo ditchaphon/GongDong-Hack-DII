@@ -56,9 +56,10 @@ describe('PromptPayService - EMVCo Payload & QR Code Generation', () => {
     });
 
     it('ควรโยน Error เมื่อระบุ PromptPay ID ผิดพลาด', async () => {
-      await expect(generatePromptPayQR('081234', 100)).rejects.toThrow(
-        'PromptPay ID ไม่ถูกต้อง'
-      );
+      await expect(generatePromptPayQR('081234', 100)).rejects.toMatchObject({
+        statusCode: 400,
+        code: 'INVALID_PROMPTPAY_ID',
+      });
     });
   });
 });

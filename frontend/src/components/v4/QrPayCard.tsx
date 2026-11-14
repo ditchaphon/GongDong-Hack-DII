@@ -10,6 +10,8 @@ export interface QrPayCardProps {
   /** Masked recipient label only, e.g. "ป้า••• · ผู้ขาย". Never a raw account number. */
   recipientLabel: string;
   reference: string;
+  /** PromptPay QR Data URL from backend; falls back to demo SVG when omitted. */
+  qrDataUrl?: string;
   state?: 'ready' | 'loading';
   onOpenBankApp?: () => void;
   className?: string;
@@ -19,11 +21,12 @@ export const QrPayCard: React.FC<QrPayCardProps> = ({
   amount,
   recipientLabel,
   reference,
+  qrDataUrl,
   state = 'ready',
   onOpenBankApp,
   className,
 }) => {
-  const cells = buildQrCells(`gongdong-${reference}-${amount}`);
+  const cells = qrDataUrl ? [] : buildQrCells(`gongdong-${reference}-${amount}`);
 
   return (
     <section
@@ -52,6 +55,12 @@ export const QrPayCard: React.FC<QrPayCardProps> = ({
             <Loader2 className="w-6 h-6 animate-spin" />
             <span className="text-[10px]">กำลังสร้างคิวอาร์...</span>
           </div>
+        ) : qrDataUrl ? (
+          <img
+            src={qrDataUrl}
+            alt="คิวอาร์พร้อมเพย์สำหรับชำระเงิน"
+            className="w-full h-full object-contain rounded-lg"
+          />
         ) : (
           <svg
             viewBox={`0 0 ${QR_SIZE} ${QR_SIZE}`}
@@ -92,7 +101,9 @@ export const QrPayCard: React.FC<QrPayCardProps> = ({
       </div>
 
       <p className="text-[10px] text-center text-slate-400">
-        คิวอาร์ตัวอย่างสำหรับเดโม · ไม่ใช่ข้อมูลพร้อมเพย์จริง
+        {qrDataUrl
+          ? 'PromptPay QR พร้อมยอดชำระอัตโนมัติ · สแกนได้ทุกแอปธนาคาร'
+          : 'คิวอาร์ตัวอย่างสำหรับเดโม · ไม่ใช่ข้อมูลพร้อมเพย์จริง'}
       </p>
 
       {onOpenBankApp && (

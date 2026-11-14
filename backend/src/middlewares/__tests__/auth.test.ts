@@ -149,6 +149,44 @@ describe('authMiddleware', () => {
     expect(req.user).toBeDefined();
     expect(req.userId).toBe('new-usr-999');
   });
+
+  it('ควรกู้คืนเมื่อ Auto-create ผู้ใช้พร้อมกันชน Prisma P2002 (First-Login Race Condition)', async () => {
+    const mockVerifier = vi.fn().mockResolvedValue({
+      sub: 'U_CONCURRENT_USER',
+      name: 'Concurrent User',
+      picture: null,
+    });
+
+    const winningUser = {
+      id: 'usr-winner-1',
+      lineUserId: 'U_CONCURRENT_USER',
+      displayName: 'Concurrent User',
+      credits: 1,
+      isVerifiedSeller: false,
+    };
+
+    mockFindUnique.mockReset();
+    mockFindUnique
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(winningUser);
+
+    mockTransaction.mockRejectedValueOnce(
+      Object.assign(new Error('Unique constraint failed'), { code: 'P2002' })
+    );
+
+    const middleware = createAuthMiddleware({
+      tokenVerifier: mockVerifier,
+    });
+
+    const req: any = { headers: { authorization: 'Bearer concurrent_liff_token' } };
+    const res: any = {};
+    const next = vi.fn();
+
+    await middleware(req, res, next);
+
+    expect(next).toHaveBeenCalledWith();
+    expect(req.userId).toBe('usr-winner-1');
+  });
 });
 
 describe('verifyLineToken helper', () => {

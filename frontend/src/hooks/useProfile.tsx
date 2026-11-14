@@ -31,6 +31,12 @@ export const ProfileProvider: React.FC<{ children: ReactNode }> = ({ children })
 
   useEffect(() => {
     if (!isReady) return;
+    if (!user.id) {
+      setNickname('');
+      setAvatar('');
+      setConsent(false);
+      return;
+    }
 
     const backendNickname = user.nickname?.trim() ?? '';
     setNickname(backendNickname);
@@ -42,8 +48,8 @@ export const ProfileProvider: React.FC<{ children: ReactNode }> = ({ children })
     } catch {
       storedConsent = false;
     }
-    setConsent(storedConsent || backendNickname.length >= 2);
-  }, [isReady, user.id, user.nickname, user.pictureUrl]);
+    setConsent(Boolean(user.pdpaConsentAt) || storedConsent || backendNickname.length >= 2);
+  }, [isReady, user.id, user.nickname, user.pictureUrl, user.pdpaConsentAt]);
 
   const saveProfile = async (data: {
     nickname: string;
@@ -58,6 +64,7 @@ export const ProfileProvider: React.FC<{ children: ReactNode }> = ({ children })
         {
           nickname: clean,
           avatar_url: data.avatar || undefined,
+          ...(data.consent ? { pdpa_consent: true } : {}),
         },
         { token: idToken }
       );

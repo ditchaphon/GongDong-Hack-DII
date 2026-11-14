@@ -16,7 +16,8 @@ export default function OrderSchedulePage({
 }) {
   const resolvedParams = use(params);
   const router = useRouter();
-  const { getOrder, fetchOrder, loading, proposeSchedule, confirmSchedule } = useV4Orders();
+  const { getOrder, fetchOrder, loading, proposeSchedule, confirmSchedule, isMineAsBuyer } =
+    useV4Orders();
 
   const order = getOrder(resolvedParams.id);
   const [role, setRole] = useState<ViewRole>('SELLER');
@@ -39,9 +40,9 @@ export default function OrderSchedulePage({
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    const search = new URLSearchParams(window.location.search);
-    setRole(search.get('role') === 'buyer' ? 'BUYER' : 'SELLER');
-  }, []);
+    if (!order) return;
+    setRole(isMineAsBuyer(order) ? 'BUYER' : 'SELLER');
+  }, [order, isMineAsBuyer]);
 
   useEffect(() => {
     if (order?.schedule) {
@@ -63,9 +64,13 @@ export default function OrderSchedulePage({
   }
 
   const confirmed = order.schedule?.confirmedByBuyer ?? false;
-  const canPropose = role === 'SELLER' && order.status === 'ACCEPTED';
+  const canPropose =
+    role === 'SELLER' && (order.status === 'ACCEPTED' || order.status === 'SCHEDULED');
   const canConfirm =
-    role === 'BUYER' && order.status === 'ACCEPTED' && !!order.schedule && !confirmed;
+    role === 'BUYER' &&
+    (order.status === 'ACCEPTED' || order.status === 'SCHEDULED') &&
+    !!order.schedule &&
+    !confirmed;
 
   const handlePropose = async () => {
     if (!when) {
@@ -195,14 +200,14 @@ export default function OrderSchedulePage({
             )}
 
             {canPropose && (
-              <Button fullWidth size="lg" onClick={handlePropose}>
-                ส่งนัดให้ผู้ซื้อ
+              <Button fullWidth size="lg" onClick={handlePropose} disabled={submitting}>
+                {submitting ? 'กำลังส่งเวลานัด...' : 'ส่งนัดให้ผู้ซื้อ'}
               </Button>
             )}
           </>
         ) : canConfirm ? (
-          <Button fullWidth size="lg" onClick={handleConfirm}>
-            ยืนยันนัดนี้
+          <Button fullWidth size="lg" onClick={handleConfirm} disabled={submitting}>
+            {submitting ? 'กำลังยืนยัน...' : 'ยืนยันนัดนี้'}
           </Button>
         ) : (
           <div className="bg-white rounded-2xl border border-slate-200 p-4 text-center text-[11px] text-slate-500 leading-relaxed">

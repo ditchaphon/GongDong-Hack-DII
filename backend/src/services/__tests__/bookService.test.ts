@@ -5,6 +5,7 @@ import {
   getBookListingDetail,
   getBookListings,
   getUserBookListings,
+  updateBookListing,
 } from '../bookService';
 import { CreateBookListingInput } from '../../types';
 
@@ -27,9 +28,17 @@ describe('BookService - Marketplace & Listings Management', () => {
 
     mockDb = {
       $transaction: vi.fn(async (callback: any) => await callback(mockTx)),
+      user: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: 'usr_seller_1',
+          isVerifiedSeller: true,
+          shopProfile: { supportsParcel: true },
+        }),
+      },
       bookListing: {
         findMany: vi.fn(),
         findUnique: vi.fn(),
+        update: vi.fn(),
         count: vi.fn(),
         delete: vi.fn(),
       },
@@ -97,16 +106,14 @@ describe('BookService - Marketplace & Listings Management', () => {
 
       const result = await createBookListing('usr_seller_1', baseInput, mockDb);
 
-      // ตรวจสอบการคลีน ISBN และ Upsert ลง book_catalog
+      // ตรวจสอบการคลีน ISBN และ Upsert ลง book_catalog โดยไม่เขียนทับแคตตาล็อกเดิมที่มีอยู่แล้ว
       expect(mockTx.bookCatalog.upsert).toHaveBeenCalledWith({
         where: { isbn: '9786161845678' },
-        update: expect.objectContaining({
-          title: 'จิตวิทยาวาทะด้วยเงิน',
-          author: 'Morgan Housel',
-        }),
+        update: {},
         create: expect.objectContaining({
           isbn: '9786161845678',
           title: 'จิตวิทยาวาทะด้วยเงิน',
+          author: 'Morgan Housel',
         }),
       });
 
@@ -139,7 +146,7 @@ describe('BookService - Marketplace & Listings Management', () => {
         isSet: false,
         grade: 'LIKE_NEW',
         price: 175,
-        recommendedPrice: 217.5, // 290 * 0.75
+        recommendedPrice: 218, // Math.round(290 * 0.75 = 217.5)
         status: 'AVAILABLE',
         createdAt: new Date('2026-11-12T16:00:00Z'),
       });
@@ -189,10 +196,39 @@ describe('BookService - Marketplace & Listings Management', () => {
       ).rejects.toThrow('กรุณาถ่ายรูปให้ครบทั้ง 4 มุมบังคับ');
     });
 
-    it('ต้องปฏิเสธหากราคาขายติดลบ (INVALID_PRICE)', async () => {
+    it('ต้องปฏิเสธหากราคาขายติดลบ, ศูนย์ หรือ NaN (INVALID_PRICE)', async () => {
       await expect(
         createBookListing('usr_seller_1', { ...baseInput, price: -20 }, mockDb)
       ).rejects.toThrow('ราคาขายต้องเป็นตัวเลขและไม่ติดลบ');
+      await expect(
+        createBookListing('usr_seller_1', { ...baseInput, price: 0 }, mockDb)
+      ).rejects.toThrow('ราคาขายต้องเป็นตัวเลขและไม่ติดลบ');
+      await expect(
+        createBookListing('usr_seller_1', { ...baseInput, price: NaN }, mockDb)
+      ).rejects.toThrow('ราคาขายต้องเป็นตัวเลขและไม่ติดลบ');
+    });
+
+    it('ต้องปฏิเสธหากไม่ระบุชื่อหนังสือ หรือปิดช่องทางส่งมอบทั้งหมด หรือผู้ขายไม่ยืนยันตัวตนขอเปิดส่งพัสดุ', async () => {
+      await expect(
+        createBookListing('usr_seller_1', { ...baseInput, title: '   ' }, mockDb)
+      ).rejects.toThrow('กรุณาระบุชื่อหนังสือ');
+
+      await expect(
+        createBookListing(
+          'usr_seller_1',
+          { ...baseInput, allowPickup: false, allowDelivery: false },
+          mockDb
+        )
+      ).rejects.toThrow('กรุณาเลือกช่องทางการส่งมอบอย่างน้อย 1 วิธี');
+
+      mockDb.user.findUnique.mockResolvedValueOnce({
+        id: 'usr_unverified',
+        isVerifiedSeller: false,
+        shopProfile: { supportsParcel: false },
+      });
+      await expect(
+        createBookListing('usr_unverified', { ...baseInput, allowDelivery: true }, mockDb)
+      ).rejects.toThrow('ร้านค้าต้องยืนยันตัวตนและเปิดรับส่งพัสดุ');
     });
   });
 
@@ -364,12 +400,51 @@ describe('BookService - Marketplace & Listings Management', () => {
       expect((result.seller as any).lineUserId).toBeUndefined();
     });
 
-    it('ต้องปฏิเสธเมื่อไม่พบหนังสือ (BOOK_NOT_FOUND)', async () => {
+    it('ต้องปฏิเสธเมื่อไม่พบหนังสือ (BOOK_NOT_FOUND) หรือหนังสือถูกซ่อน (HIDDEN)', async () => {
       mockDb.bookListing.findUnique.mockResolvedValue(null);
 
       await expect(getBookListingDetail('bok_missing', mockDb)).rejects.toThrow(
         'ไม่พบหนังสือที่ระบุ'
       );
+
+      mockDb.bookListing.findUnique.mockResolvedValueOnce({
+        id: 'bok_hidden',
+        status: 'HIDDEN',
+      });
+      await expect(getBookListingDetail('bok_hidden', mockDb)).rejects.toThrow(
+        'ไม่พบหนังสือที่ระบุ'
+      );
+    });
+  });
+
+  describe('updateBookListing (Edit Listing S4)', () => {
+    it('ต้องปฏิเสธการเปิดส่งพัสดุหากร้านยังไม่ยืนยันตัวตน และปฏิเสธหากปิดทั้งนัดรับและส่งพัสดุ', async () => {
+      mockDb.bookListing.findUnique.mockResolvedValue({
+        id: 'bok_1',
+        sellerId: 'usr_seller_1',
+        status: 'AVAILABLE',
+        allowPickup: true,
+        allowDelivery: false,
+      });
+
+      await expect(
+        updateBookListing(
+          'bok_1',
+          'usr_seller_1',
+          { allowPickup: false, allowDelivery: false },
+          mockDb
+        )
+      ).rejects.toThrow('กรุณาเปิดรับการส่งมอบอย่างน้อย 1 ช่องทาง');
+
+      mockDb.user.findUnique.mockResolvedValueOnce({
+        id: 'usr_seller_1',
+        isVerifiedSeller: false,
+        shopProfile: { supportsParcel: true },
+      });
+
+      await expect(
+        updateBookListing('bok_1', 'usr_seller_1', { allowDelivery: true }, mockDb)
+      ).rejects.toThrow('ร้านค้าต้องยืนยันตัวตนและเปิดรับส่งพัสดุ');
     });
   });
 

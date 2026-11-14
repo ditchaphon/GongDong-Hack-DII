@@ -177,8 +177,7 @@ export default function SellerCreditsPage() {
         <div className="flex items-start gap-2 p-3 rounded-xl bg-white border border-slate-200 text-[11px] text-slate-600">
           <ShieldCheck className="w-4 h-4 shrink-0 mt-0.5 text-emerald-600" />
           <span className="leading-relaxed">
-            ชำระด้วยพร้อมเพย์ แล้วแนบสลิป · แอดมินตรวจสลิปและเติมเครดิตให้ภายใน 30 นาที
-            ในเวลาทำการ
+            ชำระด้วยพร้อมเพย์ แล้วแนบสลิป · ระบบตรวจสลิปและเติมเครดิตเข้าบัญชีให้อัตโนมัติ
           </span>
         </div>
       </div>

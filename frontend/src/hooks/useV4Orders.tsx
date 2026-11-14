@@ -84,7 +84,7 @@ export interface V4OrdersContextValue {
     reason: string,
     by?: ViewRole
   ) => Promise<{ ok: boolean; error?: string }>;
-  reportMissedMeeting: (id: string) => Promise<{ ok: boolean; error?: string }>;
+  reportMissedMeeting: (id: string, reason?: string) => Promise<{ ok: boolean; error?: string }>;
   disputeMissedMeeting: (
     id: string,
     reason: string
@@ -98,7 +98,7 @@ export interface V4OrdersContextValue {
       comment: string;
     }
   ) => Promise<{ ok: boolean; error?: string }>;
-  verifyHandover: (id: string, code: string) => Promise<boolean>;
+  verifyHandover: (id: string, code: string) => Promise<{ ok: boolean; error?: string }>;
   isMineAsBuyer: (order: V4Order) => boolean;
 }
 
@@ -205,7 +205,8 @@ export const V4OrdersProvider: React.FC<{ children: ReactNode }> = ({
 
   const isMineAsBuyer = useCallback(
     (order: V4Order) =>
-      order.buyerId ? order.buyerId === user.id : order.shopId !== user.id,
+      Boolean(user.id) &&
+      (order.buyerId ? order.buyerId === user.id : order.shopId !== user.id),
     [user.id]
   );
 
@@ -448,18 +449,24 @@ export const V4OrdersProvider: React.FC<{ children: ReactNode }> = ({
     }
   };
 
-  const verifyHandover = async (id: string, code: string): Promise<boolean> => {
-    if (!idToken) return false;
+  const verifyHandover = async (
+    id: string,
+    code: string
+  ): Promise<{ ok: boolean; error?: string }> => {
+    if (!idToken) return { ok: false, error: 'ยังไม่ได้เข้าสู่ระบบ' };
     try {
       await api.post(
         `/api/orders/${id}/handover`,
         { handover_code: code },
         { token: idToken }
       );
-      await fetchOrder(id);
-      return true;
-    } catch {
-      return false;
+      await Promise.all([fetchOrder(id), fetchMessages(id)]);
+      return { ok: true };
+    } catch (err) {
+      return {
+        ok: false,
+        error: extractErrorMessage(err, 'รหัสส่งมอบ 6 หลักไม่ถูกต้อง'),
+      };
     }
   };
 
@@ -474,13 +481,15 @@ export const V4OrdersProvider: React.FC<{ children: ReactNode }> = ({
     }
   };
 
-  const reportMissedMeeting = async (id: string) => {
+  const reportMissedMeeting = async (id: string, reason?: string) => {
     if (!idToken) return { ok: false, error: 'ยังไม่ได้เข้าสู่ระบบ' };
     try {
-      await api.post(`/api/orders/${id}/report-missed-meeting`, undefined, {
-        token: idToken,
-      });
-      await fetchOrder(id);
+      await api.post(
+        `/api/orders/${id}/report-missed-meeting`,
+        reason ? { reason } : undefined,
+        { token: idToken }
+      );
+      await Promise.all([fetchOrder(id), fetchMessages(id)]);
       return { ok: true };
     } catch (err) {
       return {
@@ -498,7 +507,7 @@ export const V4OrdersProvider: React.FC<{ children: ReactNode }> = ({
         { reason },
         { token: idToken }
       );
-      await fetchOrder(id);
+      await Promise.all([fetchOrder(id), fetchMessages(id)]);
       return { ok: true };
     } catch (err) {
       return {

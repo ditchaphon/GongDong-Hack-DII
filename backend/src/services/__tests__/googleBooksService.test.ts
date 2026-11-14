@@ -13,9 +13,13 @@ describe('GoogleBooksService - ISBN Lookup & Cache-Aside', () => {
       expect(sanitizeIsbn('1-56619-909-x')).toBe('156619909X');
     });
 
-    it('ควรโยน Error เมื่อ ISBN มีความยาวหรือไม่ตรงตามรูปแบบ', () => {
-      expect(() => sanitizeIsbn('12345')).toThrow('รหัส ISBN ไม่ถูกต้อง');
-      expect(() => sanitizeIsbn('978-616-INVALID')).toThrow('รหัส ISBN ไม่ถูกต้อง');
+    it('ควรโยน AppError (400 INVALID_ISBN) เมื่อ ISBN มีความยาวหรือไม่ตรงตามรูปแบบ', () => {
+      expect(() => sanitizeIsbn('12345')).toThrowError(
+        expect.objectContaining({ statusCode: 400, code: 'INVALID_ISBN' })
+      );
+      expect(() => sanitizeIsbn('978-616-INVALID')).toThrowError(
+        expect.objectContaining({ statusCode: 400, code: 'INVALID_ISBN' })
+      );
     });
   });
 

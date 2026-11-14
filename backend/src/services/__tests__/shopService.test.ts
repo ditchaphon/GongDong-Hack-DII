@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   addMeetupPoint,
   deleteMeetupPoint,
+  getPublicShop,
+  hashThaiNationalId,
   isValidThaiNationalId,
   maskThaiNationalId,
   submitSellerKyc,
@@ -129,12 +131,34 @@ describe('shopService', () => {
 
       const res = await submitSellerKyc(
         'usr-1',
-        { firstName: 'สมชาย', lastName: 'ใจดี', nationalId: VALID_THAI_ID },
+        { firstName: 'สมชาย', lastName: 'ใจดี', nationalId: VALID_THAI_ID, pdpaConsent: true },
         mockPrisma
       );
 
       expect(res.is_verified_seller).toBe(true);
       expect(res.kyc.national_id_masked).toBe('x-xxxx-xxxxx-45-0');
+      expect(mockPrisma.user.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            kycNationalIdHash: hashThaiNationalId(VALID_THAI_ID),
+            pdpaConsentAt: expect.any(Date),
+          }),
+        })
+      );
+
+      const hashDupPrisma = {
+        user: {
+          findUnique: vi.fn().mockResolvedValue({ id: 'usr-other-hash' }),
+          update: vi.fn(),
+        },
+      };
+      await expect(
+        submitSellerKyc(
+          'usr-1',
+          { firstName: 'สมหมาย', lastName: 'ต่างนามสกุล', nationalId: VALID_THAI_ID },
+          hashDupPrisma
+        )
+      ).rejects.toMatchObject({ statusCode: 409, code: 'DUPLICATE_KYC_IDENTITY' });
     });
 
     it('ปฏิเสธเลขบัตรประชาชนที่ผิด Checksum', async () => {
@@ -145,6 +169,110 @@ describe('shopService', () => {
           {}
         )
       ).rejects.toMatchObject({ statusCode: 400, code: 'INVALID_NATIONAL_ID' });
+    });
+
+    it('ปฏิเสธชื่อที่มีตัวเลขหรือช่องทางติดต่อ และปฏิเสธ KYC ซ้ำกับบัญชีอื่น', async () => {
+      await expect(
+        submitSellerKyc(
+          'usr-1',
+          { firstName: 'สมชาย081', lastName: 'ใจดี', nationalId: VALID_THAI_ID },
+          {}
+        )
+      ).rejects.toMatchObject({ statusCode: 400, code: 'INVALID_NAME' });
+
+      const dupPrisma = {
+        user: {
+          findMany: vi.fn().mockResolvedValue([
+            { id: 'usr-other', kycFirstName: 'สมชาย', kycLastName: 'ใจดี' },
+          ]),
+          update: vi.fn(),
+        },
+      };
+
+      await expect(
+        submitSellerKyc(
+          'usr-1',
+          { firstName: ' สมชาย ', lastName: 'ใจดี', nationalId: VALID_THAI_ID },
+          dupPrisma
+        )
+      ).rejects.toMatchObject({ statusCode: 409, code: 'DUPLICATE_KYC_IDENTITY' });
+      expect(dupPrisma.user.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Contact-leak & validation guards', () => {
+    it('ปฏิเสธ contact leak ในชื่อร้าน, shipWithinDays นอกช่วง, และพิกัดจุดนัดรับผิดช่วง', async () => {
+      await expect(
+        upsertMyShop(
+          'usr-1',
+          {
+            shopName: 'ร้านไลน์ @shop99',
+            province: 'เชียงใหม่',
+            availableDays: [],
+            availableSlots: [],
+            supportsParcel: false,
+          },
+          {}
+        )
+      ).rejects.toMatchObject({ statusCode: 400, code: 'CONTACT_INFO_NOT_ALLOWED' });
+
+      await expect(
+        upsertMyShop(
+          'usr-1',
+          {
+            shopName: 'ร้านหนังสือ',
+            province: 'เชียงใหม่',
+            availableDays: [],
+            availableSlots: [],
+            supportsParcel: true,
+            shipMode: 'AFTER_ACCEPT',
+            shipWithinDays: 30,
+          },
+          {}
+        )
+      ).rejects.toMatchObject({ statusCode: 400, code: 'INVALID_SHIP_WITHIN_DAYS' });
+
+      await expect(
+        addMeetupPoint(
+          'usr-1',
+          { name: 'หอสมุด มช.', province: 'เชียงใหม่', lat: 120, lng: 98.95 },
+          {}
+        )
+      ).rejects.toMatchObject({ statusCode: 400, code: 'INVALID_COORDINATES' });
+    });
+
+    it('getPublicShop คืน rating = 0 เมื่อยังไม่มีรีวิว และไม่ fallback เป็น 5.0', async () => {
+      const mockPrisma = {
+        user: {
+          findUnique: vi.fn().mockResolvedValue({
+            id: 'usr-1',
+            nickname: 'ร้านใหม่',
+            avatarUrl: null,
+            isVerifiedSeller: false,
+            createdAt: new Date('2026-11-01T00:00:00Z'),
+            shopProfile: {
+              id: 'shop-1',
+              shopName: 'ร้านใหม่',
+              description: 'ขายหนังสือ',
+              avatarUrl: null,
+              province: 'เชียงใหม่',
+              supportsParcel: false,
+              shipMode: 'AFTER_ACCEPT',
+              shipWithinDays: 2,
+              availableDays: [],
+              availableSlots: [],
+              meetupPoints: [],
+            },
+          }),
+        },
+        order: { count: vi.fn().mockResolvedValue(0) },
+        review: { aggregate: vi.fn().mockResolvedValue({ _avg: { rating: null }, _count: { id: 0 } }) },
+        bookListing: { findMany: vi.fn().mockResolvedValue([]) },
+      };
+
+      const pub = await getPublicShop('usr-1', mockPrisma);
+      expect(pub.rating).toBe(0);
+      expect(pub.total_reviews).toBe(0);
     });
   });
 });

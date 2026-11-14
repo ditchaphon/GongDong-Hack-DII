@@ -206,8 +206,17 @@ export default function OrderReviewPage({
 
       <div className="fixed bottom-0 left-0 right-0 z-30 flex justify-center pointer-events-none">
         <div className="w-full max-w-[430px] bg-white border-t border-slate-200 p-3 pointer-events-auto safe-area-bottom shadow-lg">
-          <Button fullWidth size="lg" onClick={handleSubmit}>
-            ส่งคะแนนรีวิว
+          <Button
+            fullWidth
+            size="lg"
+            onClick={handleSubmit}
+            disabled={submitting || !!order.review}
+          >
+            {order.review
+              ? 'รีวิวเรียบร้อยแล้ว'
+              : submitting
+              ? 'กำลังส่งคะแนนรีวิว...'
+              : 'ส่งคะแนนรีวิว'}
           </Button>
         </div>
       </div>

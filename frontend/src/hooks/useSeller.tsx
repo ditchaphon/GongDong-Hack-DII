@@ -12,7 +12,7 @@ import { ListingDraft, ListingStatus, SellerListing } from '@/types';
 import { CreditEntry } from '@/types/v4';
 import { useLiff } from '@/hooks/useLiff';
 import { api } from '@/lib/api';
-import { checklistToConditionAnswers } from '@/lib/catalog';
+import { checklistToConditionAnswers, toUiBookGrade } from '@/lib/catalog';
 import {
   BackendCreditLedgerRow,
   BackendMyShopResponse,
@@ -53,11 +53,13 @@ export interface ShopSettings {
   setupComplete: boolean;
 }
 
-export interface PendingTopUp {
+export interface TopUpReceipt {
   packId: string;
   credits: number;
   price: number;
-  submittedAt: string;
+  totalCredits: number;
+  verifiedName: string;
+  completedAt: string;
 }
 
 export interface SellerContextValue {
@@ -68,14 +70,17 @@ export interface SellerContextValue {
   saveShop: (
     settings: Omit<ShopSettings, 'setupComplete' | 'payeeVerified' | 'kyc'>
   ) => Promise<void>;
-  submitKyc: (kyc: ShopKyc & { nationalId?: string }) => Promise<void>;
-  verifyPayee: () => void;
+  submitKyc: (kyc: ShopKyc & { nationalId?: string; pdpaConsent?: boolean }) => Promise<void>;
   credits: number;
   addCredits: (amount: number) => void;
   ledger: CreditEntry[];
-  pendingTopUp: PendingTopUp | null;
-  submitTopUp: (pack: { id: string; credits: number; price: number }) => void;
-  approveTopUp: () => void;
+  lastTopUpReceipt: TopUpReceipt | null;
+  submitTopUpSlip: (input: {
+    packId: string;
+    credits: number;
+    price: number;
+    slipImageUrl: string;
+  }) => Promise<TopUpReceipt>;
   selectedPackageId: string;
   setSelectedPackageId: (id: string) => void;
   listings: SellerListing[];
@@ -100,7 +105,7 @@ export const SellerProvider: React.FC<{ children: ReactNode }> = ({
   const [ledger, setLedger] = useState<CreditEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedPackageId, setSelectedPackageId] = useState('bookworm');
-  const [pendingTopUp, setPendingTopUp] = useState<PendingTopUp | null>(null);
+  const [lastTopUpReceipt, setLastTopUpReceipt] = useState<TopUpReceipt | null>(null);
 
   const isShopSetup = !!shop?.setupComplete;
 
@@ -197,40 +202,25 @@ export const SellerProvider: React.FC<{ children: ReactNode }> = ({
     await refreshSellerData();
   };
 
-  const submitKyc = async (kyc: ShopKyc & { nationalId?: string }) => {
-    if (idToken && kyc.nationalId) {
-      await api.post(
-        '/api/seller/kyc',
-        {
-          firstName: kyc.firstName,
-          lastName: kyc.lastName,
-          nationalId: kyc.nationalId,
-        },
-        { token: idToken }
-      );
-      await refreshUser();
-      await refreshSellerData();
-      return;
+  const submitKyc = async (kyc: ShopKyc & { nationalId?: string; pdpaConsent?: boolean }) => {
+    if (!idToken) {
+      throw new Error('ยังไม่ได้เข้าสู่ระบบ กรุณารอสักครู่');
+    }
+    if (!kyc.nationalId) {
+      throw new Error('กรุณากรอกเลขบัตรประชาชน 13 หลัก');
     }
 
-    setShop((prev) =>
-      prev
-        ? {
-            ...prev,
-            kyc: {
-              firstName: kyc.firstName,
-              lastName: kyc.lastName,
-              nationalIdMasked: kyc.nationalIdMasked,
-              verifiedAt: kyc.verifiedAt,
-            },
-            payeeVerified: true,
-          }
-        : prev
+    await api.post(
+      '/api/seller/kyc',
+      {
+        firstName: kyc.firstName,
+        lastName: kyc.lastName,
+        nationalId: kyc.nationalId,
+        ...(kyc.pdpaConsent ? { pdpaConsent: true } : {}),
+      },
+      { token: idToken }
     );
-  };
-
-  const verifyPayee = () => {
-    setShop((prev) => (prev ? { ...prev, payeeVerified: true } : prev));
+    await Promise.all([refreshUser(), refreshSellerData()]);
   };
 
   const publishListing = async (draft: ListingDraft): Promise<SellerListing> => {
@@ -238,7 +228,8 @@ export const SellerProvider: React.FC<{ children: ReactNode }> = ({
       throw new Error('ยังไม่ได้เข้าสู่ระบบ');
     }
 
-    const allowedDelivery = shop?.payeeVerified
+    const canParcel = Boolean(shop?.payeeVerified && shop?.supportsParcel);
+    const allowedDelivery = canParcel
       ? draft.deliveryMethods
       : draft.deliveryMethods.filter((method) => method === 'MEETUP');
     const finalDelivery = allowedDelivery.length ? allowedDelivery : ['MEETUP'];
@@ -281,6 +272,7 @@ export const SellerProvider: React.FC<{ children: ReactNode }> = ({
     const created = await api.post<{
       id: string;
       title: string;
+      categories?: string[];
       price: number;
       grade: string;
     }>(
@@ -315,22 +307,19 @@ export const SellerProvider: React.FC<{ children: ReactNode }> = ({
 
     await refreshSellerData();
 
-    const matched = listings.find((l) => l.id === created.id);
-    if (matched) return matched;
-
     return {
       id: created.id,
-      title: draft.title,
+      title: created.title || draft.title,
       author: draft.author,
       publisher: draft.publisher || undefined,
       description: draft.description || undefined,
-      categories: draft.categories,
+      categories: created.categories?.length ? created.categories : draft.categories,
       isbn: safeIsbn,
       isSet: draft.mode === 'SET',
       totalVolumes: draft.mode === 'SET' ? draft.totalVolumes : undefined,
-      price: draft.price,
+      price: Number(created.price ?? draft.price),
       originalPrice: draft.originalPrice || undefined,
-      grade: 'B',
+      grade: toUiBookGrade(created.grade),
       checklist: draft.checklist,
       photos: {
         cover: coverUrl,
@@ -340,9 +329,9 @@ export const SellerProvider: React.FC<{ children: ReactNode }> = ({
         defects: draft.photos.defects,
       },
       sellerId: user.id,
-      sellerName: shop?.shopName || user.displayName,
-      sellerRating: 5.0,
-      sellerAvatar: shop?.avatar || user.pictureUrl,
+      sellerName: shop?.shopName || 'ร้านค้ากองดอง',
+      sellerRating: 0,
+      sellerAvatar: shop?.avatar,
       isPromptPayVerified: shop?.payeeVerified ?? false,
       deliveryMethods: finalDelivery as ListingDraft['deliveryMethods'],
       meetupZones: shop?.meetupPoints.map((p) => p.name) ?? [],
@@ -390,30 +379,48 @@ export const SellerProvider: React.FC<{ children: ReactNode }> = ({
     await updateListing(id, { status });
   };
 
-  const submitTopUp = (pack: { id: string; credits: number; price: number }) => {
-    setPendingTopUp({
-      packId: pack.id,
-      credits: pack.credits,
-      price: pack.price,
-      submittedAt: new Date().toISOString(),
-    });
-  };
+  const submitTopUpSlip = async (input: {
+    packId: string;
+    credits: number;
+    price: number;
+    slipImageUrl: string;
+  }): Promise<TopUpReceipt> => {
+    if (!idToken) {
+      throw new Error('ยังไม่ได้เข้าสู่ระบบ กรุณารอสักครู่');
+    }
 
-  const approveTopUp = () => {
-    if (!pendingTopUp) return;
-    addCredits(pendingTopUp.credits);
-    setLedger((prev) => [
+    const res = await api.post<{
+      added_credits: number;
+      total_credits: number;
+      verified_name: string;
+      is_verified_seller: boolean;
+    }>(
+      '/api/users/me/topup-slip',
       {
-        id: `credit-${prev.length + 1}`,
-        atISO: new Date().toISOString(),
-        reason: 'TOPUP',
-        delta: pendingTopUp.credits,
-        balanceAfter: user.credits + pendingTopUp.credits,
-        note: `แพ็กเกจ ${pendingTopUp.packId} · อนุมัติสลิปแล้ว`,
+        slip_image_url: input.slipImageUrl,
+        pack_id: input.packId,
+        amount: input.price,
       },
-      ...prev,
-    ]);
-    setPendingTopUp(null);
+      { token: idToken }
+    );
+
+    await Promise.all([refreshUser(), refreshSellerData()]);
+
+    const receipt: TopUpReceipt = {
+      packId: input.packId,
+      credits: res.added_credits ?? input.credits,
+      price: input.price,
+      totalCredits: res.total_credits,
+      verifiedName: res.verified_name,
+      completedAt: new Date().toISOString(),
+    };
+    setLastTopUpReceipt(receipt);
+    try {
+      window.sessionStorage.setItem('gongdong.last_topup_receipt', JSON.stringify(receipt));
+    } catch {
+      // Ignore storage errors
+    }
+    return receipt;
   };
 
   return (
@@ -425,13 +432,11 @@ export const SellerProvider: React.FC<{ children: ReactNode }> = ({
         refreshSellerData,
         saveShop,
         submitKyc,
-        verifyPayee,
         credits: user.credits,
         addCredits,
         ledger,
-        pendingTopUp,
-        submitTopUp,
-        approveTopUp,
+        lastTopUpReceipt,
+        submitTopUpSlip,
         selectedPackageId,
         setSelectedPackageId,
         listings,

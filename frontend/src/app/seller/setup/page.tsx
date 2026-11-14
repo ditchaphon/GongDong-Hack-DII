@@ -7,8 +7,6 @@ import { TopBar } from '@/components/layout/TopBar';
 import { Button, Input, Toast } from '@/components/ui';
 import { MapPinPicker } from '@/components/v4';
 import { useSeller } from '@/hooks/useSeller';
-import { useProfile } from '@/hooks/useProfile';
-import { useLiff } from '@/hooks/useLiff';
 import { useAppMode } from '@/hooks/useAppMode';
 import { uploadImageFile } from '@/lib/api';
 import { MeetupPoint, ShipMode, THAI_PROVINCES, provinceCentre } from '@/lib/delivery';
@@ -53,9 +51,6 @@ const SHOP_AVATARS = [
   'https://images.unsplash.com/photo-1481627834876-b7833e8f5570?w=120',
 ];
 
-const DEFAULT_PROFILE_AVATAR =
-  'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120';
-
 const DAYS = ['จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส', 'อา'];
 const SLOTS = ['เช้า 9–12 น.', 'บ่าย 12–16 น.', 'เย็น 16–20 น.'];
 
@@ -82,9 +77,7 @@ const STEP_HEADINGS: Record<number, { title: string; subtitle: string }> = {
 
 export default function ShopSetupWizardPage() {
   const router = useRouter();
-  const { user } = useLiff();
   const { setMode } = useAppMode();
-  const profile = useProfile();
   const { shop, saveShop, submitKyc } = useSeller();
 
   const [step, setStep] = useState(2);
@@ -111,8 +104,8 @@ export default function ShopSetupWizardPage() {
   const [days, setDays] = useState<string[]>(shop?.availableDays ?? ['จ', 'อ', 'พ', 'พฤ', 'ศ']);
   const [slots, setSlots] = useState<string[]>(shop?.availableSlots ?? [SLOTS[1]]);
   const [supportsParcel, setSupportsParcel] = useState(shop?.supportsParcel ?? false);
-  const shipMode: ShipMode = 'AFTER_ACCEPT';
-  const shipWithinDays = 2;
+  const [shipMode, setShipMode] = useState<ShipMode>(shop?.shipMode ?? 'AFTER_ACCEPT');
+  const [shipWithinDays, setShipWithinDays] = useState<number>(shop?.shipWithinDays ?? 2);
 
   // Step 4 — KYC (raw values live only in this form)
   const [nationalId, setNationalId] = useState('');
@@ -132,6 +125,8 @@ export default function ShopSetupWizardPage() {
     if (shop.availableDays?.length) setDays(shop.availableDays);
     if (shop.availableSlots?.length) setSlots(shop.availableSlots);
     setSupportsParcel(shop.supportsParcel);
+    setShipMode(shop.shipMode ?? 'AFTER_ACCEPT');
+    setShipWithinDays(shop.shipWithinDays ?? 2);
     if (shop.kyc) {
       setFirstName(shop.kyc.firstName || '');
       setLastName(shop.kyc.lastName || '');
@@ -142,7 +137,9 @@ export default function ShopSetupWizardPage() {
 
   useEffect(() => {
     const requested = Number(new URLSearchParams(window.location.search).get('step'));
-    if (requested >= 1 && requested <= 4 && shop?.setupComplete) setStep(requested);
+    if (requested >= 1 && requested <= 4 && shop?.setupComplete) {
+      setStep(Math.max(2, requested));
+    }
   }, [shop?.setupComplete]);
 
   const toggle = (list: string[], value: string) =>
@@ -206,11 +203,6 @@ export default function ShopSetupWizardPage() {
     setIsSaving(true);
     setError(null);
     try {
-      await profile.saveProfile({
-        nickname: user.displayName,
-        avatar: user.pictureUrl || DEFAULT_PROFILE_AVATAR,
-        consent: true,
-      });
       await saveShop({
         shopName: shopName.trim(),
         description: description.trim(),
@@ -230,6 +222,7 @@ export default function ShopSetupWizardPage() {
           nationalId: onlyDigits(nationalId),
           nationalIdMasked: maskThaiId(nationalId),
           verifiedAt: new Date().toISOString(),
+          pdpaConsent: kycConsent,
         });
       }
       setNationalId('');
@@ -597,11 +590,62 @@ export default function ShopSetupWizardPage() {
                 </div>
 
                 {supportsParcel ? (
-                  <p className="flex items-start gap-1.5 p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-[11px] text-slate-600 leading-relaxed">
-                    <Calculator className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                    เปิดรับส่งพัสดุแล้ว · ค่าส่งแยกจากค่าหนังสือและให้ผู้ซื้อ-ผู้ขายตกลงกันเอง
-                    · ไม่ต้องตั้งรอบส่งหรือจำนวนวัน
-                  </p>
+                  <div className="space-y-2.5 p-3 rounded-xl bg-slate-50 border border-slate-200">
+                    <div className="text-[11px] font-semibold text-slate-700">
+                      รอบการจัดส่งพัสดุ
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setShipMode('AFTER_ACCEPT')}
+                        className={clsx(
+                          'p-2.5 rounded-xl border text-left text-[11px] transition',
+                          shipMode === 'AFTER_ACCEPT'
+                            ? 'bg-teal-50 border-teal-400 text-teal-900 font-semibold'
+                            : 'bg-white border-slate-200 text-slate-600'
+                        )}
+                      >
+                        <div>หลังรับออเดอร์</div>
+                        <div className="text-[10px] opacity-80">ระบุจำนวนวันส่ง</div>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setShipMode('DAILY')}
+                        className={clsx(
+                          'p-2.5 rounded-xl border text-left text-[11px] transition',
+                          shipMode === 'DAILY'
+                            ? 'bg-teal-50 border-teal-400 text-teal-900 font-semibold'
+                            : 'bg-white border-slate-200 text-slate-600'
+                        )}
+                      >
+                        <div>ส่งทุกวัน</div>
+                        <div className="text-[10px] opacity-80">จัดส่งรอบรายวัน</div>
+                      </button>
+                    </div>
+                    {shipMode === 'AFTER_ACCEPT' && (
+                      <div className="flex items-center justify-between gap-2 pt-1">
+                        <label htmlFor="ship-within-days" className="text-[11px] text-slate-600">
+                          จัดส่งภายใน
+                        </label>
+                        <select
+                          id="ship-within-days"
+                          value={shipWithinDays}
+                          onChange={(e) => setShipWithinDays(Number(e.target.value))}
+                          className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-700"
+                        >
+                          {[1, 2, 3, 5, 7].map((d) => (
+                            <option key={d} value={d}>
+                              {d} วันหลังรับออเดอร์
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+                    <p className="flex items-start gap-1.5 text-[11px] text-slate-500 leading-relaxed">
+                      <Calculator className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                      ค่าส่งแยกจากค่าหนังสือและให้ผู้ซื้อ-ผู้ขายตกลงกันเองในออเดอร์
+                    </p>
+                  </div>
                 ) : (
                   <p className="text-[11px] text-slate-500 leading-relaxed">
                     ปิดอยู่ · ร้านจะรับเฉพาะนัดรับ เปิดได้ทุกเมื่อ

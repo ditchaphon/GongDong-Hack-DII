@@ -47,19 +47,28 @@ const CHECKLIST_ITEMS: ChecklistItemMeta[] = [
 ];
 
 export function calculateGrade(checklist: ConditionChecklistType): BookGrade {
-  // Count passed items (true = no defect)
-  const items = [
-    checklist.coverIntact,
-    checklist.noHighlight,
-    checklist.noWaterDamage,
-    checklist.pagesComplete,
-    checklist.noYellowing,
-  ];
-  const passedCount = items.filter(Boolean).length;
-  const defectCount = 5 - passedCount;
+  // Match backend gradingService.ts rules exactly:
+  // 1) Missing/torn/taped pages -> D immediately
+  if (!checklist.pagesComplete) {
+    return 'D';
+  }
+
+  // Remaining 4 defect checks (covers, spine/yellowing, markings, stains)
+  const defectCount = [
+    !checklist.coverIntact,
+    !checklist.noYellowing,
+    !checklist.noHighlight,
+    !checklist.noWaterDamage,
+  ].filter(Boolean).length;
 
   if (defectCount === 0) return 'A';
-  if (defectCount === 1) return 'B';
+  if (defectCount === 1) {
+    // Minor spine/cover wear -> B; stains or markings -> C
+    if (!checklist.coverIntact || !checklist.noYellowing) {
+      return 'B';
+    }
+    return 'C';
+  }
   if (defectCount === 2) return 'C';
   return 'D';
 }

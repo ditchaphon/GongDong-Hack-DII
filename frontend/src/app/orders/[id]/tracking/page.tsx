@@ -16,7 +16,7 @@ export default function OrderTrackingPage({
 }) {
   const resolvedParams = use(params);
   const router = useRouter();
-  const { getOrder, fetchOrder, loading, markShipped } = useV4Orders();
+  const { getOrder, fetchOrder, loading, markShipped, isMineAsBuyer } = useV4Orders();
 
   const order = getOrder(resolvedParams.id);
 
@@ -35,9 +35,9 @@ export default function OrderTrackingPage({
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    const search = new URLSearchParams(window.location.search);
-    setRole(search.get('role') === 'buyer' ? 'BUYER' : 'SELLER');
-  }, []);
+    if (!order) return;
+    setRole(isMineAsBuyer(order) ? 'BUYER' : 'SELLER');
+  }, [order, isMineAsBuyer]);
 
   if (!order) {
     return (
@@ -51,7 +51,7 @@ export default function OrderTrackingPage({
   }
 
   const isParcel = order.delivery === 'PARCEL';
-  const shipped = order.status === 'PAID' || order.status === 'SHIPPED' || order.status === 'COMPLETED';
+  const shipped = order.status === 'SHIPPED' || order.status === 'COMPLETED';
 
   const handleSubmit = async () => {
     if (!isParcel) {
@@ -129,6 +129,7 @@ export default function OrderTrackingPage({
                     setError(null);
                   }}
                   onSubmit={handleSubmit}
+                  isLoading={submitting}
                   error={error || undefined}
                 />
               </div>
@@ -138,12 +139,6 @@ export default function OrderTrackingPage({
               <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-700">
                 {error}
               </div>
-            )}
-
-            {!shipped && (
-              <Button fullWidth size="lg" onClick={handleSubmit}>
-                ยืนยันการส่ง
-              </Button>
             )}
           </>
         ) : (

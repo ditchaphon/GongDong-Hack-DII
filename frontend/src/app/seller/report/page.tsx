@@ -19,11 +19,9 @@ export default function SellerReportPage() {
 
   const sellerOrders = orders.filter((o) => !isMineAsBuyer(o));
   const reportableOrders = sellerOrders.filter(
-    (o) => !['CANCELLED', 'REJECTED', 'EXPIRED', 'COMPLETED'].includes(o.status)
+    (o) => !['REQUESTED', 'CANCELLED', 'REJECTED', 'EXPIRED', 'COMPLETED'].includes(o.status)
   );
-  const [orderId, setOrderId] = useState(
-    reportableOrders[0]?.id || sellerOrders[0]?.id || ''
-  );
+  const [orderId, setOrderId] = useState(reportableOrders[0]?.id || '');
   const [reason, setReason] = useState(REPORT_REASONS[0]);
   const [detail, setDetail] = useState('');
   const [photo, setPhoto] = useState('');
@@ -32,12 +30,12 @@ export default function SellerReportPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!orderId && (reportableOrders[0]?.id || sellerOrders[0]?.id)) {
-      setOrderId(reportableOrders[0]?.id || sellerOrders[0]?.id || '');
+    if (!orderId && reportableOrders[0]?.id) {
+      setOrderId(reportableOrders[0].id);
     }
-  }, [orderId, reportableOrders, sellerOrders]);
+  }, [orderId, reportableOrders]);
 
-  const selectedOrder = sellerOrders.find((o) => o.id === orderId);
+  const selectedOrder = reportableOrders.find((o) => o.id === orderId);
 
   const handleSubmit = async () => {
     if (!orderId || !selectedOrder) {
@@ -53,7 +51,7 @@ export default function SellerReportPage() {
     const fullReason = `${reason}: ${detail.trim()}${photo ? ` (หลักฐาน: ${photo})` : ''}`;
     const res =
       reason === 'ผู้ซื้อไม่มาตามนัด' && selectedOrder.delivery === 'MEETUP'
-        ? await reportMissedMeeting(orderId)
+        ? await reportMissedMeeting(orderId, fullReason)
         : await openDispute(orderId, fullReason, 'SELLER');
     setSubmitting(false);
     if (!res.ok) {
@@ -92,10 +90,10 @@ export default function SellerReportPage() {
               onChange={(e) => setOrderId(e.target.value)}
               className="w-full min-h-[44px] px-3.5 text-sm bg-white rounded-xl border border-slate-200 focus:outline-none focus:border-[#8B5E3C] focus:ring-2 focus:ring-[#8B5E3C]/20"
             >
-              {sellerOrders.length === 0 ? (
-                <option value="">ยังไม่มีออเดอร์</option>
+              {reportableOrders.length === 0 ? (
+                <option value="">ยังไม่มีออเดอร์ที่รายงานได้</option>
               ) : (
-                sellerOrders.map((o) => (
+                reportableOrders.map((o) => (
                   <option key={o.id} value={o.id}>
                     #{o.id.slice(0, 8)} · {o.buyer.nickname || `ผู้ซื้อ #${o.id.slice(-4)}`} · {o.books[0]?.title.slice(0, 24)}
                   </option>
@@ -199,7 +197,7 @@ export default function SellerReportPage() {
             fullWidth
             size="lg"
             isLoading={submitting}
-            disabled={!orderId}
+            disabled={!orderId || submitting}
             onClick={handleSubmit}
             rightIcon={<ChevronRight className="w-4 h-4" />}
           >
