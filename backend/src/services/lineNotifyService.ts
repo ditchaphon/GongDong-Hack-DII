@@ -125,6 +125,18 @@ export async function pushLineMessage(
 }
 
 /**
+ * Link opened from a LINE card button. With LINE_LIFF_ID set it becomes
+ * https://liff.line.me/{liffId}/orders/123, which opens the page inside the
+ * LIFF webview already logged in. Without it, fall back to FRONTEND_URL.
+ */
+export function buildAppLink(linkPath: string): string {
+  const path = linkPath.startsWith('/') ? linkPath : `/${linkPath}`;
+  const liffId = env.LINE_LIFF_ID?.trim();
+  if (liffId) return `https://liff.line.me/${liffId}${path}`;
+  return `${env.FRONTEND_URL.replace(/\/$/, '')}${path}`;
+}
+
+/**
  * ส่งทั้ง In-App Notification และ LINE Push Notification สำหรับเหตุการณ์คำสั่งซื้อ
  */
 export async function notifyOrderEvent(
@@ -132,7 +144,7 @@ export async function notifyOrderEvent(
   prismaClient: any = prisma
 ): Promise<void> {
   const linkPath = params.linkPath || `/orders/${params.orderId}`;
-  const fullUrl = `${env.FRONTEND_URL.replace(/\/$/, '')}${linkPath}`;
+  const fullUrl = buildAppLink(linkPath);
 
   try {
     await createNotification(

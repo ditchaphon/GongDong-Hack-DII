@@ -23,6 +23,8 @@ const envSchema = z.object({
   LINE_CHANNEL_SECRET: z.string().optional(),
   LINE_LOGIN_CHANNEL_ID: z.string().optional(),
   LINE_LIFF_CHANNEL_ID: z.string().optional(),
+  // LIFF app id (e.g. 2012563845-xxxx) for deep links in LINE notification cards
+  LINE_LIFF_ID: z.string().optional(),
 
   // SlipOK & Platform PromptPay
   SLIPOK_API_KEY: z.string().optional(),
