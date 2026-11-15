@@ -304,9 +304,9 @@ export async function processTopupSlip(
     amount = verified.amount;
     senderName = verified.senderName;
   } else {
-    if (env.NODE_ENV === 'production' && !env.SLIPOK_API_KEY) {
+    if (env.NODE_ENV === 'production') {
       throw new AppError(
-        'ระบบตรวจสลิปอัตโนมัติยังไม่ได้เปิดใช้งานใน Production (Missing SLIPOK_API_KEY)',
+        'ระบบตรวจสลิปอัตโนมัติยังไม่ได้เปิดใช้งานใน Production (Missing SLIPOK_API_KEY / SLIPOK_BRANCH_ID)',
         503,
         'SLIP_VERIFIER_NOT_CONFIGURED'
       );

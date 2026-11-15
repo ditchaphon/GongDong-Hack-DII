@@ -4,6 +4,7 @@ import {
   deleteBookListing,
   getBookListingDetail,
   getBookListings,
+  getPreviousListingsByIsbn,
   getUserBookListings,
   updateBookListing,
 } from '../bookService';
@@ -515,6 +516,161 @@ describe('BookService - Marketplace & Listings Management', () => {
       await expect(
         deleteBookListing('bok_1', 'usr_seller_1', mockDb)
       ).rejects.toThrow('ไม่สามารถลบหนังสือที่ติดจองหรือขายสำเร็จแล้วได้');
+    });
+  });
+
+  describe('BookCatalog Backfill & Previous Listings by ISBN', () => {
+    it('ต้องเติมเต็ม (Backfill) ฟิลด์ที่เป็น null ใน BookCatalog เมื่อผู้ขายกรอกข้อมูลที่ขาดหายมา', async () => {
+      mockTx.bookCatalog.findUnique = vi.fn().mockResolvedValue({
+        isbn: '9786161845678',
+        title: 'จิตวิทยาวาทะด้วยเงิน',
+        author: 'Morgan Housel',
+        publisher: null,
+        category: null,
+        coverUrl: null,
+        originalPrice: null,
+      });
+      mockTx.bookCatalog.upsert.mockResolvedValue({});
+      mockTx.bookListing.create.mockResolvedValue({
+        id: 'bok_backfill_01',
+        category: 'จิตวิทยา / พัฒนาตนเอง',
+        price: 175,
+        status: 'AVAILABLE',
+        createdAt: new Date(),
+      });
+      mockTx.bookListingImage.createMany.mockResolvedValue({ count: 4 });
+
+      await createBookListing(
+        'usr_seller_1',
+        {
+          isbn: '978-616-18-4567-8',
+          title: 'จิตวิทยาวาทะด้วยเงิน',
+          author: 'Morgan Housel',
+          publisher: 'Live Rich',
+          category: 'จิตวิทยา / พัฒนาตนเอง',
+          originalPrice: 290,
+          price: 175,
+          conditionAnswers: {
+            spine: false,
+            stains: false,
+            markings: false,
+            covers: false,
+            pages: false,
+          },
+          allowPickup: true,
+          allowDelivery: true,
+          images: [
+            {
+              imageUrl: 'https://storage.gongdong.com/front.webp',
+              imageType: 'FRONT_COVER',
+              displayOrder: 1,
+              isCover: true,
+            },
+            {
+              imageUrl: 'https://storage.gongdong.com/back.webp',
+              imageType: 'BACK_COVER',
+              displayOrder: 2,
+            },
+            {
+              imageUrl: 'https://storage.gongdong.com/spine.webp',
+              imageType: 'SPINE',
+              displayOrder: 3,
+            },
+            {
+              imageUrl: 'https://storage.gongdong.com/inner.webp',
+              imageType: 'INNER',
+              displayOrder: 4,
+            },
+          ],
+        },
+        mockDb
+      );
+
+      expect(mockTx.bookCatalog.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { isbn: '9786161845678' },
+          update: {
+            publisher: 'Live Rich',
+            category: 'จิตวิทยา / พัฒนาตนเอง',
+            coverUrl: 'https://storage.gongdong.com/front.webp',
+            originalPrice: 290,
+          },
+        })
+      );
+    });
+
+    it('getPreviousListingsByIsbn ต้องดึงรายการที่เคยลงขายด้วย ISBN เดียวกันโดยจำกัดจำนวนตาม limit (3-5 ตัว)', async () => {
+      mockDb.bookListing.findMany.mockResolvedValue([
+        {
+          id: 'bok_prev_1',
+          isbn: '9786161845678',
+          sellerId: 'usr_1',
+          price: 180,
+          category: 'จิตวิทยา / พัฒนาตนเอง',
+          categories: ['จิตวิทยา / พัฒนาตนเอง'],
+          description: 'เล่มเดียว สภาพดีมาก',
+          isSet: false,
+          totalVolumes: null,
+          photoChecks: {
+            _catalogSnapshot: {
+              title: 'จิตวิทยาวาทะด้วยเงิน (พิมพ์ครั้งที่ 5)',
+              author: 'Morgan Housel',
+              publisher: 'Live Rich',
+              originalPrice: 290,
+            },
+          },
+          bookCatalog: {
+            title: 'จิตวิทยาวาทะด้วยเงิน',
+            author: 'Morgan Housel',
+            publisher: 'Live Rich',
+            category: 'จิตวิทยา / พัฒนาตนเอง',
+            coverUrl: 'https://storage.gongdong.com/front1.webp',
+            originalPrice: 290,
+          },
+          seller: {
+            id: 'usr_1',
+            nickname: 'บิว',
+            shopProfile: { shopName: 'ร้านหนังสือบิว' },
+          },
+          images: [{ imageUrl: 'https://storage.gongdong.com/front1.webp' }],
+          createdAt: new Date('2026-11-14T10:00:00Z'),
+        },
+        {
+          id: 'bok_prev_2',
+          isbn: '9786161845678',
+          sellerId: 'usr_2',
+          price: 160,
+          category: 'บริหารธุรกิจ / การเงินการลงทุน',
+          categories: ['บริหารธุรกิจ / การเงินการลงทุน'],
+          description: 'ห่อปกพลาสติกแล้ว',
+          isSet: false,
+          totalVolumes: null,
+          photoChecks: {},
+          bookCatalog: {
+            title: 'จิตวิทยาวาทะด้วยเงิน',
+            author: 'Morgan Housel',
+            publisher: 'Live Rich',
+            category: 'จิตวิทยา / พัฒนาตนเอง',
+            coverUrl: 'https://storage.gongdong.com/front2.webp',
+            originalPrice: 290,
+          },
+          seller: {
+            id: 'usr_2',
+            nickname: 'เฟรม',
+            shopProfile: { shopName: 'ร้านหนังสือเฟรม' },
+          },
+          images: [{ imageUrl: 'https://storage.gongdong.com/front2.webp' }],
+          createdAt: new Date('2026-11-13T10:00:00Z'),
+        },
+      ]);
+
+      const candidates = await getPreviousListingsByIsbn('978-616-18-4567-8', 5, mockDb);
+
+      expect(candidates).toHaveLength(2);
+      expect(candidates[0].title).toBe('จิตวิทยาวาทะด้วยเงิน (พิมพ์ครั้งที่ 5)');
+      expect(candidates[0].seller_name).toBe('ร้านหนังสือบิว');
+      expect(candidates[1].title).toBe('จิตวิทยาวาทะด้วยเงิน');
+      expect(candidates[1].seller_name).toBe('ร้านหนังสือเฟรม');
     });
   });
 });

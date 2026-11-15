@@ -12,9 +12,11 @@ import {
   OrderSteps,
   HandoverCode,
   CodeInput,
+  LineOaBanner,
 } from '@/components/v4';
 import { useV4Orders } from '@/hooks/useV4Orders';
 import { useSeller } from '@/hooks/useSeller';
+import { useLiff } from '@/hooks/useLiff';
 import { STATUS_META, getTimerInfo, isTerminal } from '@/lib/orderStateMachine';
 import { formatThaiDate, mapDirectionsUrl, mapEmbedUrl } from '@/lib/delivery';
 import { V4Order, ViewRole } from '@/types/v4';
@@ -79,14 +81,28 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
     isMineAsBuyer,
   } = useV4Orders();
   const { credits } = useSeller();
+  const { isReady, idToken } = useLiff();
+  const [fetchingDetail, setFetchingDetail] = useState(true);
 
   const order = getOrder(id);
   const orderStatus = order?.status;
   const chatOpen = !!orderStatus && !['REQUESTED', 'REJECTED', 'EXPIRED'].includes(orderStatus);
 
   useEffect(() => {
-    fetchOrder(id);
-  }, [id, fetchOrder]);
+    if (!isReady) return;
+    if (!idToken) {
+      setFetchingDetail(false);
+      return;
+    }
+    let active = true;
+    setFetchingDetail(true);
+    fetchOrder(id).finally(() => {
+      if (active) setFetchingDetail(false);
+    });
+    return () => {
+      active = false;
+    };
+  }, [id, isReady, idToken, fetchOrder]);
 
   useEffect(() => {
     if (!orderStatus || !chatOpen) return;
@@ -109,11 +125,14 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
   const [handoverError, setHandoverError] = useState<string | null>(null);
 
   if (!order) {
+    const isInitialLoading = !isReady || loading || fetchingDetail;
     return (
       <div className="flex flex-col min-h-screen bg-slate-50">
         <TopBar title="ออเดอร์" onBack={() => router.push('/orders')} />
         <p className="p-6 text-center text-xs text-slate-500">
-          {loading ? 'กำลังโหลดข้อมูลออเดอร์...' : 'ไม่พบออเดอร์นี้ · อาจถูกลบหรือลิงก์ไม่ถูกต้อง'}
+          {isInitialLoading
+            ? 'กำลังโหลดข้อมูลออเดอร์...'
+            : 'ไม่พบออเดอร์นี้ · อาจถูกลบหรือลิงก์ไม่ถูกต้อง'}
         </p>
       </div>
     );
@@ -228,6 +247,7 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
       <TopBar title={`ออเดอร์ #${order.id}`} subtitle={isBuyer ? 'ฝั่งผู้ซื้อ' : 'ฝั่งร้านค้า'} onBack={() => router.push('/orders')} />
 
       <div className="p-4 space-y-4">
+        <LineOaBanner />
         {/* Header + steps */}
         <section className="bg-white rounded-2xl border border-slate-200 p-4 space-y-4">
           <div className="flex items-start justify-between gap-2">

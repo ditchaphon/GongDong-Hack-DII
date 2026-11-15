@@ -603,7 +603,7 @@ async function executeBatchOrders(
         title: 'มีคำขอสั่งซื้อหนังสือใหม่',
         message: `มีผู้สนใจสั่งซื้อหนังสือจำนวน ${created.bookCount} เล่ม (฿${created.result.totalPrice})`,
         badgeText: 'NEW ORDER REQUEST',
-        linkPath: `/seller/orders/${created.result.orderId}`,
+        linkPath: `/orders/${created.result.orderId}`,
       },
       db
     );
@@ -1355,17 +1355,29 @@ export async function verifyOrderPaymentSlip(
       );
     }
 
-    const slipClient = tx?.paymentSlip?.findUnique ? tx : db;
-    const existingSlip = await slipClient.paymentSlip.findUnique({
-      where: { transRef },
-    });
+    const slipClient = tx?.paymentSlip?.findFirst
+      ? tx.paymentSlip
+      : tx?.paymentSlip?.findUnique
+      ? tx.paymentSlip
+      : db.paymentSlip;
+
+    const existingSlip =
+      typeof slipClient?.findFirst === 'function'
+        ? await slipClient.findFirst({
+            where: {
+              OR: [{ transRef }, { slipImageUrl: input.slipImageUrl }],
+            },
+          })
+        : await slipClient.findUnique({
+            where: { transRef },
+          });
 
     if (existingSlip) {
       throw new AppError('สลิปนี้เคยถูกใช้งานในระบบไปแล้ว (Duplicate Slip)', 400, 'DUPLICATE_SLIP');
     }
 
     const slipAmount = input.amount !== undefined ? Number(input.amount) : Number(order.totalPrice);
-    if (Math.abs(slipAmount - Number(order.totalPrice)) > 0.01) {
+    if (!Number.isFinite(slipAmount) || Math.abs(slipAmount - Number(order.totalPrice)) > 0.01) {
       throw new AppError('ยอดเงินในสลิปไม่ตรงกับยอดรวมของคำสั่งซื้อ', 400, 'SLIP_AMOUNT_MISMATCH');
     }
 
@@ -1387,20 +1399,27 @@ export async function verifyOrderPaymentSlip(
     const storagePath =
       input.storagePath?.trim() || extractStoragePathFromUrl('slips', input.slipImageUrl);
 
-    await tx.paymentSlip.create({
-      data: {
-        userId: buyerId,
-        orderId,
-        slipType: 'ORDER_PAYMENT',
-        slipImageUrl: input.slipImageUrl,
-        ...(storagePath ? { storagePath } : {}),
-        transRef,
-        amount: slipAmount,
-        receiverName: input.receiverName || order.seller.verifiedName,
-        verificationStatus: 'AUTO_VERIFIED',
-        verifiedAt: new Date(),
-      },
-    });
+    try {
+      await tx.paymentSlip.create({
+        data: {
+          userId: buyerId,
+          orderId,
+          slipType: 'ORDER_PAYMENT',
+          slipImageUrl: input.slipImageUrl,
+          ...(storagePath ? { storagePath } : {}),
+          transRef,
+          amount: slipAmount,
+          receiverName: input.receiverName || order.seller.verifiedName,
+          verificationStatus: 'AUTO_VERIFIED',
+          verifiedAt: new Date(),
+        },
+      });
+    } catch (err: any) {
+      if (err?.code === 'P2002') {
+        throw new AppError('สลิปนี้เคยถูกใช้งานในระบบไปแล้ว (Duplicate Slip)', 400, 'DUPLICATE_SLIP');
+      }
+      throw err;
+    }
 
     await updateOrderStatusAtomic(tx, orderId, 'ACCEPTED', {
       status: 'PAID',
@@ -1515,7 +1534,7 @@ export async function completeDeliveryOrder(
 ): Promise<{ orderId: string; status: 'COMPLETED' }> {
   const db = prismaClient || defaultPrisma;
 
-  await withTransaction(db, async (tx: any) => {
+  const outcome = await withTransaction(db, async (tx: any) => {
     const readClient = tx?.order?.findUnique ? tx : db;
     const order = await loadAndAuthorizeOrder(readClient, orderId, buyerId, {
       role: 'BUYER',
@@ -1527,7 +1546,20 @@ export async function completeDeliveryOrder(
     });
 
     await markOrderCompleted(tx, order);
+    return { sellerId: order.sellerId };
   });
+
+  await safeNotifyOrder(
+    {
+      recipientUserId: outcome.sellerId,
+      role: 'SELLER',
+      orderId,
+      title: 'ผู้ซื้อยืนยันได้รับหนังสือแล้ว!',
+      message: 'คำสั่งซื้อเสร็จสมบูรณ์เรียบร้อยแล้ว',
+      badgeText: 'COMPLETED',
+    },
+    db
+  );
 
   return { orderId, status: 'COMPLETED' };
 }
@@ -1934,8 +1966,37 @@ export async function schedulePickupOrder(
       tx?.orderMessage?.create ? tx : db
     );
 
-    return { scheduledAt, handoverCode };
+    return {
+      scheduledAt,
+      handoverCode,
+      actorRole,
+      recipientUserId: actorRole === 'BUYER' ? order.sellerId : order.buyerId,
+      recipientRole: (actorRole === 'BUYER' ? 'SELLER' : 'BUYER') as 'BUYER' | 'SELLER',
+    };
   });
+
+  const scheduleSummary = `${input.pickupLocationName || 'จุดนัดรับ'} (${
+    input.scheduleTimeLabel || outcome.scheduledAt.toISOString()
+  })`;
+
+  await safeNotifyOrder(
+    {
+      recipientUserId: outcome.recipientUserId,
+      role: outcome.recipientRole,
+      orderId,
+      title:
+        outcome.actorRole === 'SELLER'
+          ? 'ผู้ขายเสนอนัดรับหนังสือ'
+          : 'ผู้ซื้อยืนยัน/อัปเดตเวลานัดรับแล้ว',
+      message:
+        outcome.actorRole === 'SELLER'
+          ? `จุดนัดรับ: ${scheduleSummary} · กรุณาตรวจสอบและกดยืนยันนัดหมาย`
+          : `ยืนยันนัดรับที่ ${scheduleSummary}`,
+      badgeText:
+        outcome.actorRole === 'SELLER' ? 'SCHEDULE PROPOSED' : 'SCHEDULE CONFIRMED',
+    },
+    db
+  );
 
   return {
     orderId,

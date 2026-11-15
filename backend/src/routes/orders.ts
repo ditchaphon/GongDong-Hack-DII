@@ -499,7 +499,10 @@ orderRouter.post(
           slipImageUrl: slip_image_url,
           storagePath: storage_path,
           transRef: trans_ref,
-          amount: amount ? Number(amount) : undefined,
+          amount:
+            amount !== undefined && amount !== null && amount !== ''
+              ? Number(amount)
+              : undefined,
           receiverName: receiver_name,
         },
         undefined,

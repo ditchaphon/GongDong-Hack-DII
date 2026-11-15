@@ -5,6 +5,7 @@ import {
   deleteBookListing,
   getBookListingDetail,
   getBookListings,
+  getPreviousListingsByIsbn,
   getRecommendedBooks,
   updateBookListing,
 } from '../services/bookService';
@@ -43,9 +44,35 @@ bookRouter.get(
   async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const isbn = String(req.params.isbn);
-      const result = await lookupBookByIsbn(isbn);
+      const [result, previousListings] = await Promise.all([
+        lookupBookByIsbn(isbn),
+        getPreviousListingsByIsbn(isbn, 5).catch(() => []),
+      ]);
+
+      const firstListing = previousListings[0];
 
       if (!result.found || !result.book) {
+        if (firstListing) {
+          res.status(200).json({
+            success: true,
+            data: {
+              found: true,
+              source: 'DATABASE',
+              warning_code: null,
+              warning_message: null,
+              isbn: firstListing.isbn,
+              title: firstListing.title,
+              author: firstListing.author,
+              publisher: firstListing.publisher,
+              category: firstListing.category,
+              cover_url: firstListing.cover_image_url,
+              original_price: firstListing.original_price,
+              previous_listings: previousListings,
+            },
+          });
+          return;
+        }
+
         const message =
           result.warningCode === 'GOOGLE_BOOKS_RATE_LIMITED'
             ? 'Google Books API ถูกจำกัดการใช้งานชั่วคราว (HTTP 429) และไม่พบในแหล่งสำรอง กรุณากรอกรายละเอียดด้วยตนเอง'
@@ -61,6 +88,7 @@ bookRouter.get(
             source: null,
             warning_code: result.warningCode || null,
             warning_message: result.warningMessage || null,
+            previous_listings: [],
           },
           message,
         });
@@ -75,12 +103,18 @@ bookRouter.get(
           warning_code: result.warningCode || null,
           warning_message: result.warningMessage || null,
           isbn: result.book.isbn,
-          title: result.book.title,
-          author: result.book.author,
-          publisher: result.book.publisher,
-          category: result.book.category,
-          cover_url: result.book.coverUrl,
-          original_price: result.book.originalPrice,
+          title: result.book.title || firstListing?.title || '',
+          author: result.book.author || firstListing?.author || null,
+          publisher: result.book.publisher || firstListing?.publisher || null,
+          category: result.book.category || firstListing?.category || null,
+          cover_url: result.book.coverUrl || firstListing?.cover_image_url || null,
+          original_price:
+            result.book.originalPrice !== null &&
+            result.book.originalPrice !== undefined &&
+            Number(result.book.originalPrice) > 0
+              ? result.book.originalPrice
+              : firstListing?.original_price ?? null,
+          previous_listings: previousListings,
         },
       });
     } catch (error) {

@@ -1,7 +1,15 @@
 # GongDong Full System Flow Audit (ช่องโหว่ ความเสี่ยง และบั๊กทั้งระบบ)
 
 > **วันที่ตรวจสอบ**: 2026-11-14 (ตรวจโค้ด Backend + Frontend ทั้งระบบ หลังอัปเดต Multi-Seller Batch Order Flow ณ commit `2581a83`)  
-> **หมายเหตุ**: รายงานนี้รวบรวมเฉพาะจุดที่ตรวจสอบพบจริงในซอร์สโค้ดปัจจุบัน (**ไม่รวม** จุดของ Multi-Seller Checkout Flow ที่แก้ไขไปแล้วใน [MULTI_BOOK_MULTI_SELLER_ORDER_AUDIT.md](file:///D:/Project/GongDong-Hack-DII/Biwdocs/MULTI_BOOK_MULTI_SELLER_ORDER_AUDIT.md))
+> **อัปเดตสถานะล่าสุด (2026-11-15 — พร้อม Deploy Production)**:
+> - ✅ **แก้ไขครบทุกหมวดแล้ว**: ทั้งหมวด A–E และ DB1–DB4 ตาม [LOCALHOST_FIXABLE_ISSUES_PLAN.md](file:///D:/Project/GongDong-Hack-DII/Biwdocs/LOCALHOST_FIXABLE_ISSUES_PLAN.md)
+> - ✅ **เชื่อมระบบ LINE Messaging API แจ้งเตือนทั้ง 2 ฝั่ง (เมื่อไม่อยู่ในหน้า LIFF) ครบวงจร**:
+>   - ซ่อม `notifyOrderEvent()` ใน [lineNotifyService.ts](file:///D:/Project/GongDong-Hack-DII/backend/src/services/lineNotifyService.ts) ให้ดึง `user.lineUserId` จากฐานข้อมูลอัตโนมัติทุกครั้งและส่ง LINE Push Flex Card พร้อมปุ่ม Deep Link (`https://liff.line.me/<LIFF_ID>/orders/<orderId>`)
+>   - แก้ Deep Link คำขอสั่งซื้อใหม่ของผู้ขายจาก `/seller/orders/:id` (404) เป็น `/orders/:id` และรองรับ `?liff.state=` redirect ใน [useLiff.tsx](file:///D:/Project/GongDong-Hack-DII/frontend/src/hooks/useLiff.tsx)
+>   - เพิ่มแจ้งเตือน LINE Push + In-App สำหรับ: **การเสนอ/ยืนยันเวลานัดรับ (`schedulePickupOrder`)**, **ข้อความแชทใหม่ (`sendOrderMessage` พร้อม Cooldown 3 นาทีกันสแปมโควตา)**, **ยืนยันรับพัสดุ (`completeDeliveryOrder`)**, และ **การส่งรีวิว (`createOrderReview`)**
+>   - เพิ่มแบนเนอร์แนะนำกดแอดเพื่อน LINE OA ([LineOaBanner.tsx](file:///D:/Project/GongDong-Hack-DII/frontend/src/components/v4/LineOaBanner.tsx)) เมื่อ `friendship === false` ในหน้า `/cart/success`, `/orders`, `/orders/[id]` และ `/seller`
+> - ✅ **Production Hardening 100%**: บังคับใช้ SlipOK และ Blacklistseller เต็มรูปแบบใน Production (`503` ทันทีหากไม่ได้ตั้งค่าคีย์), บังคับ `LINE_LOGIN_CHANNEL_ID` ใน `verifyLineToken`, กัน `webhookEventId` ซ้ำและแยก `try/catch` ราย event, เช็กสลิปออเดอร์ซ้ำทั้ง `transRef` และ `slipImageUrl`, ปิด `localhost` CORS ใน Production และซ่อน `/debug` + `/design-system` ใน Production  
+> **หมายเหตุ**: รายงานด้านล่างเก็บประวัติรายการที่ตรวจสอบพบและแก้ไขแล้วเพื่อใช้อ้างอิง (**ไม่รวม** จุดของ Multi-Seller Checkout Flow ที่แก้ไขไปแล้วใน [MULTI_BOOK_MULTI_SELLER_ORDER_AUDIT.md](file:///D:/Project/GongDong-Hack-DII/Biwdocs/MULTI_BOOK_MULTI_SELLER_ORDER_AUDIT.md))
 
 ---
 

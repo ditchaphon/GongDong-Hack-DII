@@ -15,7 +15,7 @@ import {
 import { useSeller } from '@/hooks/useSeller';
 import { useAppMode } from '@/hooks/useAppMode';
 import { useV4Orders } from '@/hooks/useV4Orders';
-import { StatusBadgeV4 } from '@/components/v4';
+import { StatusBadgeV4, LineOaBanner } from '@/components/v4';
 import {
   Plus,
   BookOpen,
@@ -118,6 +118,7 @@ export default function SellerShopPage() {
       />
 
       <div className="p-4 space-y-4">
+        <LineOaBanner />
         {/* Shop header */}
         <div className="bg-white rounded-2xl border border-slate-200 p-4 space-y-3">
           <div className="flex items-center gap-3">

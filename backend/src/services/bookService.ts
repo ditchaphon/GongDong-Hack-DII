@@ -40,7 +40,32 @@ function mapSellerSummary(seller: any) {
   };
 }
 
+interface CatalogSnapshot {
+  title?: string | null;
+  author?: string | null;
+  publisher?: string | null;
+  originalPrice?: number | null;
+}
+
+function extractCatalogSnapshot(photoChecks: any): {
+  snapshot: CatalogSnapshot | null;
+  cleanPhotoChecks: Record<string, any>;
+} {
+  if (!photoChecks || typeof photoChecks !== 'object' || Array.isArray(photoChecks)) {
+    return { snapshot: null, cleanPhotoChecks: {} };
+  }
+  const { _catalogSnapshot, ...rest } = photoChecks as Record<string, any>;
+  if (_catalogSnapshot && typeof _catalogSnapshot === 'object') {
+    return {
+      snapshot: _catalogSnapshot as CatalogSnapshot,
+      cleanPhotoChecks: rest,
+    };
+  }
+  return { snapshot: null, cleanPhotoChecks: rest };
+}
+
 function mapBookFeedItem(item: any): BookListingItem {
+  const { snapshot } = extractCatalogSnapshot(item.photoChecks);
   const categories =
     Array.isArray(item.categories) && item.categories.length > 0
       ? item.categories
@@ -48,20 +73,28 @@ function mapBookFeedItem(item: any): BookListingItem {
       ? [item.category]
       : [];
 
+  const resolvedTitle = snapshot?.title?.trim() || item.bookCatalog.title;
+  const resolvedAuthor = snapshot?.author?.trim() || item.bookCatalog.author;
+  const resolvedOriginalPrice =
+    snapshot?.originalPrice !== null &&
+    snapshot?.originalPrice !== undefined &&
+    Number(snapshot.originalPrice) > 0
+      ? Number(snapshot.originalPrice)
+      : item.bookCatalog.originalPrice !== null
+      ? Number(item.bookCatalog.originalPrice)
+      : null;
+
   return {
     id: item.id,
-    title: item.bookCatalog.title,
-    author: item.bookCatalog.author,
+    title: resolvedTitle,
+    author: resolvedAuthor,
     category: item.category,
     categories,
     isSet: Boolean(item.isSet),
     totalVolumes: item.totalVolumes ?? null,
     coverImageUrl: item.images[0]?.imageUrl || item.bookCatalog.coverUrl || '',
     price: Number(item.price),
-    originalPrice:
-      item.bookCatalog.originalPrice !== null
-        ? Number(item.bookCatalog.originalPrice)
-        : null,
+    originalPrice: resolvedOriginalPrice,
     grade: item.grade as BookGrade,
     allowPickup: Boolean(item.allowPickup),
     pickupLocationName: item.pickupLocationName ?? null,
@@ -223,6 +256,7 @@ export async function getBookListingDetail(
     throw new AppError('ไม่พบหนังสือที่ระบุ', 404, 'BOOK_NOT_FOUND');
   }
 
+  const { snapshot, cleanPhotoChecks } = extractCatalogSnapshot(item.photoChecks);
   const categories =
     Array.isArray(item.categories) && item.categories.length > 0
       ? item.categories
@@ -230,12 +264,24 @@ export async function getBookListingDetail(
       ? [item.category]
       : [];
 
+  const resolvedTitle = snapshot?.title?.trim() || item.bookCatalog.title;
+  const resolvedAuthor = snapshot?.author?.trim() || item.bookCatalog.author;
+  const resolvedPublisher = snapshot?.publisher?.trim() || item.bookCatalog.publisher;
+  const resolvedOriginalPrice =
+    snapshot?.originalPrice !== null &&
+    snapshot?.originalPrice !== undefined &&
+    Number(snapshot.originalPrice) > 0
+      ? Number(snapshot.originalPrice)
+      : item.bookCatalog.originalPrice !== null
+      ? Number(item.bookCatalog.originalPrice)
+      : null;
+
   return {
     id: item.id,
     isbn: item.isbn,
-    title: item.bookCatalog.title,
-    author: item.bookCatalog.author,
-    publisher: item.bookCatalog.publisher,
+    title: resolvedTitle,
+    author: resolvedAuthor,
+    publisher: resolvedPublisher,
     category: item.category,
     categories,
     isSet: Boolean(item.isSet),
@@ -243,11 +289,8 @@ export async function getBookListingDetail(
     missingVolumes: Array.isArray(item.missingVolumes) ? item.missingVolumes : [],
     description: item.description ?? null,
     defects: item.defects ?? [],
-    photoChecks: item.photoChecks ?? {},
-    originalPrice:
-      item.bookCatalog.originalPrice !== null
-        ? Number(item.bookCatalog.originalPrice)
-        : null,
+    photoChecks: cleanPhotoChecks,
+    originalPrice: resolvedOriginalPrice,
     price: Number(item.price),
     grade: item.grade as BookGrade,
     conditionAnswers: item.conditionAnswers,
@@ -361,21 +404,82 @@ export async function createBookListing(
       : ['ทั่วไป / ไลฟ์สไตล์'];
   const primaryCategory = input.category || categories[0];
 
-  // 5. บันทึกข้อมูลลงฐานข้อมูลแบบ Transaction (ไม่เขียนทับแคตตาล็อกกลางที่มีอยู่แล้ว)
+  // 5. บันทึกข้อมูลลงฐานข้อมูลแบบ Transaction (เติมเต็มฟิลด์ที่เป็น null ในแคตตาล็อกกลางโดยไม่ทับข้อมูลที่มีอยู่แล้ว)
   return await db.$transaction(async (tx: any) => {
+    const frontCoverUrl =
+      input.coverUrl ||
+      input.images.find((img) => img.isCover || img.imageType === 'FRONT_COVER')
+        ?.imageUrl ||
+      null;
+
+    const existingCatalog =
+      typeof tx.bookCatalog?.findUnique === 'function'
+        ? await tx.bookCatalog.findUnique({ where: { isbn: cleanIsbn } })
+        : null;
+
+    const catalogUpdate: Record<string, any> = {};
+    if (existingCatalog) {
+      if (!existingCatalog.title?.trim() && cleanTitle) {
+        catalogUpdate.title = cleanTitle;
+      }
+      if (!existingCatalog.author?.trim() && input.author?.trim()) {
+        catalogUpdate.author = input.author.trim();
+      }
+      if (!existingCatalog.publisher?.trim() && input.publisher?.trim()) {
+        catalogUpdate.publisher = input.publisher.trim();
+      }
+      if (!existingCatalog.category?.trim() && primaryCategory) {
+        catalogUpdate.category = primaryCategory;
+      }
+      if (!existingCatalog.coverUrl?.trim() && frontCoverUrl) {
+        catalogUpdate.coverUrl = frontCoverUrl;
+      }
+      if (
+        (existingCatalog.originalPrice === null ||
+          existingCatalog.originalPrice === undefined ||
+          Number(existingCatalog.originalPrice) <= 0) &&
+        input.originalPrice !== null &&
+        input.originalPrice !== undefined &&
+        Number(input.originalPrice) > 0
+      ) {
+        catalogUpdate.originalPrice = input.originalPrice;
+      }
+    }
+
     const catalog = await tx.bookCatalog.upsert({
       where: { isbn: cleanIsbn },
-      update: {},
+      update: catalogUpdate,
       create: {
         isbn: cleanIsbn,
         title: cleanTitle,
         author: input.author || null,
         publisher: input.publisher || null,
         category: primaryCategory,
-        coverUrl: input.coverUrl || null,
+        coverUrl: frontCoverUrl,
         originalPrice: input.originalPrice ?? null,
       },
     });
+
+    const basePhotoChecks =
+      input.photoChecks &&
+      typeof input.photoChecks === 'object' &&
+      !Array.isArray(input.photoChecks)
+        ? { ...(input.photoChecks as Record<string, any>) }
+        : {};
+    const photoChecksWithSnapshot = {
+      ...basePhotoChecks,
+      _catalogSnapshot: {
+        title: cleanTitle,
+        author: input.author?.trim() || null,
+        publisher: input.publisher?.trim() || null,
+        originalPrice:
+          input.originalPrice !== null &&
+          input.originalPrice !== undefined &&
+          Number(input.originalPrice) > 0
+            ? Number(input.originalPrice)
+            : null,
+      },
+    };
 
     const listing = await tx.bookListing.create({
       data: {
@@ -394,7 +498,7 @@ export async function createBookListing(
             ? input.missingVolumes
             : [],
         defects: (input.defects ?? []) as any,
-        photoChecks: (input.photoChecks ?? {}) as any,
+        photoChecks: photoChecksWithSnapshot as any,
         allowPickup,
         pickupLat: input.pickupLat ?? null,
         pickupLng: input.pickupLng ?? null,
@@ -611,4 +715,126 @@ export async function deleteBookListing(
     success: true,
     message: 'ลบรายการหนังสือสำเร็จ',
   };
+}
+
+export interface PreviousListingCandidate {
+  id: string;
+  isbn: string;
+  title: string;
+  author: string | null;
+  publisher: string | null;
+  category: string | null;
+  categories: string[];
+  description: string | null;
+  original_price: number | null;
+  selling_price: number;
+  cover_image_url: string | null;
+  seller_name: string;
+  is_set: boolean;
+  total_volumes: number | null;
+  created_at: Date;
+}
+
+/**
+ * ดึงรายการหนังสือที่เคยลงขายด้วย ISBN เดียวกัน (สูงสุด 3-5 รายการ)
+ * เพื่อให้ผู้ขายคนถัดไปสามารถเลือกใช้ข้อมูลหนังสือที่เคยลงขายในระบบได้ทันที
+ */
+export async function getPreviousListingsByIsbn(
+  rawIsbn: string,
+  limit = 5,
+  prismaClient?: any
+): Promise<PreviousListingCandidate[]> {
+  const db = prismaClient || defaultPrisma;
+  const cleanIsbn = sanitizeIsbn(rawIsbn);
+  const safeLimit = Math.max(1, Math.min(limit, 5));
+
+  if (!db?.bookListing?.findMany) {
+    return [];
+  }
+
+  const listings = await db.bookListing.findMany({
+    where: {
+      isbn: cleanIsbn,
+      status: { not: 'HIDDEN' },
+    },
+    orderBy: { createdAt: 'desc' },
+    take: 15,
+    include: {
+      bookCatalog: true,
+      seller: {
+        select: {
+          id: true,
+          nickname: true,
+          shopProfile: {
+            select: { shopName: true },
+          },
+        },
+      },
+      images: {
+        orderBy: [{ isCover: 'desc' as const }, { displayOrder: 'asc' as const }],
+        take: 1,
+      },
+    },
+  });
+
+  const candidates: PreviousListingCandidate[] = [];
+  const seenKeys = new Set<string>();
+
+  for (const item of listings) {
+    const { snapshot } = extractCatalogSnapshot(item.photoChecks);
+    const title = (snapshot?.title?.trim() || item.bookCatalog?.title || '').trim();
+    if (!title) continue;
+
+    const author = snapshot?.author?.trim() || item.bookCatalog?.author || null;
+    const publisher = snapshot?.publisher?.trim() || item.bookCatalog?.publisher || null;
+    const originalPrice =
+      snapshot?.originalPrice !== null &&
+      snapshot?.originalPrice !== undefined &&
+      Number(snapshot.originalPrice) > 0
+        ? Number(snapshot.originalPrice)
+        : item.bookCatalog?.originalPrice !== null &&
+          item.bookCatalog?.originalPrice !== undefined
+        ? Number(item.bookCatalog.originalPrice)
+        : null;
+
+    const categories =
+      Array.isArray(item.categories) && item.categories.length > 0
+        ? item.categories
+        : item.category
+        ? [item.category]
+        : item.bookCatalog?.category
+        ? [item.bookCatalog.category]
+        : [];
+
+    // Deduplicate identical metadata from the same seller while keeping distinct listings across users/editions
+    const dedupeKey = `${item.sellerId}:${title}:${author ?? ''}:${publisher ?? ''}:${originalPrice ?? ''}:${categories.join(',')}`;
+    if (seenKeys.has(dedupeKey)) continue;
+    seenKeys.add(dedupeKey);
+
+    candidates.push({
+      id: item.id,
+      isbn: item.isbn,
+      title,
+      author,
+      publisher,
+      category: item.category || item.bookCatalog?.category || null,
+      categories,
+      description: item.description || null,
+      original_price: originalPrice,
+      selling_price: Number(item.price),
+      cover_image_url:
+        item.images?.[0]?.imageUrl || item.bookCatalog?.coverUrl || null,
+      seller_name:
+        item.seller?.shopProfile?.shopName ||
+        item.seller?.nickname ||
+        'ผู้ขายในระบบ',
+      is_set: Boolean(item.isSet),
+      total_volumes: item.totalVolumes ?? null,
+      created_at: item.createdAt,
+    });
+
+    if (candidates.length >= safeLimit) break;
+  }
+
+  return candidates;
 }

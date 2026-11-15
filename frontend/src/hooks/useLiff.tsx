@@ -242,6 +242,15 @@ export const LiffProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         if (mounted) {
           setIsReady(true);
         }
+
+        // Handle liff.state deep-link redirect if LINE redirected to root with ?liff.state=/orders/...
+        if (typeof window !== 'undefined' && window.location.pathname === '/') {
+          const searchParams = new URLSearchParams(window.location.search);
+          const liffState = searchParams.get('liff.state');
+          if (liffState && liffState.startsWith('/') && !liffState.startsWith('//')) {
+            window.location.replace(liffState);
+          }
+        }
       } catch (err: any) {
         console.error('LIFF init error:', err);
         if (mounted) {
