@@ -491,7 +491,7 @@ export default function SellerListStep3Page() {
                   เกรด {c.grade} · {c.title}
                 </span>
                 <span className="text-xs font-bold text-emerald-700">
-                  {c.percent}% ของราคาปก
+                  {c.percent}% ของราคามือหนึ่ง
                 </span>
               </div>
               <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">{c.detail}</p>
@@ -502,21 +502,6 @@ export default function SellerListStep3Page() {
           </p>
         </div>
       </BottomSheet>
-
-      {/* Camera / Photo Capture for Defect */}
-      <CameraCapture
-        isOpen={!!cameraTarget}
-        mode="PHOTO"
-        title={cameraTarget ? `ถ่าย${cameraTarget.label}` : ''}
-        hint="ถ่ายจุดที่มีตำหนิให้เห็นชัดเจน"
-        demoImage={DEMO_DEFECT}
-        onClose={() => setCameraTarget(null)}
-        onCapture={(url) => {
-          if (!cameraTarget) return;
-          setDefectPhoto(cameraTarget.id, url);
-          setCameraTarget(null);
-        }}
-      />
     </div>
   );
 }
