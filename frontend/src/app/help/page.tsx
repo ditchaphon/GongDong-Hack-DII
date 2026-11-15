@@ -167,7 +167,7 @@ export default function HelpPage() {
         <Accordion title="เกรดสภาพหนังสือ" icon={<BookOpen className="w-4 h-4" />}>
           <p className="text-[11px] text-slate-500">
             ผู้ขายตอบคำถาม 5 จุด (ปก · รอยขีดเขียน · คราบน้ำ · หน้าครบ · สันและขอบกระดาษ)
-            ระบบคำนวณเกรดและราคาแนะนำจากราคาปก
+            ระบบคำนวณเกรดและราคาแนะนำจากราคามือหนึ่ง
           </p>
           <div className="space-y-1.5">
             {GRADES.map((grade) => (

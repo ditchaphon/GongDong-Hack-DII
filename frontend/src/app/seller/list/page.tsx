@@ -218,7 +218,7 @@ export default function SellerListStep1Page() {
                   {draft.publisher} · ISBN {draft.isbn || '-'}
                 </p>
                 <p className="text-xs font-semibold text-slate-700 mt-1">
-                  ราคาปก ฿{draft.originalPrice.toLocaleString()}
+                  ราคามือหนึ่ง ฿{draft.originalPrice.toLocaleString()}
                 </p>
               </div>
             </div>
@@ -240,7 +240,7 @@ export default function SellerListStep1Page() {
           <div className="flex items-start gap-2 p-3 rounded-xl bg-sky-50 border border-sky-200 text-[11px] text-sky-800">
             <Info className="w-4 h-4 shrink-0 mt-0.5" />
             <span>
-              ระบบจะดึงชื่อหนังสือ ผู้แต่ง สำนักพิมพ์ และราคาปกให้อัตโนมัติเมื่อสแกน ISBN
+              ระบบจะดึงชื่อหนังสือ ผู้แต่ง สำนักพิมพ์ และราคามือหนึ่งให้อัตโนมัติเมื่อสแกน ISBN
               · หลังพบข้อมูลแล้ว ช่องเหล่านั้นจะถูกล็อก แก้ได้เฉพาะชื่อหนังสือ
             </span>
           </div>

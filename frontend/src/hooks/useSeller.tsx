@@ -204,6 +204,10 @@ export const SellerProvider: React.FC<{ children: ReactNode }> = ({
       status: 'ACTIVE',
       views: 0,
       savedCount: 0,
+      defects: draft.defects.map((d) => ({
+        label: d.note,
+        photo: d.photo || FALLBACK_COVER,
+      })),
     };
 
     setListings((prev) => [listing, ...prev]);

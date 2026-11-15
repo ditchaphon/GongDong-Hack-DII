@@ -43,7 +43,7 @@ export const PriceSuggest: React.FC<PriceSuggestProps> = ({
           <Sparkles className="w-4 h-4 text-emerald-600" />
           <span>ราคาแนะนำโดยระบบ (เกรด {grade} • {Math.round(percent * 100)}%)</span>
         </div>
-        <span className="text-xs text-slate-400">จากราคาปก ฿{originalPrice}</span>
+        <span className="text-xs text-slate-400">จากราคามือหนึ่ง ฿{originalPrice}</span>
       </div>
 
       <div className="flex items-baseline justify-between mt-3">

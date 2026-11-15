@@ -85,7 +85,7 @@ export default function SellerListDetailsPage() {
 
           <Input
             id="listing-original-price"
-            label="ราคาปก (บาท)"
+            label="ราคามือหนึ่ง (บาท)"
             type="number"
             inputMode="numeric"
             placeholder="0"

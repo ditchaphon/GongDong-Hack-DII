@@ -150,7 +150,9 @@ export interface CreditPackage {
 
 export interface PhotoCheck {
   status: 'GOOD' | 'DEFECT';
-  issues: (keyof ConditionChecklist)[];
+  issues?: (keyof ConditionChecklist)[];
+  defectPhoto?: string;
+  defectNote?: string;
 }
 
 export interface ListingDefect {

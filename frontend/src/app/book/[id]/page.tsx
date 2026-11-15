@@ -226,7 +226,7 @@ export default function BookDetailPage({
           )}
         </div>
         <p className="text-[10px] text-slate-400">
-          ราคาปก {book.originalPrice ? `฿${book.originalPrice.toLocaleString()}` : 'ไม่ระบุ'} ·
+          ราคามือหนึ่ง {book.originalPrice ? `฿${book.originalPrice.toLocaleString()}` : 'ไม่ระบุ'} ·
           เทียบกับร้านอื่นได้จากหน้าแรก
         </p>
         {book.description && (
@@ -444,19 +444,19 @@ export default function BookDetailPage({
       >
         <div className="space-y-2.5 text-xs">
           <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200">
-            <div className="font-bold text-emerald-800">เหมือนใหม่ (75% ของราคาปก)</div>
+            <div className="font-bold text-emerald-800">เหมือนใหม่ (75% ของราคามือหนึ่ง)</div>
             <div className="text-emerald-700 mt-0.5">ไม่มีตำหนิเลยทั้ง 5 จุด</div>
           </div>
           <div className="p-2.5 rounded-xl bg-sky-50 border border-sky-200">
-            <div className="font-bold text-sky-800">สภาพดีมาก (60% ของราคาปก)</div>
+            <div className="font-bold text-sky-800">สภาพดีมาก (60% ของราคามือหนึ่ง)</div>
             <div className="text-sky-700 mt-0.5">ตำหนิ 1 จุด เล็กน้อย</div>
           </div>
           <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200">
-            <div className="font-bold text-amber-800">อ่านทั่วไป (45% ของราคาปก)</div>
+            <div className="font-bold text-amber-800">อ่านทั่วไป (45% ของราคามือหนึ่ง)</div>
             <div className="text-amber-700 mt-0.5">รอยเปื้อน/รอยเขียน 1 จุด หรือตำหนิ 2 จุด</div>
           </div>
           <div className="p-2.5 rounded-xl bg-purple-50 border border-purple-200">
-            <div className="font-bold text-purple-800">เน้นอ่าน (30% ของราคาปก)</div>
+            <div className="font-bold text-purple-800">เน้นอ่าน (30% ของราคามือหนึ่ง)</div>
             <div className="text-purple-700 mt-0.5">ตำหนิ 3 จุดขึ้นไป หรือหน้า/สันเสียหาย</div>
           </div>
         </div>
