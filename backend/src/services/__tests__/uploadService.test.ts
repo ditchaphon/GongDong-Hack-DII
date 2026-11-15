@@ -121,4 +121,31 @@ describe('uploadService', () => {
     );
     expect(refreshed).toBe('https://proj.supabase.co/signed/fresh-url.webp');
   });
+
+  it('ต้องปฏิเสธไฟล์ HEIC/HEIF ดิบด้วยรหัส UNSUPPORTED_HEIC_IMAGE และรองรับไฟล์ PNG ที่ถูกต้อง', () => {
+    const heicHeader = Buffer.from([
+      0x00, 0x00, 0x00, 0x18,
+      0x66, 0x74, 0x79, 0x70, // ftyp
+      0x68, 0x65, 0x69, 0x63, // heic
+    ]);
+
+    expect(() =>
+      validateUploadInput('book-listings', {
+        buffer: heicHeader,
+        mimetype: 'image/heic',
+        originalname: 'iphone.heic',
+        size: heicHeader.length,
+      })
+    ).toThrow(/HEIC\/HEIF/);
+
+    const pngBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00]);
+    expect(
+      validateUploadInput('book-listings', {
+        buffer: pngBytes,
+        mimetype: 'image/png',
+        originalname: 'screenshot.png',
+        size: pngBytes.length,
+      })
+    ).toBe('book-listings');
+  });
 });

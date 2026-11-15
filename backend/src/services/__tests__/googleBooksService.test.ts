@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { getBookByIsbn, sanitizeIsbn } from '../googleBooksService';
+import { getBookByIsbn, lookupBookByIsbn, sanitizeIsbn } from '../googleBooksService';
 
 describe('GoogleBooksService - ISBN Lookup & Cache-Aside', () => {
   describe('sanitizeIsbn', () => {
@@ -181,6 +181,178 @@ describe('GoogleBooksService - ISBN Lookup & Cache-Aside', () => {
           fetcher: mockFetch,
         })
       ).rejects.toThrow('Google Books API ตอบกลับด้วยสถานะ HTTP 503');
+    });
+  });
+
+  describe('lookupBookByIsbn - Source Tracking & 429 Fallback', () => {
+    it('พบใน Database ต้องระบุ source เป็น DATABASE และไม่ยิง external API', async () => {
+      const mockDb = {
+        bookCatalog: {
+          findUnique: vi.fn().mockResolvedValue({
+            isbn: '9780132350884',
+            title: 'Clean Code',
+            author: 'Robert C. Martin',
+            publisher: 'Prentice Hall',
+            category: 'Computers',
+            coverUrl: 'https://example.com/clean.jpg',
+            originalPrice: 1200,
+          }),
+        },
+      };
+      const mockFetch = vi.fn();
+
+      const result = await lookupBookByIsbn('978-013-235-0884', {
+        prismaClient: mockDb,
+        fetcher: mockFetch,
+      });
+
+      expect(result.found).toBe(true);
+      expect(result.source).toBe('DATABASE');
+      expect(result.book?.title).toBe('Clean Code');
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('ส่ง googleBooksApiKey ไปกับคำขอ และระบุ source เป็น GOOGLE_BOOKS เมื่อพบ', async () => {
+      const mockDb = {
+        bookCatalog: {
+          findUnique: vi.fn().mockResolvedValue(null),
+          upsert: vi.fn().mockResolvedValue({}),
+        },
+      };
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          items: [
+            {
+              volumeInfo: {
+                title: 'Refactoring',
+                authors: ['Martin Fowler'],
+                publisher: 'Addison-Wesley',
+                imageLinks: { thumbnail: 'http://books.google.com/cover.jpg' },
+              },
+            },
+          ],
+        }),
+      });
+
+      const result = await lookupBookByIsbn('9780134757599', {
+        prismaClient: mockDb,
+        fetcher: mockFetch,
+        googleBooksApiKey: 'test-key-123',
+      });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://www.googleapis.com/books/v1/volumes?q=isbn:9780134757599&maxResults=1&key=test-key-123'
+      );
+      expect(result.found).toBe(true);
+      expect(result.source).toBe('GOOGLE_BOOKS');
+      expect(result.book?.coverUrl).toBe('https://books.google.com/cover.jpg');
+      expect(mockDb.bookCatalog.upsert).toHaveBeenCalledTimes(1);
+    });
+
+    it('เมื่อ Google Books ตอบ HTTP 429 ต้อง fallback ไป Open Library และระบุ source OPEN_LIBRARY', async () => {
+      const mockDb = {
+        bookCatalog: {
+          findUnique: vi.fn().mockResolvedValue(null),
+          upsert: vi.fn().mockResolvedValue({}),
+        },
+      };
+      const mockFetch = vi.fn().mockImplementation(async (url: string) => {
+        if (url.includes('googleapis.com')) {
+          return { ok: false, status: 429, json: async () => ({}) };
+        }
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            'ISBN:9780132350884': {
+              title: 'Clean Code (Open Library)',
+              authors: [{ name: 'Robert C. Martin' }],
+              publishers: [{ name: 'Prentice Hall' }],
+              subjects: [{ name: 'Software Engineering' }],
+              cover: { large: 'http://covers.openlibrary.org/b/id/123-L.jpg' },
+            },
+          }),
+        };
+      });
+
+      const result = await lookupBookByIsbn('9780132350884', {
+        prismaClient: mockDb,
+        fetcher: mockFetch,
+      });
+
+      expect(result.found).toBe(true);
+      expect(result.source).toBe('OPEN_LIBRARY');
+      expect(result.warningCode).toBe('GOOGLE_BOOKS_RATE_LIMITED');
+      expect(result.book?.title).toBe('Clean Code (Open Library)');
+      expect(result.book?.coverUrl).toBe('https://covers.openlibrary.org/b/id/123-L.jpg');
+      expect(mockDb.bookCatalog.upsert).toHaveBeenCalledTimes(1);
+    });
+
+    it('เมื่อ Google Books ตอบ 429 และ Open Library ไม่พบ ต้องไม่โยน 500 และคืน warningCode GOOGLE_BOOKS_RATE_LIMITED', async () => {
+      const mockDb = {
+        bookCatalog: {
+          findUnique: vi.fn().mockResolvedValue(null),
+          upsert: vi.fn(),
+        },
+      };
+      const mockFetch = vi.fn().mockImplementation(async (url: string) => {
+        if (url.includes('googleapis.com')) {
+          return { ok: false, status: 429, json: async () => ({}) };
+        }
+        return { ok: true, status: 200, json: async () => ({}) };
+      });
+
+      const result = await lookupBookByIsbn('9780132350884', {
+        prismaClient: mockDb,
+        fetcher: mockFetch,
+      });
+
+      expect(result.found).toBe(false);
+      expect(result.source).toBeNull();
+      expect(result.warningCode).toBe('GOOGLE_BOOKS_RATE_LIMITED');
+      expect(mockDb.bookCatalog.upsert).not.toHaveBeenCalled();
+    });
+
+    it('รวม categories หลายค่าจาก Google Books ก่อนแคชลง DB', async () => {
+      const mockDb = {
+        bookCatalog: {
+          findUnique: vi.fn().mockResolvedValue(null),
+          upsert: vi.fn().mockResolvedValue({}),
+        },
+      };
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          items: [
+            {
+              volumeInfo: {
+                title: 'หนังสือตัวอย่าง',
+                authors: ['ผู้เขียนทดสอบ'],
+                publisher: 'สนพ. ตัวอย่าง',
+                categories: ['Fiction', 'Young Adult Fiction'],
+              },
+            },
+          ],
+        }),
+      });
+
+      const result = await lookupBookByIsbn('9786161845678', {
+        prismaClient: mockDb,
+        fetcher: mockFetch,
+      });
+
+      expect(result.found).toBe(true);
+      expect(result.book?.category).toBe('Fiction, Young Adult Fiction');
+      expect(mockDb.bookCatalog.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: expect.objectContaining({
+            category: 'Fiction, Young Adult Fiction',
+          }),
+        })
+      );
     });
   });
 });

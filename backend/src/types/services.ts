@@ -45,6 +45,23 @@ export interface BookCatalogData {
 }
 
 /**
+ * แหล่งที่มาของข้อมูลหนังสือจากการค้นหาด้วย ISBN
+ */
+export type BookCatalogSource = 'DATABASE' | 'GOOGLE_BOOKS' | 'OPEN_LIBRARY';
+
+/**
+ * ผลลัพธ์การค้นหา ISBN พร้อมระบุแหล่งที่มาและสถานะ fallback
+ */
+export interface IsbnLookupResult {
+  found: boolean;
+  isbn: string;
+  source: BookCatalogSource | null;
+  book: BookCatalogData | null;
+  warningCode?: 'GOOGLE_BOOKS_RATE_LIMITED' | 'EXTERNAL_LOOKUP_FAILED';
+  warningMessage?: string;
+}
+
+/**
  * ผลลัพธ์จากการสร้าง PromptPay QR Code
  */
 export interface PromptPayQRResult {

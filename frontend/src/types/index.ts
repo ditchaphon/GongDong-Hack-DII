@@ -161,9 +161,19 @@ export interface ListingDefect {
   photo?: string;
 }
 
+export type IsbnLookupSource =
+  | 'DATABASE'
+  | 'GOOGLE_BOOKS'
+  | 'OPEN_LIBRARY'
+  | 'NOT_FOUND'
+  | 'RATE_LIMITED'
+  | 'ERROR';
+
 export interface ListingDraft {
   mode: 'SINGLE' | 'SET';
   isbn: string;
+  isbnLookupSource?: IsbnLookupSource;
+  isbnLookupMessage?: string;
   title: string;
   author: string;
   publisher: string;

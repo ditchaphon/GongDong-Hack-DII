@@ -55,6 +55,35 @@ function getSupabaseAdminClient(): SupabaseClient | null {
   });
 }
 
+const HEIC_FTYP_BRANDS = new Set([
+  'heic',
+  'heix',
+  'hevc',
+  'hevx',
+  'heim',
+  'heis',
+  'mif1',
+  'msf1',
+]);
+
+function isHeicImage(mimetype: string, buffer: Buffer): boolean {
+  const lower = mimetype.toLowerCase();
+  if (
+    lower === 'image/heic' ||
+    lower === 'image/heif' ||
+    lower === 'image/heic-sequence' ||
+    lower === 'image/heif-sequence'
+  ) {
+    return true;
+  }
+
+  if (buffer.length >= 12 && buffer.subarray(4, 8).toString('ascii') === 'ftyp') {
+    const brand = buffer.subarray(8, 12).toString('ascii').toLowerCase();
+    return HEIC_FTYP_BRANDS.has(brand);
+  }
+  return false;
+}
+
 function hasMatchingImageMagicBytes(mimetype: string, buffer: Buffer): boolean {
   if (mimetype === 'image/jpeg' || mimetype === 'image/jpg') {
     return buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff;
@@ -98,7 +127,17 @@ export function validateUploadInput(bucket: string, file?: UploadFileInput): Upl
     throw new AppError('กรุณาแนบไฟล์รูปภาพที่ต้องการอัปโหลด', 400, 'FILE_REQUIRED');
   }
 
-  if (!ALLOWED_IMAGE_MIME_TYPES.has(file.mimetype)) {
+  const normalizedMime = file.mimetype.toLowerCase();
+
+  if (isHeicImage(normalizedMime, file.buffer)) {
+    throw new AppError(
+      'ไฟล์รูปภาพแบบ HEIC/HEIF ยังไม่ถูกแปลงเป็น JPEG กรุณาลองเลือกไฟล์ใหม่อีกครั้งหรือใช้ไฟล์ JPG/PNG/WEBP',
+      400,
+      'UNSUPPORTED_HEIC_IMAGE'
+    );
+  }
+
+  if (!ALLOWED_IMAGE_MIME_TYPES.has(normalizedMime)) {
     throw new AppError(
       'รองรับเฉพาะไฟล์รูปภาพ JPEG, PNG และ WEBP เท่านั้น',
       400,
@@ -106,7 +145,7 @@ export function validateUploadInput(bucket: string, file?: UploadFileInput): Upl
     );
   }
 
-  if (!hasMatchingImageMagicBytes(file.mimetype, file.buffer)) {
+  if (!hasMatchingImageMagicBytes(normalizedMime, file.buffer)) {
     throw new AppError(
       'เนื้อหาไฟล์ไม่ตรงกับชนิดรูปภาพที่ระบุ (กรุณาอัปโหลดไฟล์ JPEG, PNG หรือ WEBP ที่สมบูรณ์)',
       400,
