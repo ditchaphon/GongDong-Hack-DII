@@ -8,7 +8,7 @@ import {
   getRecommendedBooks,
   updateBookListing,
 } from '../services/bookService';
-import { getBookByIsbn } from '../services/googleBooksService';
+import { lookupBookByIsbn } from '../services/googleBooksService';
 import { AppError, BookGrade } from '../types';
 import { getUserIdFromRequest } from '../utils/requestUser';
 
@@ -43,16 +43,26 @@ bookRouter.get(
   async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const isbn = String(req.params.isbn);
-      const bookData = await getBookByIsbn(isbn);
+      const result = await lookupBookByIsbn(isbn);
 
-      if (!bookData) {
+      if (!result.found || !result.book) {
+        const message =
+          result.warningCode === 'GOOGLE_BOOKS_RATE_LIMITED'
+            ? 'Google Books API ถูกจำกัดการใช้งานชั่วคราว (HTTP 429) และไม่พบในแหล่งสำรอง กรุณากรอกรายละเอียดด้วยตนเอง'
+            : result.warningCode === 'EXTERNAL_LOOKUP_FAILED'
+              ? 'ไม่สามารถดึงข้อมูลจากบริการภายนอกได้ชั่วคราว กรุณากรอกรายละเอียดด้วยตนเอง'
+              : 'ไม่พบข้อมูลทั้งใน Database และ Google Books / Open Library กรุณากรอกรายละเอียดด้วยตนเอง';
+
         res.status(200).json({
           success: true,
           data: {
             found: false,
-            isbn,
+            isbn: result.isbn,
+            source: null,
+            warning_code: result.warningCode || null,
+            warning_message: result.warningMessage || null,
           },
-          message: 'ไม่พบข้อมูลในแคตตาล็อกกลาง กรุณากรอกรายละเอียดด้วยตนเอง',
+          message,
         });
         return;
       }
@@ -61,13 +71,16 @@ bookRouter.get(
         success: true,
         data: {
           found: true,
-          isbn: bookData.isbn,
-          title: bookData.title,
-          author: bookData.author,
-          publisher: bookData.publisher,
-          category: bookData.category,
-          cover_url: bookData.coverUrl,
-          original_price: bookData.originalPrice,
+          source: result.source,
+          warning_code: result.warningCode || null,
+          warning_message: result.warningMessage || null,
+          isbn: result.book.isbn,
+          title: result.book.title,
+          author: result.book.author,
+          publisher: result.book.publisher,
+          category: result.book.category,
+          cover_url: result.book.coverUrl,
+          original_price: result.book.originalPrice,
         },
       });
     } catch (error) {

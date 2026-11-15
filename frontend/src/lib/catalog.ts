@@ -13,6 +13,52 @@ export const BOOK_CATEGORIES = [
 
 export type BookCategory = (typeof BOOK_CATEGORIES)[number];
 
+const CATEGORY_MATCHERS: Array<{ category: Exclude<BookCategory, 'อื่น ๆ'>; pattern: RegExp }> = [
+  {
+    category: 'การ์ตูน',
+    pattern: /comic|manga|graphic\s*novel|การ์ตูน|มังงะ/i,
+  },
+  {
+    category: 'หนังสือเรียน',
+    pattern: /textbook|study\s*aid|education|workbook|exam|course|หนังสือเรียน|แบบฝึกหัด|คู่มือสอบ/i,
+  },
+  {
+    category: 'นิยาย',
+    pattern:
+      /(?<!non[\s-])fiction|novel|literature|fantasy|romance|mystery|thriller|horror|sci-fi|light\s*novel|นิยาย|วรรณกรรม|เรื่องสั้น/i,
+  },
+  {
+    category: 'วารสาร',
+    pattern: /periodical|magazine|journal|newspaper|วารสาร|นิตยสาร/i,
+  },
+  {
+    category: 'วิชาการ',
+    pattern:
+      /non[\s-]?fiction|computer|science|math|engineering|medical|medicine|business|economic|law|history|psychology|philosophy|academic|technology|architecture|social\s*science|programming|software|reference|วิชาการ|วิทยาศาสตร์|คอมพิวเตอร์|จิตวิทยา|พัฒนาตนเอง|บริหาร|ประวัติศาสตร์/i,
+  },
+];
+
+/**
+ * แปลงชื่อหมวดหมู่จาก API/Database (มักเป็นภาษาอังกฤษ เช่น "Fiction", "Computers")
+ * เข้ากับ 6 หมวดหมู่ภาษาไทยของแพลตฟอร์ม
+ * - ถ้า API ไม่ส่งหมวดหมู่มาเลย -> คืน [] ให้ผู้ขายเลือกเอง
+ * - ถ้า API ส่งมาแต่ไม่เข้า 5 หมวดหลัก -> คืน ['อื่น ๆ']
+ */
+export function mapApiCategoryToThaiCategories(rawCategory?: string | null): BookCategory[] {
+  if (!rawCategory || !rawCategory.trim()) {
+    return [];
+  }
+
+  const matched: BookCategory[] = [];
+  for (const { category, pattern } of CATEGORY_MATCHERS) {
+    if (pattern.test(rawCategory) && !matched.includes(category)) {
+      matched.push(category);
+    }
+  }
+
+  return matched.length > 0 ? matched : ['อื่น ๆ'];
+}
+
 export const CREDIT_PACKAGES: CreditPackage[] = [
   {
     id: 'starter',

@@ -4,6 +4,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import clsx from 'clsx';
 import { Camera, X, RefreshCcw, ScanLine, Loader2, CameraOff, ImageIcon } from 'lucide-react';
 import { uploadImageFile, UploadBucket } from '@/lib/api';
+import { prepareImageForPreviewAndUpload } from '@/lib/imageCompression';
 
 export interface CameraCaptureProps {
   isOpen: boolean;
@@ -40,6 +41,7 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({
   const [shot, setShot] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [preparingPhoto, setPreparingPhoto] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -99,15 +101,31 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({
     if (demoImage) setShot(demoImage);
   };
 
-  const pickFromGallery = (file?: File | null) => {
+  const pickFromGallery = async (file?: File | null) => {
     if (!file) return;
-    selectedFileRef.current = file;
     setUploadError(null);
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === 'string') setShot(reader.result);
-    };
-    reader.readAsDataURL(file);
+    setPreparingPhoto(true);
+    try {
+      const normalized = await prepareImageForPreviewAndUpload(file);
+      selectedFileRef.current = normalized;
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result === 'string') setShot(reader.result);
+      };
+      reader.onerror = () => {
+        setUploadError('ไม่สามารถอ่านไฟล์รูปภาพได้ กรุณาลองเลือกรูปอื่น');
+      };
+      reader.readAsDataURL(normalized);
+    } catch (err) {
+      selectedFileRef.current = null;
+      setUploadError(
+        err instanceof Error
+          ? err.message
+          : 'ไม่สามารถเตรียมไฟล์รูปภาพได้ กรุณาลองเลือกรูปอื่น'
+      );
+    } finally {
+      setPreparingPhoto(false);
+    }
   };
 
   const confirmPhoto = async () => {
@@ -237,10 +255,15 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({
                   <button
                     type="button"
                     onClick={() => fileRef.current?.click()}
+                    disabled={preparingPhoto}
                     aria-label="เลือกจากแกลอรี่"
-                    className="w-12 h-12 rounded-xl border border-white/30 flex items-center justify-center text-white active:scale-95 transition"
+                    className="w-12 h-12 rounded-xl border border-white/30 flex items-center justify-center text-white active:scale-95 transition disabled:opacity-50"
                   >
-                    <ImageIcon className="w-5 h-5" />
+                    {preparingPhoto ? (
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                    ) : (
+                      <ImageIcon className="w-5 h-5" />
+                    )}
                   </button>
                   <button
                     type="button"
@@ -253,7 +276,9 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({
                   </button>
                   <span className="w-12 h-12" />
                 </div>
-                <span className="text-[10px] text-white/60">แกลอรี่ · ถ่ายรูป</span>
+                <span className="text-[10px] text-white/60">
+                  {preparingPhoto ? 'กำลังแปลงไฟล์รูปภาพ…' : 'แกลอรี่ · ถ่ายรูป'}
+                </span>
                 {state === 'NO_CAMERA' && demoImage && (
                   <span className="text-[10px] text-white/50">โหมดทดลอง: กดปุ่มเพื่อใช้รูปตัวอย่าง</span>
                 )}
@@ -274,7 +299,7 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({
             <input
               ref={fileRef}
               type="file"
-              accept="image/*"
+              accept="image/*,.heic,.heif"
               className="hidden"
               onChange={(event) => {
                 pickFromGallery(event.target.files?.[0]);

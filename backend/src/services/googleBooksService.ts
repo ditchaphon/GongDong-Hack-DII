@@ -1,5 +1,6 @@
-import { AppError, BookCatalogData } from '../types';
+import { AppError, BookCatalogData, IsbnLookupResult } from '../types';
 import { prisma as defaultPrisma } from '../config/prisma';
+import { env } from '../config/env';
 
 export interface GoogleBooksVolumeInfo {
   title?: string;
@@ -29,6 +30,8 @@ export interface GoogleBooksApiResponse {
 export interface GoogleBooksServiceOptions {
   prismaClient?: any;
   fetcher?: (url: string) => Promise<{ ok: boolean; status: number; json: () => Promise<any> }>;
+  googleBooksApiKey?: string;
+  timeoutMs?: number;
 }
 
 /**
@@ -134,4 +137,258 @@ export async function getBookByIsbn(
   });
 
   return bookData;
+}
+
+const DEFAULT_LOOKUP_TIMEOUT_MS = 8000;
+
+interface OpenLibraryBookEntry {
+  title?: string;
+  authors?: Array<{ name?: string }>;
+  publishers?: Array<{ name?: string }>;
+  subjects?: Array<{ name?: string }>;
+  cover?: {
+    small?: string;
+    medium?: string;
+    large?: string;
+  };
+}
+
+interface GoogleBooksVolumeItem {
+  volumeInfo?: {
+    title?: string;
+    authors?: string[];
+    publisher?: string;
+    categories?: string[];
+    imageLinks?: {
+      thumbnail?: string;
+      smallThumbnail?: string;
+    };
+  };
+  saleInfo?: {
+    listPrice?: {
+      amount?: number;
+    };
+  };
+}
+
+const MAX_CATEGORY_LENGTH = 100;
+
+function normalizeHttpsUrl(url?: string | null): string | null {
+  if (!url) return null;
+  return url.replace(/^http:\/\//i, 'https://');
+}
+
+function joinCategories(values?: Array<string | undefined>): string | null {
+  if (!values || values.length === 0) return null;
+  const unique = Array.from(
+    new Set(values.map((v) => v?.trim()).filter((v): v is string => Boolean(v)))
+  );
+  if (unique.length === 0) return null;
+
+  let combined = '';
+  for (const item of unique) {
+    const candidate = combined ? `${combined}, ${item}` : item;
+    if (candidate.length <= MAX_CATEGORY_LENGTH) {
+      combined = candidate;
+    } else if (!combined) {
+      combined = item.slice(0, MAX_CATEGORY_LENGTH);
+      break;
+    } else {
+      break;
+    }
+  }
+  return combined || null;
+}
+
+async function fetchExternalJson(
+  url: string,
+  options?: GoogleBooksServiceOptions
+): Promise<{ ok: boolean; status: number; json: () => Promise<any> }> {
+  if (options?.fetcher) {
+    return options.fetcher(url);
+  }
+  const timeoutMs = options?.timeoutMs ?? DEFAULT_LOOKUP_TIMEOUT_MS;
+  return fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
+}
+
+async function cacheBookCatalog(db: any, bookData: BookCatalogData): Promise<void> {
+  const payload = {
+    title: bookData.title,
+    author: bookData.author,
+    publisher: bookData.publisher,
+    category: bookData.category,
+    coverUrl: bookData.coverUrl,
+    originalPrice: bookData.originalPrice,
+  };
+  await db.bookCatalog.upsert({
+    where: { isbn: bookData.isbn },
+    update: payload,
+    create: {
+      isbn: bookData.isbn,
+      ...payload,
+    },
+  });
+}
+
+async function fetchFromGoogleBooks(
+  cleanIsbn: string,
+  options?: GoogleBooksServiceOptions
+): Promise<{
+  book: BookCatalogData | null;
+  warningCode?: IsbnLookupResult['warningCode'];
+  warningMessage?: string;
+}> {
+  const apiKey = options?.googleBooksApiKey ?? env.GOOGLE_BOOKS_API_KEY;
+  const keyParam = apiKey ? `&key=${encodeURIComponent(apiKey)}` : '';
+  const apiUrl = `https://www.googleapis.com/books/v1/volumes?q=isbn:${cleanIsbn}&maxResults=1${keyParam}`;
+
+  try {
+    const response = await fetchExternalJson(apiUrl, options);
+    if (!response.ok) {
+      if (response.status === 429) {
+        return {
+          book: null,
+          warningCode: 'GOOGLE_BOOKS_RATE_LIMITED',
+          warningMessage: 'Google Books API ถูกจำกัดการใช้งานชั่วคราว (HTTP 429)',
+        };
+      }
+      return {
+        book: null,
+        warningCode: 'EXTERNAL_LOOKUP_FAILED',
+        warningMessage: `Google Books API ตอบกลับด้วยสถานะ HTTP ${response.status}`,
+      };
+    }
+
+    const data = (await response.json()) as { items?: GoogleBooksVolumeItem[] };
+    const first = data?.items?.[0];
+    if (!first?.volumeInfo) {
+      return { book: null };
+    }
+
+    const info = first.volumeInfo;
+    const sale = first.saleInfo || {};
+    const cover = normalizeHttpsUrl(info.imageLinks?.thumbnail || info.imageLinks?.smallThumbnail || null);
+
+    return {
+      book: {
+        isbn: cleanIsbn,
+        title: info.title || 'ไม่มีชื่อเรื่อง',
+        author: info.authors && info.authors.length > 0 ? info.authors.join(', ') : null,
+        publisher: info.publisher || null,
+        category: joinCategories(info.categories),
+        coverUrl: cover,
+        originalPrice: sale.listPrice?.amount ? Number(sale.listPrice.amount) : null,
+      },
+    };
+  } catch (err) {
+    return {
+      book: null,
+      warningCode: 'EXTERNAL_LOOKUP_FAILED',
+      warningMessage:
+        err instanceof Error ? `เชื่อมต่อ Google Books API ไม่สำเร็จ: ${err.message}` : 'เชื่อมต่อ Google Books API ไม่สำเร็จ',
+    };
+  }
+}
+
+async function fetchFromOpenLibrary(
+  cleanIsbn: string,
+  options?: GoogleBooksServiceOptions
+): Promise<BookCatalogData | null> {
+  const apiUrl = `https://openlibrary.org/api/books?bibkeys=ISBN:${cleanIsbn}&format=json&jscmd=data`;
+  try {
+    const response = await fetchExternalJson(apiUrl, options);
+    if (!response.ok) return null;
+
+    const payload = (await response.json()) as Record<string, OpenLibraryBookEntry>;
+    const entry = payload?.[`ISBN:${cleanIsbn}`];
+    if (!entry?.title) return null;
+
+    const authors = (entry.authors || [])
+      .map((a) => a.name?.trim())
+      .filter((name): name is string => Boolean(name));
+    const publisher = entry.publishers?.[0]?.name?.trim() || null;
+    const category = joinCategories((entry.subjects || []).slice(0, 3).map((s) => s.name));
+    const coverUrl = normalizeHttpsUrl(entry.cover?.large || entry.cover?.medium || entry.cover?.small || null);
+
+    return {
+      isbn: cleanIsbn,
+      title: entry.title.trim(),
+      author: authors.length > 0 ? authors.join(', ') : null,
+      publisher,
+      category,
+      coverUrl,
+      originalPrice: null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * ค้นหาข้อมูลหนังสือจาก ISBN แบบ Cache-Aside พร้อมระบุแหล่งที่มาและ Fallback ไปยัง Open Library เมื่อ Google Books ติด 429/ล้มเหลว
+ */
+export async function lookupBookByIsbn(
+  rawIsbn: string,
+  options?: GoogleBooksServiceOptions
+): Promise<IsbnLookupResult> {
+  const cleanIsbn = sanitizeIsbn(rawIsbn);
+  const db = options?.prismaClient || defaultPrisma;
+
+  // 1. ตรวจสอบแคชในฐานข้อมูลก่อน (Cache Hit)
+  const cachedBook = await db.bookCatalog.findUnique({
+    where: { isbn: cleanIsbn },
+  });
+
+  if (cachedBook) {
+    return {
+      found: true,
+      isbn: cleanIsbn,
+      source: 'DATABASE',
+      book: {
+        isbn: cachedBook.isbn,
+        title: cachedBook.title,
+        author: cachedBook.author,
+        publisher: cachedBook.publisher,
+        category: cachedBook.category,
+        coverUrl: cachedBook.coverUrl,
+        originalPrice: cachedBook.originalPrice !== null ? Number(cachedBook.originalPrice) : null,
+      },
+    };
+  }
+
+  // 2. ลองค้นหาจาก Google Books API
+  const googleResult = await fetchFromGoogleBooks(cleanIsbn, options);
+  if (googleResult.book) {
+    await cacheBookCatalog(db, googleResult.book);
+    return {
+      found: true,
+      isbn: cleanIsbn,
+      source: 'GOOGLE_BOOKS',
+      book: googleResult.book,
+    };
+  }
+
+  // 3. Fallback ไปยัง Open Library API เมื่อไม่พบใน Google Books หรือโดน 429/timeout
+  const openLibraryBook = await fetchFromOpenLibrary(cleanIsbn, options);
+  if (openLibraryBook) {
+    await cacheBookCatalog(db, openLibraryBook);
+    return {
+      found: true,
+      isbn: cleanIsbn,
+      source: 'OPEN_LIBRARY',
+      book: openLibraryBook,
+      ...(googleResult.warningCode ? { warningCode: googleResult.warningCode } : {}),
+      ...(googleResult.warningMessage ? { warningMessage: googleResult.warningMessage } : {}),
+    };
+  }
+
+  // 4. ไม่พบจากทุกแหล่ง (ไม่โยน 500 กลับไปให้ผู้ขายกรอกเองได้)
+  return {
+    found: false,
+    isbn: cleanIsbn,
+    source: null,
+    book: null,
+    ...(googleResult.warningCode ? { warningCode: googleResult.warningCode } : {}),
+    ...(googleResult.warningMessage ? { warningMessage: googleResult.warningMessage } : {}),
+  };
 }

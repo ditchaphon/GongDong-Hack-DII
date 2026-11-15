@@ -38,6 +38,9 @@ const envSchema = z.object({
   BLACKLISTSELLER_API_URL: z
     .string()
     .default('https://api.blacklistseller.com/api/v1/queries/idcard-summary/'),
+
+  // Google Books API (optional: reduces HTTP 429 rate-limit hits)
+  GOOGLE_BOOKS_API_KEY: z.string().optional(),
 });
 
 export const env = envSchema.parse(process.env);
