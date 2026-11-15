@@ -101,7 +101,11 @@ export async function pushLineMessage(
   messages: messagingApi.Message[],
   clientOverride?: Pick<messagingApi.MessagingApiClient, 'pushMessage'> | null
 ): Promise<{ sent: boolean; reason?: string }> {
-  if (!lineUserId || lineUserId.startsWith('mock_')) {
+  if (
+    !lineUserId ||
+    lineUserId.startsWith('mock_') ||
+    lineUserId.startsWith('line_')
+  ) {
     return { sent: false, reason: 'MOCK_OR_MISSING_LINE_ID' };
   }
 
@@ -139,12 +143,39 @@ export function buildAppLink(linkPath: string): string {
 }
 
 /**
+ * ดึง lineUserId ของผู้รับจากฐานข้อมูลหากผู้เรียกส่งมาเฉพาะ recipientUserId
+ */
+async function resolveRecipientLineUserId(
+  recipientUserId: string,
+  providedLineUserId: string | null | undefined,
+  prismaClient: any
+): Promise<string | null | undefined> {
+  if (providedLineUserId !== undefined) {
+    return providedLineUserId;
+  }
+  if (!recipientUserId || typeof prismaClient?.user?.findUnique !== 'function') {
+    return undefined;
+  }
+  try {
+    const user = await prismaClient.user.findUnique({
+      where: { id: recipientUserId },
+      select: { lineUserId: true },
+    });
+    return user?.lineUserId ?? null;
+  } catch (err) {
+    console.warn('[lineNotifyService] Failed to resolve recipient lineUserId:', err);
+    return undefined;
+  }
+}
+
+/**
  * ส่งทั้ง In-App Notification และ LINE Push Notification สำหรับเหตุการณ์คำสั่งซื้อ
  */
 export async function notifyOrderEvent(
   params: LineOrderNotificationParams,
-  prismaClient: any = prisma
-): Promise<void> {
+  prismaClient: any = prisma,
+  clientOverride?: Pick<messagingApi.MessagingApiClient, 'pushMessage'> | null
+): Promise<{ pushed: boolean; reason?: string }> {
   const linkPath = params.linkPath || `/orders/${params.orderId}`;
   const fullUrl = buildAppLink(linkPath);
 
@@ -164,6 +195,12 @@ export async function notifyOrderEvent(
     console.warn('[lineNotifyService] Failed to persist in-app notification:', err);
   }
 
+  const recipientLineUserId = await resolveRecipientLineUserId(
+    params.recipientUserId,
+    params.recipientLineUserId,
+    prismaClient
+  );
+
   const flex = buildOrderFlexMessage({
     title: params.title,
     message: params.message,
@@ -172,7 +209,27 @@ export async function notifyOrderEvent(
     linkUrl: fullUrl,
   });
 
-  await pushLineMessage(params.recipientLineUserId, [flex]);
+  const pushResult = await pushLineMessage(recipientLineUserId, [flex], clientOverride);
+  return { pushed: pushResult.sent, reason: pushResult.reason };
+}
+
+const WEBHOOK_DEDUP_TTL_MS = 10 * 60 * 1000;
+const processedWebhookEvents = new Map<string, number>();
+
+function isDuplicateWebhookEvent(webhookEventId?: string): boolean {
+  if (!webhookEventId) return false;
+  const now = Date.now();
+  const expiresAt = processedWebhookEvents.get(webhookEventId);
+  if (expiresAt && expiresAt > now) {
+    return true;
+  }
+  if (processedWebhookEvents.size > 2000) {
+    for (const [id, exp] of processedWebhookEvents.entries()) {
+      if (exp <= now) processedWebhookEvents.delete(id);
+    }
+  }
+  processedWebhookEvents.set(webhookEventId, now + WEBHOOK_DEDUP_TTL_MS);
+  return false;
 }
 
 /**
@@ -182,52 +239,63 @@ export async function handleLineWebhookEvents(
   events: webhook.Event[],
   prismaClient: any = prisma,
   clientOverride?: Pick<messagingApi.MessagingApiClient, 'replyMessage'> | null
-): Promise<{ processed: number }> {
+): Promise<{ processed: number; skippedDuplicates?: number }> {
   const client =
     clientOverride !== undefined ? clientOverride : getLineMessagingClient();
 
   let processed = 0;
+  let skippedDuplicates = 0;
 
   for (const event of events) {
-    if (event.type === 'follow') {
-      const lineUserId = event.source?.userId;
-      if (lineUserId && prismaClient?.user?.findUnique) {
-        const user = await prismaClient.user.findUnique({
-          where: { lineUserId },
-          select: { id: true },
-        });
-        if (user) {
-          await createNotification(
-            {
-              userId: user.id,
-              role: 'BUYER',
-              type: 'SYSTEM',
-              title: 'เชื่อมต่อ LINE OA สำเร็จ',
-              message: 'คุณจะได้รับการแจ้งเตือนสถานะคำสั่งซื้อผ่าน LINE Official Account แล้ว',
-            },
-            prismaClient
-          );
-        }
-      }
+    const eventId = (event as { webhookEventId?: string }).webhookEventId;
+    if (isDuplicateWebhookEvent(eventId)) {
+      skippedDuplicates++;
+      continue;
+    }
 
-      if (client && event.replyToken) {
-        try {
-          await client.replyMessage({
-            replyToken: event.replyToken,
-            messages: [
-              {
-                type: 'text',
-                text: 'ยินดีต้อนรับสู่ GongDong! คุณจะได้รับการแจ้งเตือนคำสั่งซื้อและนัดรับหนังสือผ่านทาง LINE นี้ครับ 📚',
-              },
-            ],
+    try {
+      if (event.type === 'follow') {
+        const lineUserId = event.source?.userId;
+        if (lineUserId && prismaClient?.user?.findUnique) {
+          const user = await prismaClient.user.findUnique({
+            where: { lineUserId },
+            select: { id: true },
           });
-        } catch (err) {
-          console.warn('[lineNotifyService] Failed to reply follow event:', err);
+          if (user) {
+            await createNotification(
+              {
+                userId: user.id,
+                role: 'BUYER',
+                type: 'SYSTEM',
+                title: 'เชื่อมต่อ LINE OA สำเร็จ',
+                message: 'คุณจะได้รับการแจ้งเตือนสถานะคำสั่งซื้อผ่าน LINE Official Account แล้ว',
+              },
+              prismaClient
+            );
+          }
         }
+
+        if (client && event.replyToken) {
+          try {
+            await client.replyMessage({
+              replyToken: event.replyToken,
+              messages: [
+                {
+                  type: 'text',
+                  text: 'ยินดีต้อนรับสู่ GongDong! คุณจะได้รับการแจ้งเตือนคำสั่งซื้อและนัดรับหนังสือผ่านทาง LINE นี้ครับ 📚',
+                },
+              ],
+            });
+          } catch (err) {
+            console.warn('[lineNotifyService] Failed to reply follow event:', err);
+          }
+        }
+        processed++;
       }
-      processed++;
+    } catch (err) {
+      console.warn('[lineNotifyService] Error handling webhook event:', err);
     }
   }
 
-  return { processed };
+  return skippedDuplicates > 0 ? { processed, skippedDuplicates } : { processed };
 }

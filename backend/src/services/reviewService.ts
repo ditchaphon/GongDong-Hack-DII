@@ -6,6 +6,7 @@ import {
   UserReviewsResult,
 } from '../types';
 import { maskSensitiveData } from './dataMaskingService';
+import { notifyOrderEvent } from './lineNotifyService';
 
 /**
  * ส่งคะแนนและรีวิวคำสั่งซื้อ (POST /api/orders/:id/review)
@@ -96,7 +97,7 @@ export async function createOrderReview(
       : null;
 
     try {
-      return await tx.review.create({
+      const createdReview = await tx.review.create({
         data: {
           orderId,
           reviewerId,
@@ -107,6 +108,13 @@ export async function createOrderReview(
           comment: maskedComment,
         },
       });
+      return {
+        createdReview,
+        revieweeId,
+        recipientRole: (isBuyer ? 'SELLER' : 'BUYER') as 'BUYER' | 'SELLER',
+        rating,
+        maskedComment,
+      };
     } catch (err: any) {
       if (err?.code === 'P2002') {
         throw new AppError('คุณได้ส่งรีวิวสำหรับคำสั่งซื้อนี้ไปแล้ว', 400, 'ALREADY_REVIEWED');
@@ -115,7 +123,30 @@ export async function createOrderReview(
     }
   };
 
-  return typeof db.$transaction === 'function' ? db.$transaction(runInTx) : runInTx(db);
+  const outcome =
+    typeof db.$transaction === 'function' ? await db.$transaction(runInTx) : await runInTx(db);
+
+  if (db?.notification?.create) {
+    const commentPreview = outcome.maskedComment
+      ? ` · "${outcome.maskedComment.slice(0, 70)}"`
+      : '';
+    await notifyOrderEvent(
+      {
+        recipientUserId: outcome.revieweeId,
+        role: outcome.recipientRole,
+        orderId,
+        title:
+          outcome.recipientRole === 'SELLER'
+            ? 'ผู้ซื้อให้คะแนนรีวิวร้านของคุณแล้ว ⭐'
+            : 'ผู้ขายส่งรีวิวคำสั่งซื้อให้คุณแล้ว ⭐',
+        message: `ได้รับคะแนน ${outcome.rating}/5 ดาว${commentPreview}`,
+        badgeText: 'NEW REVIEW',
+      },
+      db
+    );
+  }
+
+  return outcome.createdReview;
 }
 
 /**

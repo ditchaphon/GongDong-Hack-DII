@@ -6,22 +6,21 @@ import { TopBar } from '@/components/layout/TopBar';
 import { Button, Stepper } from '@/components/ui';
 import { CameraCapture } from '@/components/v4';
 import { useListing } from '@/hooks/useListing';
-import { Camera, Check, RefreshCcw, ChevronRight, ShieldCheck, Plus, Trash2 } from 'lucide-react';
+import { Camera, Check, RefreshCcw, ChevronRight, ShieldCheck } from 'lucide-react';
 
 type SlotKey = 'cover' | 'back' | 'spine' | 'inner';
 
 // Prototype fallback when the device has no camera (e.g. desktop preview).
-const DEMO: Record<SlotKey | 'defect', string> = {
+const DEMO: Record<SlotKey, string> = {
   cover: 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=600',
   back: 'https://images.unsplash.com/photo-1544947950-fa07a98d237f?w=600',
   spine: 'https://images.unsplash.com/photo-1512820790803-83ca734da794?w=600',
   inner: 'https://images.unsplash.com/photo-1519682337058-a94d519337bc?w=600',
-  defect: 'https://images.unsplash.com/photo-1532012197267-da84d127e765?w=600',
 };
 
 export default function SellerListStep2Page() {
   const router = useRouter();
-  const { draft, setPhoto, addDefect, removeDefect } = useListing();
+  const { draft, setPhoto } = useListing();
   const isSet = draft.mode === 'SET';
 
   const slots: { key: SlotKey; label: string; hint: string }[] = [
@@ -31,7 +30,7 @@ export default function SellerListStep2Page() {
     { key: 'inner', label: 'หน้าด้านใน', hint: 'เปิดกลางเล่ม เห็นสีกระดาษ' },
   ];
 
-  const [camera, setCamera] = useState<{ key: SlotKey | 'defect'; label: string } | null>(null);
+  const [camera, setCamera] = useState<{ key: SlotKey; label: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const photoOf = (key: SlotKey) => (key === 'inner' ? draft.photos.inner : draft.photos[key]);
@@ -106,41 +105,8 @@ export default function SellerListStep2Page() {
 
           <p className="flex items-start gap-2 p-2.5 rounded-lg bg-slate-50 border border-slate-200 text-[11px] text-slate-600">
             <ShieldCheck className="w-3.5 h-3.5 shrink-0 mt-0.5 text-emerald-600" />
-            ถ่ายจากกล้องหรือเลือกจากแกลอรี่ได้ · โปรดใช้รูปหนังสือเล่มจริงของคุณ
+            ถ่ายจากกล้องหรือเลือกจากแกลอรี่ได้ · ส่วนจุดตำหนิ 5 หัวข้อจะเช็กและถ่ายรูปในขั้นตอนถัดไป
           </p>
-        </section>
-
-        <section className="bg-white rounded-2xl border border-slate-200 p-4 space-y-3">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-bold text-slate-800">รูปตำหนิเพิ่มเติม (ถ้ามี)</h3>
-            <span className="text-[11px] text-slate-400">{draft.defects.length} รูป</span>
-          </div>
-          {draft.defects.length > 0 && (
-            <div className="grid grid-cols-3 gap-2">
-              {draft.defects.map((defect) => (
-                <div key={defect.id} className="relative aspect-square rounded-xl overflow-hidden bg-slate-100">
-                  {defect.photo && <img src={defect.photo} alt={defect.note} className="w-full h-full object-cover" />}
-                  <button
-                    type="button"
-                    aria-label="ลบรูปตำหนิ"
-                    onClick={() => removeDefect(defect.id)}
-                    className="absolute top-1 right-1 p-1 rounded-full bg-black/60 text-white"
-                  >
-                    <Trash2 className="w-3 h-3" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-          <Button
-            variant="outline"
-            size="sm"
-            fullWidth
-            leftIcon={<Plus className="w-4 h-4" />}
-            onClick={() => setCamera({ key: 'defect', label: 'รูปตำหนิ' })}
-          >
-            เพิ่มรูปตำหนิ
-          </Button>
         </section>
 
         {error && (
@@ -153,7 +119,7 @@ export default function SellerListStep2Page() {
       <div className="fixed bottom-0 left-0 right-0 z-30 flex justify-center pointer-events-none">
         <div className="w-full max-w-[430px] bg-white border-t border-slate-200 p-3 pointer-events-auto safe-area-bottom shadow-lg">
           <Button fullWidth size="lg" onClick={handleNext} rightIcon={<ChevronRight className="w-4 h-4" />}>
-            ถัดไป · ตรวจสภาพจากรูป
+            ถัดไป · เช็กจุดตำหนิ 5 ข้อ
           </Button>
         </div>
       </div>
@@ -168,11 +134,7 @@ export default function SellerListStep2Page() {
         onClose={() => setCamera(null)}
         onCapture={(url) => {
           if (!camera) return;
-          if (camera.key === 'defect') {
-            addDefect({ id: `defect-${Date.now()}`, note: 'รูปตำหนิ', photo: url });
-          } else {
-            setPhoto(camera.key, url);
-          }
+          setPhoto(camera.key, url);
           setCamera(null);
           setError(null);
         }}

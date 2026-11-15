@@ -8,6 +8,10 @@ import Link from 'next/link';
 import { Terminal, Shield, RefreshCw } from 'lucide-react';
 
 export default function DebugPage() {
+  const isDebugAllowed =
+    process.env.NODE_ENV !== 'production' ||
+    process.env.NEXT_PUBLIC_ENABLE_DEBUG === 'true';
+
   const {
     isReady,
     isInClient,
@@ -23,6 +27,24 @@ export default function DebugPage() {
     login,
     logout,
   } = useLiff();
+
+  if (!isDebugAllowed) {
+    return (
+      <div className="flex flex-col min-h-screen bg-slate-100 pb-12">
+        <TopBar title="ไม่พบหน้าที่ต้องการ" />
+        <div className="p-6 max-w-[430px] mx-auto w-full text-center space-y-4">
+          <p className="text-xs text-slate-500">
+            หน้าตรวจสอบระบบ (/debug) ปิดใช้งานในโหมด Production
+          </p>
+          <Link href="/" className="block">
+            <Button variant="primary" size="md" fullWidth>
+              กลับสู่หน้าแรก
+            </Button>
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   const maskedUserId = user.lineUserId
     ? `${user.lineUserId.slice(0, 4)}••••••••${user.lineUserId.slice(-4)}`

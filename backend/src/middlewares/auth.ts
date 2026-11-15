@@ -25,6 +25,14 @@ export async function verifyLineToken(
     process.env.LINE_LOGIN_CHANNEL_ID ||
     process.env.LINE_CHANNEL_ID;
 
+  if (process.env.NODE_ENV === 'production' && !liffChannelId) {
+    throw new AppError(
+      'ระบบยืนยันตัวตน LINE ยังไม่ได้ตั้งค่า LINE_LOGIN_CHANNEL_ID',
+      503,
+      'LINE_AUTH_NOT_CONFIGURED'
+    );
+  }
+
   const bodyParams = new URLSearchParams();
   bodyParams.append('id_token', idToken);
   if (liffChannelId) {

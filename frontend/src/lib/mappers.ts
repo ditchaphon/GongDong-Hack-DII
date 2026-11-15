@@ -362,9 +362,18 @@ export function mapBackendBookDetailToBook(detail: BackendBookDetail): Book {
   const mappedDefects = (detail.defects ?? [])
     .filter((d) => Boolean(d.photo || d.note || d.label))
     .map((d, idx) => ({
-      label: d.label || d.note || `ตำหนิ #${idx + 1}`,
+      label: d.label || d.note || `จุดตำหนิ #${idx + 1}`,
       photo: d.photo || defectUrls[idx] || cover,
     }));
+
+  if (defectUrls.length > mappedDefects.length) {
+    for (let idx = mappedDefects.length; idx < defectUrls.length; idx++) {
+      mappedDefects.push({
+        label: `จุดตำหนิ #${idx + 1}`,
+        photo: defectUrls[idx],
+      });
+    }
+  }
 
   return {
     ...base,

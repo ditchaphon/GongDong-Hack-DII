@@ -1,10 +1,12 @@
 import { prisma } from '../config/prisma';
 import { AppError } from '../types';
 import { maskSensitiveData } from './dataMaskingService';
+import { notifyOrderEvent } from './lineNotifyService';
 
 const BLOCKED_CHAT_STATUSES = new Set(['REQUESTED', 'REJECTED', 'EXPIRED']);
 const READONLY_CHAT_STATUSES = new Set(['COMPLETED', 'CANCELLED']);
 const MAX_MESSAGE_LENGTH = 1000;
+export const CHAT_NOTIFY_COOLDOWN_MS = 3 * 60 * 1000;
 
 export interface SendOrderMessageInput {
   text: string;
@@ -149,6 +151,55 @@ export async function sendOrderMessage(
       },
     },
   });
+
+  if (prismaClient?.notification?.create) {
+    try {
+      let shouldNotify = true;
+      if (typeof prismaClient.orderMessage?.findFirst === 'function') {
+        const recentFromSameSender = await prismaClient.orderMessage.findFirst({
+          where: {
+            orderId,
+            senderId: userId,
+            id: { not: created.id },
+            createdAt: {
+              gte: new Date(Date.now() - CHAT_NOTIFY_COOLDOWN_MS),
+            },
+          },
+          select: { id: true },
+        });
+        if (recentFromSameSender) {
+          shouldNotify = false;
+        }
+      }
+
+      if (shouldNotify) {
+        const recipientUserId = senderRole === 'BUYER' ? order.sellerId : order.buyerId;
+        const recipientRole = senderRole === 'BUYER' ? 'SELLER' : 'BUYER';
+        const senderLabel =
+          created.sender?.nickname ||
+          (senderRole === 'BUYER' ? 'ผู้ซื้อ' : 'ผู้ขาย');
+        const preview =
+          masking.maskedText.length > 90
+            ? `${masking.maskedText.slice(0, 90)}…`
+            : masking.maskedText;
+
+        await notifyOrderEvent(
+          {
+            recipientUserId,
+            role: recipientRole,
+            orderId,
+            title: `ข้อความใหม่จาก${senderLabel}`,
+            message: preview,
+            badgeText: 'NEW CHAT MESSAGE',
+            linkPath: `/orders/${orderId}`,
+          },
+          prismaClient
+        );
+      }
+    } catch (err) {
+      console.warn('[messageService] Failed to send chat notification:', err);
+    }
+  }
 
   return formatOrderMessage(created);
 }

@@ -32,6 +32,21 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 
+interface PreviousListingOption {
+  id: string;
+  isbn: string;
+  title: string;
+  author: string | null;
+  publisher: string | null;
+  category: string | null;
+  categories?: string[];
+  description?: string | null;
+  original_price: number | null;
+  selling_price?: number;
+  cover_image_url?: string | null;
+  seller_name?: string;
+}
+
 export default function SellerListStep1Page() {
   const router = useRouter();
   const { isShopSetup } = useSeller();
@@ -44,13 +59,37 @@ export default function SellerListStep1Page() {
   const [lookingUp, setLookingUp] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [previousListings, setPreviousListings] = useState<PreviousListingOption[]>([]);
+  const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
 
   const isSet = draft.mode === 'SET';
+
+  const selectCandidate = (candidate: PreviousListingOption) => {
+    setSelectedCandidateId(candidate.id);
+    const mappedCategories =
+      candidate.categories && candidate.categories.length > 0
+        ? candidate.categories
+        : mapApiCategoryToThaiCategories(candidate.category);
+    update({
+      isbn: candidate.isbn || draft.isbn,
+      title: candidate.title,
+      author: candidate.author || '',
+      publisher: candidate.publisher || '',
+      categories: mappedCategories,
+      originalPrice: candidate.original_price ? Number(candidate.original_price) : 0,
+      ...(candidate.description && !draft.description
+        ? { description: candidate.description }
+        : {}),
+    });
+    setToastMessage(`เลือกใช้ข้อมูลจาก "${candidate.title}" เรียบร้อย`);
+  };
 
   const applyLookup = async (isbn: string) => {
     const clean = isbn.replace(/[^0-9Xx]/g, '');
     setManualIsbn(clean);
     setLookingUp(true);
+    setPreviousListings([]);
+    setSelectedCandidateId(null);
     try {
       const res = await api.get<{
         found: boolean;
@@ -62,8 +101,54 @@ export default function SellerListStep1Page() {
         author?: string | null;
         publisher?: string | null;
         category?: string | null;
+        cover_url?: string | null;
         original_price?: number | null;
+        previous_listings?: PreviousListingOption[];
       }>(`/api/books/isbn/${encodeURIComponent(clean)}`);
+
+      const candidates: PreviousListingOption[] = [];
+      if (res.found && res.title) {
+        candidates.push({
+          id: 'catalog_master',
+          isbn: res.isbn || clean,
+          title: res.title,
+          author: res.author || null,
+          publisher: res.publisher || null,
+          category: res.category || null,
+          categories: mapApiCategoryToThaiCategories(res.category),
+          original_price: res.original_price ?? null,
+          cover_image_url: res.cover_url || null,
+          seller_name:
+            res.source === 'GOOGLE_BOOKS'
+              ? 'Google Books Catalog'
+              : res.source === 'OPEN_LIBRARY'
+                ? 'Open Library Catalog'
+                : 'แคตตาล็อกกลางในระบบ',
+        });
+      }
+
+      if (Array.isArray(res.previous_listings)) {
+        for (const item of res.previous_listings) {
+          if (candidates.length >= 5) break;
+          // Avoid exact duplicate of master catalog if no extra seller info
+          const isExactSameAsCatalog =
+            candidates.length === 1 &&
+            candidates[0].id === 'catalog_master' &&
+            candidates[0].title === item.title &&
+            (candidates[0].author || '') === (item.author || '') &&
+            (candidates[0].publisher || '') === (item.publisher || '') &&
+            (candidates[0].original_price || 0) === (item.original_price || 0) &&
+            !item.selling_price;
+          if (!isExactSameAsCatalog) {
+            candidates.push(item);
+          }
+        }
+      }
+
+      setPreviousListings(candidates.slice(0, 5));
+      if (candidates.length > 0) {
+        setSelectedCandidateId(candidates[0].id);
+      }
 
       if (res.found && res.title) {
         const resolvedSource: IsbnLookupSource = res.source || 'DATABASE';
@@ -357,9 +442,88 @@ export default function SellerListStep1Page() {
               onChange={(event) => update({ title: event.target.value })}
               helperText="ข้อมูลจาก ISBN ถูกล็อก · แก้ได้เฉพาะชื่อหนังสือ"
             />
+
+            {previousListings.length > 0 && (
+              <div className="pt-2 border-t border-slate-100 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-slate-600">
+                    หนังสือที่มี ISBN นี้ในระบบ ({previousListings.length} รายการ) · แตะเพื่อเลือกข้อมูล
+                  </span>
+                </div>
+                <div className="space-y-2">
+                  {previousListings.slice(0, 5).map((cand, idx) => {
+                    const isSelected =
+                      selectedCandidateId === cand.id ||
+                      (!selectedCandidateId && idx === 0);
+                    return (
+                      <button
+                        key={cand.id}
+                        type="button"
+                        onClick={() => selectCandidate(cand)}
+                        className={`w-full text-left p-2.5 rounded-xl border transition flex items-start gap-2.5 ${
+                          isSelected
+                            ? 'border-[#8B5E3C] bg-amber-50/50 ring-1 ring-[#8B5E3C]/30'
+                            : 'border-slate-200 bg-slate-50/60 hover:bg-slate-100/70'
+                        }`}
+                      >
+                        {cand.cover_image_url ? (
+                          <img
+                            src={cand.cover_image_url}
+                            alt={cand.title}
+                            className="w-11 h-14 rounded-lg object-cover bg-slate-200 shrink-0 border border-slate-200"
+                          />
+                        ) : (
+                          <div className="w-11 h-14 rounded-lg bg-slate-200/70 shrink-0 flex items-center justify-center text-slate-400">
+                            <BookOpen className="w-4 h-4" />
+                          </div>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-start justify-between gap-2">
+                            <p className="text-xs font-bold text-slate-900 line-clamp-1">
+                              {cand.title}
+                            </p>
+                            {isSelected && (
+                              <span className="shrink-0 inline-flex items-center gap-0.5 text-[10px] font-bold text-[#6B4628] bg-amber-100 px-1.5 py-0.5 rounded-full">
+                                <Check className="w-3 h-3" /> เลือกอยู่
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[11px] text-slate-500 truncate mt-0.5">
+                            {cand.author || 'ไม่ระบุผู้แต่ง'}
+                            {cand.publisher ? ` · ${cand.publisher}` : ''}
+                          </p>
+                          <div className="flex flex-wrap items-center gap-2 mt-1 text-[10px] text-slate-600">
+                            {cand.original_price ? (
+                              <span className="font-semibold text-emerald-700">
+                                ราคาปก ฿{Number(cand.original_price).toLocaleString()}
+                              </span>
+                            ) : (
+                              <span className="text-slate-400">ไม่ระบุราคาปก</span>
+                            )}
+                            {cand.selling_price ? (
+                              <span>
+                                · เคยลงขาย ฿{Number(cand.selling_price).toLocaleString()}
+                              </span>
+                            ) : null}
+                            {cand.seller_name ? (
+                              <span className="text-slate-400 truncate">
+                                ({cand.seller_name})
+                              </span>
+                            ) : null}
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             <button
               type="button"
-              onClick={() =>
+              onClick={() => {
+                setPreviousListings([]);
+                setSelectedCandidateId(null);
                 update({
                   title: '',
                   author: '',
@@ -370,8 +534,8 @@ export default function SellerListStep1Page() {
                   originalPrice: 0,
                   isbnLookupSource: undefined,
                   isbnLookupMessage: undefined,
-                })
-              }
+                });
+              }}
               className="text-[11px] text-slate-400 hover:text-rose-500 transition"
             >
               ลบข้อมูลนี้และสแกนใหม่

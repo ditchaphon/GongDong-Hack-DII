@@ -19,8 +19,9 @@ const allowedOrigins = [
   ...env.FRONTEND_URL.split(',')
     .map((origin) => origin.trim().replace(/\/+$/, ''))
     .filter(Boolean),
-  'http://localhost:3000',
-  'https://localhost:3000',
+  ...(env.NODE_ENV !== 'production'
+    ? ['http://localhost:3000', 'https://localhost:3000']
+    : []),
 ];
 
 // Security Middlewares

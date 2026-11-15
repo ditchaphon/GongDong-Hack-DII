@@ -37,6 +37,8 @@ import {
   Store,
   CheckCircle2,
   CalendarDays,
+  ZoomIn,
+  AlertTriangle,
 } from 'lucide-react';
 
 export default function BookDetailPage({
@@ -127,13 +129,23 @@ export default function BookDetailPage({
     );
   }
 
+  const baseAnglePhotos = [
+    { src: book.photos.cover, label: 'ปกหน้า', isDefect: false },
+    { src: book.photos.back, label: 'ปกหลัง', isDefect: false },
+    { src: book.photos.spine, label: 'สันหนังสือ', isDefect: false },
+    ...(book.photos.nameTag
+      ? [{ src: book.photos.nameTag, label: 'หน้าด้านใน', isDefect: false }]
+      : []),
+  ];
+
+  const defectStartIndex = baseAnglePhotos.length;
+
   const photoList = [
-    { src: book.photos.cover, label: 'ปกหน้า' },
-    { src: book.photos.back, label: 'ปกหลัง' },
-    { src: book.photos.spine, label: 'สันหนังสือ' },
-    ...(book.defects || []).map((defect) => ({
+    ...baseAnglePhotos,
+    ...(book.defects || []).map((defect, idx) => ({
       src: defect.photo,
-      label: defect.label,
+      label: defect.label || `จุดตำหนิ #${idx + 1}`,
+      note: defect.label,
       isDefect: true,
     })),
   ];
@@ -206,29 +218,46 @@ export default function BookDetailPage({
         }
       />
 
-      {/* Photo gallery (watermarked, v4) */}
-      <div className="relative w-full aspect-square bg-slate-900 overflow-hidden">
+      {/* Photo gallery (watermarked, v4, tap to zoom) */}
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={() => setIsGalleryOpen(true)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') setIsGalleryOpen(true);
+        }}
+        className="relative w-full aspect-square bg-slate-900 overflow-hidden cursor-zoom-in group"
+      >
         <img
-          src={photoList[activePhotoIdx].src}
+          src={photoList[activePhotoIdx]?.src || book.photos.cover}
           alt={book.title}
-          className="w-full h-full object-contain"
+          className="w-full h-full object-contain group-hover:scale-[1.02] transition-transform"
         />
+
+        {photoList[activePhotoIdx]?.isDefect && (
+          <div className="absolute top-3 left-3 inline-flex items-center gap-1 bg-amber-500/95 text-slate-950 text-[11px] font-bold px-2.5 py-1 rounded-full shadow-md">
+            <AlertTriangle className="w-3.5 h-3.5" /> จุดตำหนิที่ผู้ขายแจ้ง
+          </div>
+        )}
 
         <button
           type="button"
-          onClick={() => setIsGalleryOpen(true)}
-          className="absolute top-3 right-3 p-2 rounded-full bg-black/50 text-white backdrop-blur-xs hover:bg-black/70 transition"
-          aria-label="ดูภาพขนาดใหญ่"
+          onClick={(e) => {
+            e.stopPropagation();
+            setIsGalleryOpen(true);
+          }}
+          className="absolute top-3 right-3 px-2.5 py-1.5 rounded-full bg-black/55 text-white backdrop-blur-xs hover:bg-black/75 transition inline-flex items-center gap-1.5 text-[11px] font-semibold"
+          aria-label="ซูมดูภาพขนาดใหญ่"
         >
-          <Maximize2 className="w-4 h-4" />
+          <ZoomIn className="w-3.5 h-3.5" /> ซูมดูภาพ
         </button>
 
         <div className="absolute bottom-3 right-3 bg-black/60 backdrop-blur-xs text-white text-xs px-2.5 py-1 rounded-full font-mono">
           {activePhotoIdx + 1} / {photoList.length}
         </div>
 
-        <div className="absolute bottom-3 left-3 bg-black/60 backdrop-blur-xs text-white text-[11px] px-2.5 py-1 rounded-full font-medium max-w-[60%] truncate">
-          {photoList[activePhotoIdx].label}
+        <div className="absolute bottom-3 left-3 bg-black/60 backdrop-blur-xs text-white text-[11px] px-2.5 py-1 rounded-full font-medium max-w-[65%] truncate">
+          {photoList[activePhotoIdx]?.label}
         </div>
       </div>
 
@@ -239,14 +268,19 @@ export default function BookDetailPage({
             key={`${photo.src}-${index}`}
             type="button"
             onClick={() => setActivePhotoIdx(index)}
-            aria-label={`ดูรูปที่ ${index + 1}`}
+            aria-label={`ดูรูปที่ ${index + 1}: ${photo.label}`}
             className={`relative w-14 h-14 rounded-xl overflow-hidden border-2 transition shrink-0 ${
               activePhotoIdx === index
-                ? 'border-[var(--color-primary)]'
-                : 'border-transparent opacity-60'
+                ? photo.isDefect
+                  ? 'border-amber-500 ring-2 ring-amber-400/30'
+                  : 'border-[var(--color-primary)]'
+                : 'border-transparent opacity-60 hover:opacity-90'
             }`}
           >
             <img src={photo.src} alt="" className="w-full h-full object-cover" />
+            {photo.isDefect && (
+              <span className="absolute top-1 right-1 w-2.5 h-2.5 rounded-full bg-amber-500 border border-white" />
+            )}
           </button>
         ))}
       </div>
@@ -413,22 +447,49 @@ export default function BookDetailPage({
       {/* Defects */}
       {book.defects && book.defects.length > 0 && (
         <div className="mt-2 p-4 bg-white border-y border-slate-100 space-y-2.5">
-          <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-            ตำหนิที่แจ้งไว้
-          </h2>
-          {book.defects.map((defect) => (
-            <div
-              key={defect.label}
-              className="flex items-center gap-3 p-2.5 rounded-xl border border-amber-200 bg-amber-50/60"
-            >
-              <img
-                src={defect.photo}
-                alt={defect.label}
-                className="w-12 h-12 rounded-lg object-cover bg-slate-100"
-              />
-              <span className="text-[11px] text-amber-900 leading-relaxed">{defect.label}</span>
-            </div>
-          ))}
+          <div className="flex items-center justify-between">
+            <h2 className="text-xs font-bold text-amber-800 uppercase tracking-wider inline-flex items-center gap-1.5">
+              <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
+              จุดตำหนิที่ผู้ขายแจ้งไว้ ({book.defects.length} จุด)
+            </h2>
+            <span className="text-[10px] font-semibold text-amber-700 inline-flex items-center gap-1">
+              <ZoomIn className="w-3 h-3" /> แตะที่รายการเพื่อซูมดูภาพ
+            </span>
+          </div>
+          {book.defects.map((defect, idx) => {
+            const galleryIdx = defectStartIndex + idx;
+            return (
+              <button
+                key={`${defect.label}-${idx}`}
+                type="button"
+                onClick={() => {
+                  setActivePhotoIdx(galleryIdx);
+                  setIsGalleryOpen(true);
+                }}
+                className="w-full text-left flex items-center gap-3 p-2.5 rounded-xl border border-amber-200 bg-amber-50/60 hover:bg-amber-100/60 transition group"
+              >
+                <div className="relative w-14 h-14 rounded-lg overflow-hidden bg-slate-100 shrink-0 border border-amber-200">
+                  <img
+                    src={defect.photo}
+                    alt={defect.label}
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                  />
+                  <span className="absolute bottom-0.5 right-0.5 p-0.5 rounded bg-black/60 text-white">
+                    <ZoomIn className="w-2.5 h-2.5" />
+                  </span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-bold text-amber-950 leading-snug">
+                    {defect.label}
+                  </p>
+                  <p className="text-[10px] text-amber-700 mt-0.5 inline-flex items-center gap-1 font-medium">
+                    แตะเพื่อเปิดรูปตำหนิและซูมดูรายละเอียด
+                  </p>
+                </div>
+                <ChevronRight className="w-4 h-4 text-amber-600 shrink-0" />
+              </button>
+            );
+          })}
         </div>
       )}
 

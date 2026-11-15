@@ -309,22 +309,27 @@ export default function HomePage() {
             <span className="text-sm font-medium text-slate-800">แนะนำวิธีใช้งาน (Onboarding)</span>
             <span className="text-xs text-slate-400">→</span>
           </Link>
-          <Link
-            href="/design-system"
-            onClick={() => setIsLiffMenuOpen(false)}
-            className="flex items-center justify-between p-3.5 rounded-xl hover:bg-slate-50 border border-slate-100"
-          >
-            <span className="text-sm font-medium text-slate-800">Design System Library</span>
-            <span className="text-xs text-slate-400">→</span>
-          </Link>
-          <Link
-            href="/debug"
-            onClick={() => setIsLiffMenuOpen(false)}
-            className="flex items-center justify-between p-3.5 rounded-xl hover:bg-slate-50 border border-slate-100"
-          >
-            <span className="text-sm font-medium text-slate-800">LIFF Diagnostics / Debug</span>
-            <span className="text-xs text-slate-400">→</span>
-          </Link>
+          {(process.env.NODE_ENV !== 'production' ||
+            process.env.NEXT_PUBLIC_ENABLE_DEBUG === 'true') && (
+            <>
+              <Link
+                href="/design-system"
+                onClick={() => setIsLiffMenuOpen(false)}
+                className="flex items-center justify-between p-3.5 rounded-xl hover:bg-slate-50 border border-slate-100"
+              >
+                <span className="text-sm font-medium text-slate-800">Design System Library</span>
+                <span className="text-xs text-slate-400">→</span>
+              </Link>
+              <Link
+                href="/debug"
+                onClick={() => setIsLiffMenuOpen(false)}
+                className="flex items-center justify-between p-3.5 rounded-xl hover:bg-slate-50 border border-slate-100"
+              >
+                <span className="text-sm font-medium text-slate-800">LIFF Diagnostics / Debug</span>
+                <span className="text-xs text-slate-400">→</span>
+              </Link>
+            </>
+          )}
         </div>
       </BottomSheet>
 

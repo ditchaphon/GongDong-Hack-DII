@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Button } from '@/components/ui';
+import { LineOaBanner } from '@/components/v4';
 import { Hourglass, MapPin, Truck, ChevronRight, Store } from 'lucide-react';
 import { useV4Orders } from '@/hooks/useV4Orders';
 import { formatThaiDate } from '@/lib/delivery';
@@ -61,6 +62,8 @@ export default function CartSuccessPage() {
             ? 'ระบบแยกออเดอร์ตามร้านค้าให้เรียบร้อยแล้ว · แจ้งเตือนทาง LINE เมื่อแต่ละร้านตอบรับ'
             : `รอ ${createdOrders[0]?.shop.shopName ?? 'ผู้ขาย'} ตอบรับคำขอ · ระบบจะแจ้งเตือนทาง LINE เมื่อผู้ขายรับแล้ว`}
         </p>
+
+        <LineOaBanner className="w-full max-w-sm text-left" />
 
         {createdOrders.length > 0 && (
           <div className="w-full max-w-sm space-y-2.5 mt-2 text-left">
