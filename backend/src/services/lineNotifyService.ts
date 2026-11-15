@@ -133,7 +133,9 @@ export function buildAppLink(linkPath: string): string {
   const path = linkPath.startsWith('/') ? linkPath : `/${linkPath}`;
   const liffId = env.LINE_LIFF_ID?.trim();
   if (liffId) return `https://liff.line.me/${liffId}${path}`;
-  return `${env.FRONTEND_URL.replace(/\/$/, '')}${path}`;
+  const primaryFrontendUrl =
+    env.FRONTEND_URL.split(',')[0]?.trim().replace(/\/+$/, '') || 'http://localhost:3000';
+  return `${primaryFrontendUrl}${path}`;
 }
 
 /**

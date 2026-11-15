@@ -3,6 +3,11 @@ import { env } from '../config/env';
 import { prisma as defaultPrisma } from '../config/prisma';
 import { maskSensitiveData } from './dataMaskingService';
 import {
+  BlacklistCheckResult,
+  checkIdCardWithBlacklistSeller,
+  isBlacklistSellerConfigured,
+} from './blacklistService';
+import {
   AppError,
   MeetupPointInput,
   SellerKycInput,
@@ -385,6 +390,10 @@ export async function deleteMeetupPoint(
   return { deleted: true, id: pointId };
 }
 
+export interface SubmitSellerKycOptions {
+  blacklistChecker?: (nationalId: string) => Promise<BlacklistCheckResult>;
+}
+
 /**
  * ยืนยันตัวตนผู้ขายด้วยบัตรประชาชนและชื่อ-นามสกุลจริง (POST /api/seller/kyc)
  * เก็บเฉพาะเลขบัตรประชาชนแบบ Masked เพื่อความปลอดภัยตาม PDPA
@@ -392,7 +401,8 @@ export async function deleteMeetupPoint(
 export async function submitSellerKyc(
   userId: string,
   input: SellerKycInput,
-  prismaClient?: any
+  prismaClient?: any,
+  options: SubmitSellerKycOptions = {}
 ) {
   const db = prismaClient || defaultPrisma;
 
@@ -459,6 +469,43 @@ export async function submitSellerKyc(
     }
   }
 
+  const digits = input.nationalId.replace(/\D/g, '');
+  const shouldCheckBlacklist =
+    Boolean(options.blacklistChecker) || isBlacklistSellerConfigured();
+  if (env.NODE_ENV === 'production' && !shouldCheckBlacklist) {
+    throw new AppError(
+      'ระบบตรวจสอบประวัติผู้ขาย (Blacklistseller) ยังไม่ได้เปิดใช้งานใน Production (Missing BLACKLISTSELLER_API_KEY)',
+      503,
+      'BLACKLIST_API_NOT_CONFIGURED'
+    );
+  }
+
+  if (shouldCheckBlacklist) {
+    const checker =
+      options.blacklistChecker ?? ((id: string) => checkIdCardWithBlacklistSeller(id));
+    const blacklistResult = await checker(digits);
+    if (blacklistResult.found) {
+      if (typeof db.user?.update === 'function') {
+        await db.user.update({
+          where: { id: userId },
+          data: {
+            isBlacklisted: true,
+            isVerifiedSeller: false,
+          },
+        });
+      }
+      throw new AppError(
+        'ไม่ผ่านการตรวจสอบประวัติผู้ขาย (พบประวัติในฐานข้อมูล Blacklistseller)',
+        403,
+        'KYC_BLACKLISTED',
+        {
+          freq_count: blacklistResult.freqCount,
+          total_price: blacklistResult.totalPrice,
+        }
+      );
+    }
+  }
+
   const now = new Date();
   let updated: any;
   try {
@@ -472,6 +519,7 @@ export async function submitSellerKyc(
         kycVerifiedAt: now,
         verifiedName: `${firstName} ${lastName}`,
         isVerifiedSeller: true,
+        isBlacklisted: false,
         ...(input.pdpaConsent === true ? { pdpaConsentAt: now } : {}),
       },
     });

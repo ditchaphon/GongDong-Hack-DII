@@ -11,6 +11,5 @@ export const prisma =
     log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
   });
 
-if (process.env.NODE_ENV !== 'production') {
-  global.prisma = prisma;
-}
+// เก็บ instance ไว้บน global ทั้งใน dev (HMR) และ production (Vercel warm serverless)
+global.prisma = prisma;

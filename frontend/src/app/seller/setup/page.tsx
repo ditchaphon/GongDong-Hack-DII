@@ -732,6 +732,7 @@ export default function ShopSetupWizardPage() {
                   />
                   <span className="text-[11px] text-slate-600 leading-relaxed">
                     ข้าพเจ้ายืนยันว่าข้อมูลเป็นของข้าพเจ้าจริง และยินยอมให้กองดองใช้เพื่อยืนยันตัวตน
+                    รวมถึงส่งเลขบัตรประชาชนไปตรวจสอบประวัติกับระบบบัญชีดำภายนอก (Blacklistseller)
                     ตาม พ.ร.บ.คุ้มครองข้อมูลส่วนบุคคล (PDPA)
                   </span>
                 </label>

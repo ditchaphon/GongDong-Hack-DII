@@ -21,6 +21,10 @@ webhookRouter.post(
         ? req.body
         : JSON.stringify(req.body || {});
 
+      if (env.NODE_ENV === 'production' && !env.LINE_CHANNEL_SECRET) {
+        throw new AppError('LINE Webhook secret is not configured', 503, 'LINE_WEBHOOK_NOT_CONFIGURED');
+      }
+
       if (env.LINE_CHANNEL_SECRET) {
         const signature = String(req.headers['x-line-signature'] || '');
         if (!signature || !validateSignature(rawBody, env.LINE_CHANNEL_SECRET, signature)) {

@@ -32,8 +32,12 @@ const envSchema = z.object({
   PLATFORM_PROMPTPAY_ID: z.string().optional(),
   PLATFORM_RECIPIENT_NAME: z.string().default('กองดอง · บัญชีรับชำระ'),
 
-  // Security & KYC Hashing
+  // Security & KYC Hashing & Blacklist Check
   KYC_HASH_PEPPER: z.string().optional(),
+  BLACKLISTSELLER_API_KEY: z.string().optional(),
+  BLACKLISTSELLER_API_URL: z
+    .string()
+    .default('https://api.blacklistseller.com/api/v1/queries/idcard-summary/'),
 });
 
 export const env = envSchema.parse(process.env);

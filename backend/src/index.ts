@@ -1,4 +1,5 @@
 import express, { Request, Response } from 'express';
+import type { Server } from 'http';
 import cors from 'cors';
 import helmet from 'helmet';
 import { env } from './config/env';
@@ -14,11 +15,19 @@ import { errorHandler } from './middlewares/errorHandler';
 
 const app = express();
 
+const allowedOrigins = [
+  ...env.FRONTEND_URL.split(',')
+    .map((origin) => origin.trim().replace(/\/+$/, ''))
+    .filter(Boolean),
+  'http://localhost:3000',
+  'https://localhost:3000',
+];
+
 // Security Middlewares
 app.use(helmet());
 app.use(
   cors({
-    origin: [env.FRONTEND_URL, 'http://localhost:3000', 'https://localhost:3000'],
+    origin: allowedOrigins,
     credentials: true,
   })
 );
@@ -65,14 +74,17 @@ app.use((req: Request, res: Response) => {
 // Global Error Handler
 app.use(errorHandler);
 
-// Start Server
-const server = app.listen(env.PORT, () => {
-  console.log(`=======================================================`);
-  console.log(`🚀 GongDong API Service is running on port ${env.PORT}`);
-  console.log(`📡 Environment: ${env.NODE_ENV}`);
-  console.log(`🔗 Health Check: http://localhost:${env.PORT}/api/health`);
-  console.log(`=======================================================`);
-});
+// Start Server (ข้ามการเปิดพอร์ตเมื่อรันบน Vercel Serverless)
+let server: Server | undefined;
+if (!process.env.VERCEL) {
+  server = app.listen(env.PORT, () => {
+    console.log(`=======================================================`);
+    console.log(`🚀 GongDong API Service is running on port ${env.PORT}`);
+    console.log(`📡 Environment: ${env.NODE_ENV}`);
+    console.log(`🔗 Health Check: http://localhost:${env.PORT}/api/health`);
+    console.log(`=======================================================`);
+  });
+}
 
 export default app;
 export { server };

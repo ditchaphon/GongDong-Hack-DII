@@ -198,6 +198,78 @@ describe('shopService', () => {
       ).rejects.toMatchObject({ statusCode: 409, code: 'DUPLICATE_KYC_IDENTITY' });
       expect(dupPrisma.user.update).not.toHaveBeenCalled();
     });
+
+    it('ปฏิเสธ 403 KYC_BLACKLISTED และตั้ง isBlacklisted = true เมื่อพบประวัติใน Blacklistseller', async () => {
+      const mockPrisma = {
+        user: {
+          findUnique: vi.fn().mockResolvedValue(null),
+          findMany: vi.fn().mockResolvedValue([]),
+          update: vi.fn().mockResolvedValue({ id: 'usr-1', isBlacklisted: true }),
+        },
+      };
+      const blacklistChecker = vi.fn().mockResolvedValue({
+        found: true,
+        freqCount: 5,
+        totalPrice: 2500,
+      });
+
+      await expect(
+        submitSellerKyc(
+          'usr-1',
+          { firstName: 'สมชาย', lastName: 'ใจดี', nationalId: VALID_THAI_ID, pdpaConsent: true },
+          mockPrisma,
+          { blacklistChecker }
+        )
+      ).rejects.toMatchObject({ statusCode: 403, code: 'KYC_BLACKLISTED' });
+
+      expect(blacklistChecker).toHaveBeenCalledWith(VALID_THAI_ID);
+      expect(mockPrisma.user.update).toHaveBeenCalledWith({
+        where: { id: 'usr-1' },
+        data: {
+          isBlacklisted: true,
+          isVerifiedSeller: false,
+        },
+      });
+    });
+
+    it('ผ่าน KYC และตั้ง isBlacklisted = false เมื่อ Blacklistseller ไม่พบประวัติ', async () => {
+      const mockPrisma = {
+        user: {
+          findUnique: vi.fn().mockResolvedValue(null),
+          findMany: vi.fn().mockResolvedValue([]),
+          update: vi.fn().mockResolvedValue({
+            isVerifiedSeller: true,
+            kycFirstName: 'สมชาย',
+            kycLastName: 'ใจดี',
+            kycNationalIdMasked: 'x-xxxx-xxxxx-45-0',
+            kycVerifiedAt: new Date('2026-11-14T10:00:00Z'),
+          }),
+        },
+      };
+      const blacklistChecker = vi.fn().mockResolvedValue({
+        found: false,
+        freqCount: 0,
+        totalPrice: 0,
+      });
+
+      const res = await submitSellerKyc(
+        'usr-1',
+        { firstName: 'สมชาย', lastName: 'ใจดี', nationalId: VALID_THAI_ID, pdpaConsent: true },
+        mockPrisma,
+        { blacklistChecker }
+      );
+
+      expect(res.is_verified_seller).toBe(true);
+      expect(blacklistChecker).toHaveBeenCalledWith(VALID_THAI_ID);
+      expect(mockPrisma.user.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            isVerifiedSeller: true,
+            isBlacklisted: false,
+          }),
+        })
+      );
+    });
   });
 
   describe('Contact-leak & validation guards', () => {
