@@ -1,11 +1,12 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { TopBar } from '@/components/layout/TopBar';
 import { Button, Input, Stepper } from '@/components/ui';
 import { useListing } from '@/hooks/useListing';
 import { BOOK_CATEGORIES } from '@/lib/catalog';
+import { getIsbnSourceMeta, getIsbnToneClasses } from '@/lib/isbnSource';
 import { BookOpen, ChevronRight, Info, Lock } from 'lucide-react';
 
 /** Step 2: book details + categories. ISBN metadata is locked once filled. */
@@ -14,8 +15,14 @@ export default function SellerListDetailsPage() {
   const { draft, update } = useListing();
   const isSet = draft.mode === 'SET';
   const hasIsbn = !!draft.isbn;
-  const metadataLocked =
-    hasIsbn && (!!draft.author || !!draft.publisher || draft.originalPrice > 0);
+  const sourceMeta = getIsbnSourceMeta(draft.isbnLookupSource, draft.isbnLookupMessage);
+  const toneClasses = sourceMeta ? getIsbnToneClasses(sourceMeta.tone) : null;
+  // Lock only metadata fields that were pre-populated by ISBN lookup (don't lock missing fields or mid-typing)
+  const [lockedFields] = useState(() => ({
+    author: hasIsbn && !!draft.author,
+    publisher: hasIsbn && !!draft.publisher,
+    originalPrice: hasIsbn && draft.originalPrice > 0,
+  }));
 
   const toggleCategory = (category: string) =>
     update({
@@ -38,21 +45,35 @@ export default function SellerListDetailsPage() {
 
       <div className="p-4 space-y-4">
         <section className="bg-white rounded-2xl border border-slate-200 p-4 space-y-3">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
               ขั้นที่ 2 · รายละเอียดหนังสือ
             </h2>
             {hasIsbn && (
-              <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
-                <Lock className="w-3 h-3" /> ISBN {draft.isbn}
-              </span>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {sourceMeta && toneClasses && (
+                  <span className={`inline-flex items-center text-[10px] font-bold px-2 py-0.5 rounded-full border ${toneClasses.badge}`}>
+                    {sourceMeta.badgeLabel}
+                  </span>
+                )}
+                <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                  <Lock className="w-3 h-3" /> ISBN {draft.isbn}
+                </span>
+              </div>
             )}
           </div>
 
-          {hasIsbn && (
+          {hasIsbn && sourceMeta && toneClasses && (
+            <div className={`p-2.5 rounded-xl border text-[11px] leading-relaxed ${toneClasses.banner}`}>
+              <p className="font-bold">{sourceMeta.title}</p>
+              <p className="mt-0.5 opacity-90">{sourceMeta.description}</p>
+            </div>
+          )}
+
+          {hasIsbn && (lockedFields.author || lockedFields.publisher || lockedFields.originalPrice) && (
             <p className="flex items-start gap-2 p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-[11px] text-slate-600 leading-relaxed">
               <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-              ข้อมูลที่ได้จากเลข ISBN จะถูกล็อก · แก้ไขได้เฉพาะชื่อหนังสือ
+              ข้อมูลที่ได้จากเลข ISBN จะถูกล็อก · แก้ไขชื่อหนังสือและข้อมูลส่วนที่ยังว่างได้
             </p>
           )}
 
@@ -70,7 +91,7 @@ export default function SellerListDetailsPage() {
               label="ผู้แต่ง"
               placeholder="ชื่อผู้แต่ง"
               value={draft.author}
-              disabled={metadataLocked}
+              disabled={lockedFields.author}
               onChange={(event) => update({ author: event.target.value })}
             />
             <Input
@@ -78,7 +99,7 @@ export default function SellerListDetailsPage() {
               label="สำนักพิมพ์"
               placeholder="สำนักพิมพ์"
               value={draft.publisher}
-              disabled={metadataLocked}
+              disabled={lockedFields.publisher}
               onChange={(event) => update({ publisher: event.target.value })}
             />
           </div>
@@ -90,7 +111,7 @@ export default function SellerListDetailsPage() {
             inputMode="numeric"
             placeholder="0"
             value={draft.originalPrice ? String(draft.originalPrice) : ''}
-            disabled={metadataLocked}
+            disabled={lockedFields.originalPrice}
             onChange={(event) =>
               update({ originalPrice: Number(event.target.value) || 0 })
             }

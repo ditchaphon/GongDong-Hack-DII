@@ -57,7 +57,7 @@ export function calculateBookGrade(
   }
 
   const discountPercent = GRADE_DISCOUNT_PERCENTAGES[grade];
-  const recommendedPrice = Math.round(originalPrice * discountPercent * 100) / 100;
+  const recommendedPrice = Math.round(originalPrice * discountPercent);
 
   return {
     grade,

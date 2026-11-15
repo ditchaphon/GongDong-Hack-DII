@@ -2,27 +2,24 @@
 
 import React, { useEffect } from 'react';
 import clsx from 'clsx';
-import { Check, ShoppingBag, Store, X, Info } from 'lucide-react';
+import { Check, ShoppingBag, X, Info } from 'lucide-react';
 import { Book } from '@/types';
 
 export type CartAddedState =
-  | { kind: 'ADDED'; book: Book; count: number }
-  | { kind: 'DUPLICATE'; book: Book; count: number }
-  | { kind: 'OTHER_SHOP'; book: Book; currentShop: string };
+  | { kind: 'ADDED'; book: Book; count: number; totalCount?: number; shopCount?: number }
+  | { kind: 'DUPLICATE'; book: Book; count: number; totalCount?: number; shopCount?: number };
 
 export interface CartAddedSheetProps {
   state: CartAddedState | null;
   onClose: () => void;
   onViewCart: () => void;
-  onReplace?: () => void;
 }
 
-/** Friendly result sheet after "ใส่ตะกร้า" — replaces the plain toast. */
+/** Friendly result sheet after "ใส่ตะกร้า" — supports multi-seller cart. */
 export const CartAddedSheet: React.FC<CartAddedSheetProps> = ({
   state,
   onClose,
   onViewCart,
-  onReplace,
 }) => {
   useEffect(() => {
     if (!state) return;
@@ -34,12 +31,9 @@ export const CartAddedSheet: React.FC<CartAddedSheetProps> = ({
   if (!state) return null;
 
   const ok = state.kind === 'ADDED';
-  const otherShop = state.kind === 'OTHER_SHOP';
-  const title = ok
-    ? 'เพิ่มลงตะกร้าแล้ว'
-    : otherShop
-    ? 'ตะกร้ามีหนังสือจากร้านอื่นอยู่'
-    : 'เล่มนี้อยู่ในตะกร้าแล้ว';
+  const title = ok ? 'เพิ่มลงตะกร้าแล้ว' : 'เล่มนี้อยู่ในตะกร้าแล้ว';
+  const shopCount = state.shopCount ?? 1;
+  const totalCount = state.totalCount ?? state.count;
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center" role="dialog" aria-modal="true" aria-label={title}>
@@ -67,15 +61,9 @@ export const CartAddedSheet: React.FC<CartAddedSheetProps> = ({
               ok ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
             )}
           >
-            {ok ? <Check className="w-7 h-7 stroke-[3]" /> : otherShop ? <Store className="w-6 h-6" /> : <Info className="w-6 h-6" />}
+            {ok ? <Check className="w-7 h-7 stroke-[3]" /> : <Info className="w-6 h-6" />}
           </div>
           <h2 className="text-base font-extrabold text-slate-900">{title}</h2>
-          {otherShop && (
-            <p className="text-xs text-slate-500 leading-relaxed max-w-[300px]">
-              ตอนนี้ตะกร้ามีหนังสือจาก <strong className="text-slate-800">{state.currentShop}</strong> ·
-              สั่งรวมได้ทีละร้านเพื่อให้นัดรับหรือส่งพัสดุครั้งเดียว
-            </p>
-          )}
         </div>
 
         <div className="mt-4 flex items-center gap-3 p-3 rounded-2xl bg-slate-50 border border-slate-200">
@@ -93,49 +81,27 @@ export const CartAddedSheet: React.FC<CartAddedSheetProps> = ({
           </span>
         </div>
 
-        {!otherShop && (
-          <p className="mt-2 text-center text-[11px] text-slate-500">
-            ในตะกร้ามี {state.count} เล่มจากร้านเดียวกัน
-          </p>
-        )}
+        <p className="mt-2 text-center text-[11px] text-slate-500">
+          ในตะกร้ามี {state.count} เล่มจากร้านนี้
+          {shopCount > 1 ? ` · รวมทั้งหมด ${totalCount} เล่ม จาก ${shopCount} ร้าน` : ''}
+        </p>
 
         <div className="mt-4 grid grid-cols-2 gap-2">
-          {otherShop ? (
-            <>
-              <button
-                type="button"
-                onClick={onClose}
-                className="min-h-[48px] rounded-xl border border-slate-200 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-              >
-                เก็บตะกร้าเดิม
-              </button>
-              <button
-                type="button"
-                onClick={onReplace}
-                className="min-h-[48px] rounded-xl bg-[var(--color-primary)] text-white text-sm font-bold hover:bg-[var(--color-primary-hover)]"
-              >
-                ล้างแล้วใส่เล่มนี้
-              </button>
-            </>
-          ) : (
-            <>
-              <button
-                type="button"
-                onClick={onClose}
-                className="min-h-[48px] rounded-xl border border-slate-200 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-              >
-                เลือกหนังสือต่อ
-              </button>
-              <button
-                type="button"
-                onClick={onViewCart}
-                className="min-h-[48px] rounded-xl bg-[var(--color-primary)] text-white text-sm font-bold hover:bg-[var(--color-primary-hover)] inline-flex items-center justify-center gap-1.5"
-              >
-                <ShoppingBag className="w-4 h-4" />
-                ดูตะกร้า
-              </button>
-            </>
-          )}
+          <button
+            type="button"
+            onClick={onClose}
+            className="min-h-[48px] rounded-xl border border-slate-200 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+          >
+            เลือกหนังสือต่อ
+          </button>
+          <button
+            type="button"
+            onClick={onViewCart}
+            className="min-h-[48px] rounded-xl bg-[var(--color-primary)] text-white text-sm font-bold hover:bg-[var(--color-primary-hover)] inline-flex items-center justify-center gap-1.5"
+          >
+            <ShoppingBag className="w-4 h-4" />
+            ดูตะกร้า
+          </button>
         </div>
       </div>
     </div>

@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { TopBar } from '@/components/layout/TopBar';
 import { BottomTab } from '@/components/layout/BottomTab';
 import { EmptyState } from '@/components/ui';
-import { StatusBadgeV4 } from '@/components/v4';
+import { StatusBadgeV4, LineOaBanner } from '@/components/v4';
 import { useV4Orders } from '@/hooks/useV4Orders';
 import { useAppMode } from '@/hooks/useAppMode';
 import { getNextAction, getTimerInfo, isTerminal } from '@/lib/orderStateMachine';
@@ -84,7 +84,7 @@ function OrderRow({
 
 export default function OrdersPage() {
   const router = useRouter();
-  const { orders, isMineAsBuyer } = useV4Orders();
+  const { orders, loading, error, refreshOrders, isMineAsBuyer } = useV4Orders();
   const { mode } = useAppMode();
   const tab: Tab = mode === 'SELLER' ? 'SELLING' : 'BUYING';
 
@@ -117,7 +117,23 @@ export default function OrdersPage() {
       />
 
       <div className="p-4 space-y-3 flex-1">
-        {sorted.length === 0 ? (
+        <LineOaBanner />
+        {loading && orders.length === 0 ? (
+          <div className="space-y-3">
+            <div className="h-32 rounded-2xl bg-slate-200 animate-pulse" />
+            <div className="h-32 rounded-2xl bg-slate-200 animate-pulse" />
+          </div>
+        ) : error && orders.length === 0 ? (
+          <div className="bg-white rounded-2xl border border-slate-200 mt-2">
+            <EmptyState
+              icon={<Package className="w-8 h-8 text-slate-400" />}
+              title="โหลดรายการออเดอร์ไม่สำเร็จ"
+              description={error}
+              actionText="ลองใหม่"
+              onAction={() => refreshOrders()}
+            />
+          </div>
+        ) : sorted.length === 0 ? (
           <div className="bg-white rounded-2xl border border-slate-200 mt-2">
             <EmptyState
               icon={<Package className="w-8 h-8 text-slate-400" />}

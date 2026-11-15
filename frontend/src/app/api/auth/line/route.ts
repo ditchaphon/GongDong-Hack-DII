@@ -17,10 +17,11 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 1. Mock mode handling for local development
+    // 1. Mock mode handling for local development/test only
+    const isDevOrTest = process.env.NODE_ENV !== 'production';
     if (
-      process.env.NEXT_PUBLIC_LIFF_MOCK === 'true' ||
-      idToken.startsWith('mock_')
+      isDevOrTest &&
+      (process.env.NEXT_PUBLIC_LIFF_MOCK === 'true' || idToken.startsWith('mock_'))
     ) {
       return NextResponse.json({
         success: true,
@@ -58,21 +59,46 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const payload = await lineResponse.json();
-    // payload contains: sub (line userId), name, picture, email, etc.
+    await lineResponse.json();
 
-    // 3. TODO: Supabase integration
-    // - Check if user exists in public.users table where line_user_id = payload.sub
-    // - If not, insert new record with 1 free credit: credits = 1
-    // - Issue secure HTTP-only session cookie or JWT for API calls
+    // 3. Forward to Express Backend (/api/users/me) so user is persisted/synced in PostgreSQL
+    const backendUrl = (
+      process.env.BACKEND_INTERNAL_URL ||
+      process.env.NEXT_PUBLIC_API_URL ||
+      'http://127.0.0.1:8000'
+    ).replace(/\/+$/, '');
+    const backendRes = await fetch(`${backendUrl}/api/users/me`, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${idToken}`,
+      },
+    });
+
+    if (!backendRes.ok) {
+      const errDetail = await backendRes.text().catch(() => '');
+      return NextResponse.json(
+        { error: 'Failed to sync user session with backend', detail: errDetail },
+        { status: 502 }
+      );
+    }
+
+    const backendJson = await backendRes.json();
+    if (!backendJson?.success || !backendJson?.data) {
+      return NextResponse.json(
+        { error: 'Invalid backend user session response' },
+        { status: 502 }
+      );
+    }
 
     return NextResponse.json({
       success: true,
       user: {
-        lineUserId: payload.sub,
-        displayName: payload.name,
-        pictureUrl: payload.picture,
-        credits: 1, // Default free credit for newly verified users
+        id: backendJson.data.id,
+        lineUserId: backendJson.data.line_user_id,
+        displayName: backendJson.data.nickname || backendJson.data.display_name,
+        pictureUrl: backendJson.data.avatar_url || backendJson.data.picture_url,
+        credits: backendJson.data.credits,
+        isVerifiedSeller: backendJson.data.is_verified_seller,
       },
     });
   } catch (error: any) {

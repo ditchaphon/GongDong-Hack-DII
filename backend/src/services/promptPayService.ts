@@ -1,9 +1,9 @@
 import generatePayload from 'promptpay-qr';
 import QRCode from 'qrcode';
-import { PromptPayQRResult } from '../types';
+import { AppError, PromptPayQRResult } from '../types';
 
 /**
- * ล้างและตรวจรูปแบบ PromptPay ID (เบอร์โทร 10 หลัก หรือเลขประจำตัวประชาชน 13 หลัก)
+ * ล้างและตรวจรูปแบบ PromptPay ID (เบอร์โทร 10 หลัก หรือเลขประจำตัวประชาชน/Tax ID 13 หลัก)
  */
 export function sanitizePromptPayId(rawId: string): string {
   const cleanId = rawId.replace(/[-\s]/g, '').trim();
@@ -12,8 +12,10 @@ export function sanitizePromptPayId(rawId: string): string {
   const isCitizenId = /^[0-9]{13}$/.test(cleanId);
 
   if (!isPhone && !isCitizenId) {
-    throw new Error(
-      `PromptPay ID ไม่ถูกต้อง: "${rawId}" (ต้องเป็นเบอร์มือถือ 10 หลักขึ้นต้นด้วย 0 หรือเลขบัตรประชาชน 13 หลัก)`
+    throw new AppError(
+      `PromptPay ID ไม่ถูกต้อง: "${rawId}" (ต้องเป็นเบอร์มือถือ 10 หลักขึ้นต้นด้วย 0 หรือเลขบัตรประชาชน 13 หลัก)`,
+      400,
+      'INVALID_PROMPTPAY_ID'
     );
   }
 
@@ -31,8 +33,12 @@ export async function generatePromptPayQR(
   promptPayId: string,
   amount: number
 ): Promise<PromptPayQRResult> {
-  if (amount <= 0 || isNaN(amount)) {
-    throw new Error('ยอดเงิน (amount) ต้องเป็นตัวเลขที่มากกว่า 0 บาท');
+  if (!Number.isFinite(amount) || amount <= 0) {
+    throw new AppError(
+      'ยอดเงิน (amount) ต้องเป็นตัวเลขที่มากกว่า 0 บาท',
+      400,
+      'INVALID_AMOUNT'
+    );
   }
 
   const cleanId = sanitizePromptPayId(promptPayId);

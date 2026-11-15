@@ -13,14 +13,34 @@ const envSchema = z.object({
   DATABASE_URL: z.string().optional(),
   DIRECT_URL: z.string().optional(),
 
+  // Supabase Storage
+  SUPABASE_URL: z.string().optional(),
+  SUPABASE_ANON_KEY: z.string().optional(),
+  SUPABASE_SERVICE_ROLE_KEY: z.string().optional(),
+
   // LINE
   LINE_CHANNEL_ACCESS_TOKEN: z.string().optional(),
   LINE_CHANNEL_SECRET: z.string().optional(),
   LINE_LOGIN_CHANNEL_ID: z.string().optional(),
+  LINE_LIFF_CHANNEL_ID: z.string().optional(),
+  // LIFF app id (e.g. 2012563845-xxxx) for deep links in LINE notification cards
+  LINE_LIFF_ID: z.string().optional(),
 
-  // SlipOK
+  // SlipOK & Platform PromptPay
   SLIPOK_API_KEY: z.string().optional(),
   SLIPOK_BRANCH_ID: z.string().optional(),
+  PLATFORM_PROMPTPAY_ID: z.string().optional(),
+  PLATFORM_RECIPIENT_NAME: z.string().default('กองดอง · บัญชีรับชำระ'),
+
+  // Security & KYC Hashing & Blacklist Check
+  KYC_HASH_PEPPER: z.string().optional(),
+  BLACKLISTSELLER_API_KEY: z.string().optional(),
+  BLACKLISTSELLER_API_URL: z
+    .string()
+    .default('https://api.blacklistseller.com/api/v1/queries/idcard-summary/'),
+
+  // Google Books API (optional: reduces HTTP 429 rate-limit hits)
+  GOOGLE_BOOKS_API_KEY: z.string().optional(),
 });
 
 export const env = envSchema.parse(process.env);

@@ -105,7 +105,7 @@ export default function SellerListStep2Page() {
 
           <p className="flex items-start gap-2 p-2.5 rounded-lg bg-slate-50 border border-slate-200 text-[11px] text-slate-600">
             <ShieldCheck className="w-3.5 h-3.5 shrink-0 mt-0.5 text-emerald-600" />
-            ถ่ายจากกล้องหรือเลือกจากแกลอรี่ได้ · โปรดใช้รูปหนังสือเล่มจริงของคุณ
+            ถ่ายจากกล้องหรือเลือกจากแกลอรี่ได้ · ส่วนจุดตำหนิ 5 หัวข้อจะเช็กและถ่ายรูปในขั้นตอนถัดไป
           </p>
         </section>
 
@@ -119,7 +119,7 @@ export default function SellerListStep2Page() {
       <div className="fixed bottom-0 left-0 right-0 z-30 flex justify-center pointer-events-none">
         <div className="w-full max-w-[430px] bg-white border-t border-slate-200 p-3 pointer-events-auto safe-area-bottom shadow-lg">
           <Button fullWidth size="lg" onClick={handleNext} rightIcon={<ChevronRight className="w-4 h-4" />}>
-            ถัดไป · ตรวจสภาพจากรูป
+            ถัดไป · เช็กจุดตำหนิ 5 ข้อ
           </Button>
         </div>
       </div>
@@ -130,6 +130,7 @@ export default function SellerListStep2Page() {
         title={camera ? `ถ่าย${camera.label}` : ''}
         hint="ถือกล้องให้นิ่ง เห็นหนังสือเต็มกรอบ"
         demoImage={camera ? DEMO[camera.key] : undefined}
+        bucket="book-listings"
         onClose={() => setCamera(null)}
         onCapture={(url) => {
           if (!camera) return;

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { maskSensitiveData } from '../dataMaskingService';
+import { maskAccountHolderName, maskSensitiveData } from '../dataMaskingService';
 
 describe('DataMaskingService - Chat & Note Contact Masking', () => {
   it('ข้อความทั่วไปที่ไม่มีข้อมูลติดต่อ ต้องไม่ถูกดัดแปลงและมี hasMaskedData เป็น false', () => {
@@ -94,5 +94,29 @@ describe('DataMaskingService - Chat & Note Contact Masking', () => {
       hasMaskedData: false,
       detectedTypes: [],
     });
+  });
+
+  it('maskSensitiveData: เซ็นเซอร์อีเมล โซเชียลมีเดีย และคีย์เวิร์ดนัดคุย/โอนนอกแอป', () => {
+    const emailRes = maskSensitiveData('ส่งเมลมาที่ buyer.test@example.com ได้เลย');
+    expect(emailRes.hasMaskedData).toBe(true);
+    expect(emailRes.detectedTypes).toContain('EMAIL');
+    expect(emailRes.maskedText).not.toContain('buyer.test@example.com');
+
+    const socialRes = maskSensitiveData('ทัก ig: @my_bookshop หรือ fb.com/bookshop');
+    expect(socialRes.hasMaskedData).toBe(true);
+    expect(socialRes.detectedTypes).toContain('SOCIAL');
+
+    const offAppRes = maskSensitiveData('ขอทักแชทส่วนตัวและโอนตรงนะครับ');
+    expect(offAppRes.hasMaskedData).toBe(true);
+    expect(offAppRes.detectedTypes).toContain('OFF_APP');
+  });
+
+  it('maskAccountHolderName: เซ็นเซอร์ชื่อบัญชีผู้รับตามหลัก PDPA โดยคงตัวอักษรนำหน้าไว้เตือน Human Firewall', () => {
+    expect(maskAccountHolderName('สมชาย ใจดี')).toBe('สม••• ใจ•••');
+    expect(maskAccountHolderName('ป้า')).toBe('ป้•••');
+    expect(maskAccountHolderName('รักดี')).toBe('รัก•••');
+    expect(maskAccountHolderName('ก')).toBe('•');
+    expect(maskAccountHolderName('')).toBeNull();
+    expect(maskAccountHolderName(null)).toBeNull();
   });
 });

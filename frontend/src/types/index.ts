@@ -46,6 +46,8 @@ export interface Book {
   course?: string;
   defects?: { label: string; photo: string }[];
   shopPayeeVerified?: boolean;
+  codEnabled?: boolean;
+  status?: string;
 }
 
 export type OrderStatus =
@@ -161,9 +163,19 @@ export interface ListingDefect {
   photo?: string;
 }
 
+export type IsbnLookupSource =
+  | 'DATABASE'
+  | 'GOOGLE_BOOKS'
+  | 'OPEN_LIBRARY'
+  | 'NOT_FOUND'
+  | 'RATE_LIMITED'
+  | 'ERROR';
+
 export interface ListingDraft {
   mode: 'SINGLE' | 'SET';
   isbn: string;
+  isbnLookupSource?: IsbnLookupSource;
+  isbnLookupMessage?: string;
   title: string;
   author: string;
   publisher: string;
@@ -203,10 +215,12 @@ export interface UserProfile {
   id: string;
   lineUserId: string;
   displayName: string;
+  nickname?: string;
   pictureUrl?: string;
   isSeller: boolean;
   credits: number;
   isVerifiedSeller: boolean;
+  pdpaConsentAt?: string | null;
   promptPayName?: string;
   phone?: string;
 }

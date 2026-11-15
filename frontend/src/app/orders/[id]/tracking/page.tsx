@@ -16,36 +16,44 @@ export default function OrderTrackingPage({
 }) {
   const resolvedParams = use(params);
   const router = useRouter();
-  const { getOrder, markShipped } = useV4Orders();
+  const { getOrder, fetchOrder, loading, markShipped, isMineAsBuyer } = useV4Orders();
 
   const order = getOrder(resolvedParams.id);
+
+  useEffect(() => {
+    if (!order) fetchOrder(resolvedParams.id);
+  }, [resolvedParams.id, order, fetchOrder]);
+
   const [role, setRole] = useState<ViewRole>('SELLER');
   const [value, setValue] = useState<TrackingValue>({
     carrier: order?.shipping?.carrier ?? 'Flash Express',
     trackingNumber: order?.shipping?.trackingNumber ?? '',
     boxPhoto: order?.shipping?.boxPhoto ?? '',
   });
+  const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    const search = new URLSearchParams(window.location.search);
-    setRole(search.get('role') === 'buyer' ? 'BUYER' : 'SELLER');
-  }, []);
+    if (!order) return;
+    setRole(isMineAsBuyer(order) ? 'BUYER' : 'SELLER');
+  }, [order, isMineAsBuyer]);
 
   if (!order) {
     return (
       <div className="flex flex-col min-h-screen bg-slate-50">
         <TopBar title="การจัดส่ง" onBack={() => router.push('/orders')} />
-        <p className="p-6 text-center text-xs text-slate-500">ไม่พบออเดอร์นี้</p>
+        <p className="p-6 text-center text-xs text-slate-500">
+          {loading ? 'กำลังโหลดข้อมูลออเดอร์...' : 'ไม่พบออเดอร์นี้'}
+        </p>
       </div>
     );
   }
 
   const isParcel = order.delivery === 'PARCEL';
-  const shipped = order.status === 'PAID' || order.status === 'SHIPPED' || order.status === 'COMPLETED';
+  const shipped = order.status === 'SHIPPED' || order.status === 'COMPLETED';
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!isParcel) {
       setError('ออเดอร์นี้เป็นการนัดรับ ไม่ต้องกรอกพัสดุ');
       return;
@@ -63,12 +71,18 @@ export default function OrderTrackingPage({
       return;
     }
     setError(null);
-    markShipped(order.id, {
+    setSubmitting(true);
+    const res = await markShipped(order.id, {
       carrier: value.carrier,
       trackingNumber: value.trackingNumber.trim(),
       boxPhoto: value.boxPhoto,
       receiverName: order.shipping?.receiverName,
     });
+    setSubmitting(false);
+    if (!res.ok) {
+      setError(res.error || 'บันทึกเลขพัสดุไม่สำเร็จ');
+      return;
+    }
     setToastMessage('ยืนยันการส่งแล้ว · รอผู้ซื้อรับของและจ่ายเงินปลายทาง');
     setTimeout(() => router.push(`/orders/${order.id}?role=seller`), 800);
   };
@@ -115,6 +129,7 @@ export default function OrderTrackingPage({
                     setError(null);
                   }}
                   onSubmit={handleSubmit}
+                  isLoading={submitting}
                   error={error || undefined}
                 />
               </div>
@@ -124,12 +139,6 @@ export default function OrderTrackingPage({
               <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-700">
                 {error}
               </div>
-            )}
-
-            {!shipped && (
-              <Button fullWidth size="lg" onClick={handleSubmit}>
-                ยืนยันการส่ง
-              </Button>
             )}
           </>
         ) : (

@@ -45,6 +45,7 @@ describe('reviewService', () => {
           revieweeId: 'usr-seller',
           rating: 5,
           isConditionAccurate: true,
+          tags: [],
           comment: 'หนังสือสภาพดีมาก ห่อกันกระแทกอย่างดี',
         },
       });
@@ -194,7 +195,7 @@ describe('reviewService', () => {
           createdAt: new Date('2026-11-12T10:00:00Z'),
           reviewer: { id: 'b1', nickname: 'หมอก', avatarUrl: 'https://ex.com/a1.webp' },
           order: {
-            items: [
+            orderItems: [
               {
                 bookListing: {
                   bookCatalog: { title: 'Clean Code' },
@@ -212,7 +213,7 @@ describe('reviewService', () => {
           createdAt: new Date('2026-11-12T09:00:00Z'),
           reviewer: { id: 'b2', nickname: 'เต้', avatarUrl: null },
           order: {
-            items: [
+            orderItems: [
               {
                 bookListing: {
                   bookCatalog: { title: 'Refactoring' },
@@ -230,7 +231,7 @@ describe('reviewService', () => {
           createdAt: new Date('2026-11-12T08:00:00Z'),
           reviewer: { id: 'b3', nickname: 'อาร์ม', avatarUrl: null },
           order: {
-            items: [],
+            orderItems: [],
           },
         },
       ];
@@ -285,6 +286,46 @@ describe('reviewService', () => {
       expect(result.reviews).toEqual([]);
       expect(result.pagination.total).toBe(0);
       expect(result.pagination.has_more).toBe(false);
+    });
+
+    it('ควรเซ็นเซอร์ข้อมูลติดต่อใน comment ก่อนบันทึก และแปลง Prisma P2002 เป็น 400 ALREADY_REVIEWED', async () => {
+      const completedOrder = {
+        id: 'ord-1',
+        status: 'COMPLETED',
+        buyerId: 'usr-buyer',
+        sellerId: 'usr-seller',
+      };
+      const mockPrisma = {
+        $transaction: vi.fn(async (cb: any) => cb(mockPrisma)),
+        order: { findUnique: vi.fn().mockResolvedValue(completedOrder) },
+        review: {
+          findFirst: vi.fn().mockResolvedValue(null),
+          create: vi.fn().mockImplementation(({ data }) =>
+            Promise.resolve({ id: 'rev-masked', ...data, createdAt: new Date() })
+          ),
+        },
+      };
+
+      const res = await createOrderReview(
+        'ord-1',
+        'usr-buyer',
+        { rating: 5, is_condition_accurate: true, comment: 'ดีมาก แอดไลน์ abc@test.com 0812345678' },
+        mockPrisma
+      );
+      expect(res.comment).not.toContain('0812345678');
+      expect(res.comment).not.toContain('abc@test.com');
+
+      const p2002Prisma = {
+        $transaction: vi.fn(async (cb: any) => cb(p2002Prisma)),
+        order: { findUnique: vi.fn().mockResolvedValue(completedOrder) },
+        review: {
+          findFirst: vi.fn().mockResolvedValue(null),
+          create: vi.fn().mockRejectedValue({ code: 'P2002' }),
+        },
+      };
+      await expect(
+        createOrderReview('ord-1', 'usr-buyer', { rating: 5, is_condition_accurate: true }, p2002Prisma)
+      ).rejects.toMatchObject({ statusCode: 400, code: 'ALREADY_REVIEWED' });
     });
 
     it('ควรโยน Error 404 USER_NOT_FOUND หากไม่พบผู้ใช้', async () => {

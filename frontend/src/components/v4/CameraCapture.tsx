@@ -3,6 +3,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import clsx from 'clsx';
 import { Camera, X, RefreshCcw, ScanLine, Loader2, CameraOff, ImageIcon } from 'lucide-react';
+import { uploadImageFile, UploadBucket } from '@/lib/api';
+import { prepareImageForPreviewAndUpload } from '@/lib/imageCompression';
 
 export interface CameraCaptureProps {
   isOpen: boolean;
@@ -15,6 +17,8 @@ export interface CameraCaptureProps {
   onScan?: () => void;
   /** Used when the device has no camera (prototype only). */
   demoImage?: string;
+  /** Supabase Storage bucket for uploaded photos (defaults to 'book-listings'). */
+  bucket?: UploadBucket;
 }
 
 /** Camera sheet: capture with the device camera or choose an existing photo. */
@@ -27,19 +31,27 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({
   onCapture,
   onScan,
   demoImage,
+  bucket = 'book-listings',
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const selectedFileRef = useRef<File | null>(null);
   const [state, setState] = useState<'LOADING' | 'LIVE' | 'NO_CAMERA'>('LOADING');
   const [shot, setShot] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [preparingPhoto, setPreparingPhoto] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isOpen) return;
     let cancelled = false;
+    selectedFileRef.current = null;
     setShot(null);
     setScanning(false);
+    setUploading(false);
+    setUploadError(null);
     setState('LOADING');
 
     const start = async () => {
@@ -76,6 +88,8 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({
 
   const takePhoto = () => {
     const video = videoRef.current;
+    selectedFileRef.current = null;
+    setUploadError(null);
     if (state === 'LIVE' && video && video.videoWidth) {
       const canvas = document.createElement('canvas');
       canvas.width = video.videoWidth;
@@ -87,13 +101,50 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({
     if (demoImage) setShot(demoImage);
   };
 
-  const pickFromGallery = (file?: File | null) => {
+  const pickFromGallery = async (file?: File | null) => {
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === 'string') setShot(reader.result);
-    };
-    reader.readAsDataURL(file);
+    setUploadError(null);
+    setPreparingPhoto(true);
+    try {
+      const normalized = await prepareImageForPreviewAndUpload(file);
+      selectedFileRef.current = normalized;
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result === 'string') setShot(reader.result);
+      };
+      reader.onerror = () => {
+        setUploadError('ไม่สามารถอ่านไฟล์รูปภาพได้ กรุณาลองเลือกรูปอื่น');
+      };
+      reader.readAsDataURL(normalized);
+    } catch (err) {
+      selectedFileRef.current = null;
+      setUploadError(
+        err instanceof Error
+          ? err.message
+          : 'ไม่สามารถเตรียมไฟล์รูปภาพได้ กรุณาลองเลือกรูปอื่น'
+      );
+    } finally {
+      setPreparingPhoto(false);
+    }
+  };
+
+  const confirmPhoto = async () => {
+    if (!shot || uploading) return;
+    if (demoImage && shot === demoImage) {
+      onCapture?.(shot);
+      return;
+    }
+
+    setUploading(true);
+    setUploadError(null);
+    try {
+      const result = await uploadImageFile(selectedFileRef.current ?? shot, bucket);
+      onCapture?.(result.url);
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : 'อัปโหลดรูปไม่สำเร็จ กรุณาลองใหม่');
+    } finally {
+      setUploading(false);
+    }
   };
 
   const simulateScan = () => {
@@ -160,24 +211,42 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({
 
         <footer className="px-5 pt-4 pb-6 safe-area-bottom space-y-3 bg-black">
           {hint && <p className="text-center text-[11px] text-white/70 leading-relaxed">{hint}</p>}
+          {uploadError && (
+            <p className="text-center text-xs text-rose-300 bg-rose-950/60 border border-rose-500/30 rounded-xl px-3 py-2">
+              {uploadError}
+            </p>
+          )}
 
           {mode === 'PHOTO' ? (
             shot ? (
               <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
-                  onClick={() => setShot(null)}
-                  className="min-h-[48px] rounded-xl border border-white/30 text-white text-sm font-semibold inline-flex items-center justify-center gap-1.5"
+                  disabled={uploading}
+                  onClick={() => {
+                    setShot(null);
+                    selectedFileRef.current = null;
+                    setUploadError(null);
+                  }}
+                  className="min-h-[48px] rounded-xl border border-white/30 text-white text-sm font-semibold inline-flex items-center justify-center gap-1.5 disabled:opacity-50"
                 >
                   <RefreshCcw className="w-4 h-4" />
                   ถ่ายใหม่
                 </button>
                 <button
                   type="button"
-                  onClick={() => onCapture?.(shot)}
-                  className="min-h-[48px] rounded-xl bg-[var(--color-primary)] text-white text-sm font-bold"
+                  disabled={uploading}
+                  onClick={confirmPhoto}
+                  className="min-h-[48px] rounded-xl bg-[var(--color-primary)] text-white text-sm font-bold inline-flex items-center justify-center gap-1.5 disabled:opacity-70"
                 >
-                  ใช้รูปนี้
+                  {uploading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      กำลังอัปโหลด…
+                    </>
+                  ) : (
+                    'ใช้รูปนี้'
+                  )}
                 </button>
               </div>
             ) : (
@@ -186,10 +255,15 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({
                   <button
                     type="button"
                     onClick={() => fileRef.current?.click()}
+                    disabled={preparingPhoto}
                     aria-label="เลือกจากแกลอรี่"
-                    className="w-12 h-12 rounded-xl border border-white/30 flex items-center justify-center text-white active:scale-95 transition"
+                    className="w-12 h-12 rounded-xl border border-white/30 flex items-center justify-center text-white active:scale-95 transition disabled:opacity-50"
                   >
-                    <ImageIcon className="w-5 h-5" />
+                    {preparingPhoto ? (
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                    ) : (
+                      <ImageIcon className="w-5 h-5" />
+                    )}
                   </button>
                   <button
                     type="button"
@@ -202,7 +276,9 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({
                   </button>
                   <span className="w-12 h-12" />
                 </div>
-                <span className="text-[10px] text-white/60">แกลอรี่ · ถ่ายรูป</span>
+                <span className="text-[10px] text-white/60">
+                  {preparingPhoto ? 'กำลังแปลงไฟล์รูปภาพ…' : 'แกลอรี่ · ถ่ายรูป'}
+                </span>
                 {state === 'NO_CAMERA' && demoImage && (
                   <span className="text-[10px] text-white/50">โหมดทดลอง: กดปุ่มเพื่อใช้รูปตัวอย่าง</span>
                 )}
@@ -223,7 +299,7 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({
             <input
               ref={fileRef}
               type="file"
-              accept="image/*"
+              accept="image/*,.heic,.heif"
               className="hidden"
               onChange={(event) => {
                 pickFromGallery(event.target.files?.[0]);

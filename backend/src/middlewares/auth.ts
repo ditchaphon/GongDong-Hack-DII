@@ -19,7 +19,19 @@ export async function verifyLineToken(
   channelId?: string,
   fetchFn: typeof fetch = fetch
 ): Promise<LineTokenPayload> {
-  const liffChannelId = channelId || process.env.LINE_LIFF_CHANNEL_ID || process.env.LINE_CHANNEL_ID;
+  const liffChannelId =
+    channelId ||
+    process.env.LINE_LIFF_CHANNEL_ID ||
+    process.env.LINE_LOGIN_CHANNEL_ID ||
+    process.env.LINE_CHANNEL_ID;
+
+  if (process.env.NODE_ENV === 'production' && !liffChannelId) {
+    throw new AppError(
+      'ระบบยืนยันตัวตน LINE ยังไม่ได้ตั้งค่า LINE_LOGIN_CHANNEL_ID',
+      503,
+      'LINE_AUTH_NOT_CONFIGURED'
+    );
+  }
 
   const bodyParams = new URLSearchParams();
   bodyParams.append('id_token', idToken);
@@ -53,6 +65,63 @@ export async function verifyLineToken(
   return payload;
 }
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * ค้นหาผู้ใช้จาก Mock ID หรือ LINE User ID (ป้องกัน Prisma P2023 เมื่อ Identifier ไม่ใช่ UUID)
+ */
+async function findUserByMockIdentifier(identifier: string) {
+  if (UUID_REGEX.test(identifier)) {
+    const byId = await prisma.user.findUnique({ where: { id: identifier } });
+    if (byId) return byId;
+  }
+
+  const byLineId = await prisma.user.findUnique({ where: { lineUserId: identifier } });
+  if (byLineId) return byLineId;
+
+  return prisma.user.findUnique({ where: { lineUserId: `line_${identifier}` } });
+}
+
+async function findOrCreateFirstLoginUser(data: {
+  lineUserId: string;
+  displayName: string;
+  pictureUrl?: string | null;
+}) {
+  try {
+    return await prisma.$transaction(async (tx: any) => {
+      const createdUser = await tx.user.create({
+        data: {
+          lineUserId: data.lineUserId,
+          displayName: data.displayName,
+          ...(data.pictureUrl !== undefined ? { pictureUrl: data.pictureUrl } : {}),
+          credits: 1,
+          isVerifiedSeller: false,
+        },
+      });
+
+      await tx.creditTransaction.create({
+        data: {
+          userId: createdUser.id,
+          amount: 1,
+          balanceAfter: 1,
+          type: 'SIGNUP_BONUS',
+          note: 'เครดิตฟรีสำหรับผู้ใช้ใหม่',
+        },
+      });
+
+      return createdUser;
+    });
+  } catch (err: any) {
+    if (err?.code === 'P2002') {
+      const existing = await prisma.user.findUnique({
+        where: { lineUserId: data.lineUserId },
+      });
+      if (existing) return existing;
+    }
+    throw err;
+  }
+}
+
 export interface AuthMiddlewareOptions {
   tokenVerifier?: (token: string) => Promise<LineTokenPayload>;
 }
@@ -74,10 +143,7 @@ export function createAuthMiddleware(options: AuthMiddlewareOptions = {}) {
       const isTestOrDev = process.env.NODE_ENV !== 'production';
 
       if (isTestOrDev && xUserId) {
-        let user = await prisma.user.findUnique({ where: { id: xUserId } });
-        if (!user) {
-          user = await prisma.user.findUnique({ where: { lineUserId: xUserId } });
-        }
+        const user = await findUserByMockIdentifier(xUserId);
         if (user) {
           req.user = user;
           req.userId = user.id;
@@ -97,36 +163,17 @@ export function createAuthMiddleware(options: AuthMiddlewareOptions = {}) {
       // ตรวจสอบ Mock Token ใน dev/test: เช่น Bearer mock_<uuid> หรือ mock_user_1
       if (isTestOrDev && token.startsWith('mock_')) {
         const mockTargetId = token.substring(5);
-        let user = await prisma.user.findUnique({ where: { id: mockTargetId } });
-        if (!user) {
-          user = await prisma.user.findUnique({ where: { lineUserId: mockTargetId } });
-        }
+        const user = await findUserByMockIdentifier(mockTargetId);
         if (user) {
           req.user = user;
           req.userId = user.id;
           return next();
         }
 
-        // กรณีเป็น mock token ใหม่ที่ต้องการ auto-create ในการทดสอบ
-        const newUser = await prisma.$transaction(async (tx: any) => {
-          const created = await tx.user.create({
-            data: {
-              lineUserId: `line_${mockTargetId}`,
-              displayName: `Mock User (${mockTargetId})`,
-              credits: 1,
-              isVerifiedSeller: false,
-            },
-          });
-
-          await tx.creditTransaction.create({
-            data: {
-              userId: created.id,
-              amount: 1,
-              type: 'SIGNUP_BONUS',
-            },
-          });
-
-          return created;
+        // กรณีเป็น mock token ใหม่ที่ต้องการ auto-create ในการทดสอบ (รองรับ Concurrent P2002)
+        const newUser = await findOrCreateFirstLoginUser({
+          lineUserId: `line_${mockTargetId}`,
+          displayName: `Mock User (${mockTargetId})`,
         });
 
         req.user = newUser;
@@ -145,28 +192,12 @@ export function createAuthMiddleware(options: AuthMiddlewareOptions = {}) {
         where: { lineUserId },
       });
 
-      // 4. หากเป็นผู้ใช้ใหม่ (First Login) ➔ Auto-create พร้อมแจก 1 เครดิตฟรี
+      // 4. หากเป็นผู้ใช้ใหม่ (First Login) ➔ Auto-create พร้อมแจก 1 เครดิตฟรี (รองรับ Concurrent P2002)
       if (!user) {
-        user = await prisma.$transaction(async (tx: any) => {
-          const createdUser = await tx.user.create({
-            data: {
-              lineUserId,
-              displayName: payload.name || 'LINE User',
-              pictureUrl: payload.picture || null,
-              credits: 1,
-              isVerifiedSeller: false,
-            },
-          });
-
-          await tx.creditTransaction.create({
-            data: {
-              userId: createdUser.id,
-              amount: 1,
-              type: 'SIGNUP_BONUS',
-            },
-          });
-
-          return createdUser;
+        user = await findOrCreateFirstLoginUser({
+          lineUserId,
+          displayName: payload.name || 'LINE User',
+          pictureUrl: payload.picture || null,
         });
       }
 

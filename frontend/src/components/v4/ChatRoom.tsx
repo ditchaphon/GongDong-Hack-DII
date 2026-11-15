@@ -50,7 +50,7 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
     endRef.current?.scrollIntoView({ block: 'end' });
   }, [messages.length]);
 
-  const open = canChat(status) && status !== 'CANCELLED';
+  const open = canChat(status);
   const readOnly = isChatReadOnly(status);
   const leak = hasContactLeak(draft);
 

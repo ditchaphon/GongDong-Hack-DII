@@ -37,6 +37,7 @@ export const CREDIT_REASON_LABEL: Record<CreditReason, string> = {
   SIGNUP_BONUS: 'เครดิตฟรีสำหรับผู้ใช้ใหม่',
   ACCEPT_ORDER: 'รับออเดอร์',
   NO_SHOW_REFUND: 'คืนเครดิต (ผู้ซื้อไม่มาตามนัด)',
+  REFUND_CANCEL: 'คืนเครดิต (ยกเลิกคำสั่งซื้อ)',
   TOPUP: 'เติมเครดิต',
 };
 

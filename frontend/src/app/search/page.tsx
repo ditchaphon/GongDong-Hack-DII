@@ -1,14 +1,20 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { SearchBar, Chip, BookCard, EmptyState, BottomSheet, Button } from '@/components/ui';
 import { TopBar } from '@/components/layout/TopBar';
-import { MOCK_BOOKS } from '@/mocks/books';
+import { api } from '@/lib/api';
+import { toV4Grade } from '@/lib/catalog';
+import { BackendBookFeedItem, mapBackendBookToBook } from '@/lib/mappers';
+import { Book } from '@/types';
 import { Filter, SlidersHorizontal, MapPin } from 'lucide-react';
 
 export default function SearchPage() {
   const router = useRouter();
+  const [books, setBooks] = useState<Book[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [selectedZone, setSelectedZone] = useState<string>('all');
   const [maxPrice, setMaxPrice] = useState<number>(3000);
@@ -25,7 +31,54 @@ export default function SearchPage() {
     { id: 'dorm', label: 'หอพักนักศึกษา' },
   ];
 
-  const filteredBooks = MOCK_BOOKS.filter((b) => {
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const initialQ = params.get('q');
+    const initialGrade = params.get('grade');
+    const initialShipping = params.get('shipping');
+    if (initialQ) setQuery(initialQ);
+    if (initialGrade && ['A', 'B', 'C', 'D'].includes(initialGrade)) {
+      setGradeFilter(initialGrade as 'A' | 'B' | 'C' | 'D');
+    }
+    if (initialShipping === 'MEETUP' || initialShipping === 'PARCEL') {
+      setDeliveryFilter(initialShipping);
+    }
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    const timer = setTimeout(async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const params = new URLSearchParams({ limit: '50' });
+        if (query.trim()) params.set('q', query.trim());
+        if (gradeFilter !== 'ALL') {
+          params.set('grade', toV4Grade(gradeFilter));
+        }
+        if (deliveryFilter === 'MEETUP') params.set('shipping', 'PICKUP');
+        if (deliveryFilter === 'PARCEL') params.set('shipping', 'DELIVERY');
+
+        const res = await api.get<{ books: BackendBookFeedItem[]; total: number }>(
+          `/api/books?${params.toString()}`
+        );
+        if (!active) return;
+        setBooks((res.books ?? []).map(mapBackendBookToBook));
+      } catch (err) {
+        if (!active) return;
+        setError(err instanceof Error ? err.message : 'โหลดรายการหนังสือไม่สำเร็จ');
+      } finally {
+        if (active) setLoading(false);
+      }
+    }, 250);
+
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [query, gradeFilter, deliveryFilter]);
+
+  const filteredBooks = books.filter((b) => {
     const q = query.toLowerCase();
     const matchesQuery =
       !query ||
@@ -184,7 +237,17 @@ export default function SearchPage() {
 
       {/* Results Feed */}
       <div className="px-4 space-y-3 flex-1">
-        {filteredBooks.length > 0 ? (
+        {loading ? (
+          <div className="grid grid-cols-2 gap-3">
+            {[1, 2, 3, 4].map((idx) => (
+              <div key={idx} className="h-56 rounded-2xl bg-slate-200 animate-pulse" />
+            ))}
+          </div>
+        ) : error ? (
+          <div className="bg-white rounded-2xl border border-slate-200 p-6 mt-4">
+            <EmptyState title="โหลดข้อมูลไม่สำเร็จ" description={error} />
+          </div>
+        ) : filteredBooks.length > 0 ? (
           <div className="grid grid-cols-2 gap-3">
             {filteredBooks.map((book) => (
               <BookCard

@@ -27,18 +27,19 @@ export default function SellerListStep4Page() {
   const { publishListing, shop } = useSeller();
 
   const isSet = draft.mode === 'SET';
-  const canParcel = shop?.payeeVerified ?? false;
+  const canParcel = Boolean(shop?.payeeVerified && shop?.supportsParcel);
   const hasMeetup = draft.deliveryMethods.includes('MEETUP');
   const hasParcel = draft.deliveryMethods.includes('PARCEL') && canParcel;
 
   const [priceInput, setPriceInput] = useState(draft.price ? String(draft.price) : '');
+  const [publishing, setPublishing] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const price = Number(priceInput) || 0;
   const pointCount = shop?.meetupPoints.length ?? 0;
 
-  const handlePublish = () => {
+  const handlePublish = async () => {
     if (price < 1) {
       setError('กรุณาตั้งราคาขายอย่างน้อย ฿1');
       return;
@@ -48,9 +49,16 @@ export default function SellerListStep4Page() {
       return;
     }
     setError(null);
-    update({ price });
-    publishListing({ ...draft, price });
-    router.push('/seller/list/success');
+    setPublishing(true);
+    try {
+      update({ price });
+      const created = await publishListing({ ...draft, price });
+      router.push(`/seller/list/success?id=${encodeURIComponent(created.id)}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'ลงประกาศขายไม่สำเร็จ');
+    } finally {
+      setPublishing(false);
+    }
   };
 
   return (
@@ -103,7 +111,7 @@ export default function SellerListStep4Page() {
               onApplyPrice={(suggested) => {
                 setPriceInput(String(suggested));
                 update({ price: suggested });
-                setToastMessage('ใช้ราคาแนะนำแล้ว (TPRICE)');
+                setToastMessage('ใช้ราคาแนะนำแล้ว');
               }}
             />
           )}
@@ -179,7 +187,7 @@ export default function SellerListStep4Page() {
               <span className="block text-[11px] text-slate-500 mt-0.5">
                 {canParcel
                   ? 'ค่าส่งแยกจากค่าหนังสือ · เก็บเงินปลายทางเมื่อรับพัสดุ'
-                  : 'ต้องยืนยันตัวตน (KYC) ก่อนเปิดส่งพัสดุ'}
+                  : 'ต้องยืนยันตัวตน (KYC) และเปิดรับส่งพัสดุในตั้งค่าร้านก่อน'}
               </span>
             </span>
             <span className="text-[11px] font-bold text-slate-500">ระบบคำนวณ</span>
@@ -230,6 +238,7 @@ export default function SellerListStep4Page() {
           <Button
             fullWidth
             size="lg"
+            isLoading={publishing}
             onClick={handlePublish}
             rightIcon={<ChevronRight className="w-4 h-4" />}
           >

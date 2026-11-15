@@ -43,6 +43,7 @@ export type CreditReason =
   | 'SIGNUP_BONUS'
   | 'ACCEPT_ORDER'
   | 'NO_SHOW_REFUND'
+  | 'REFUND_CANCEL'
   | 'TOPUP';
 
 /** Public identity — safe to show to the other side. */
@@ -101,6 +102,7 @@ export interface V4Order {
   id: string;
   status: V4OrderStatus;
   delivery: V4Delivery;
+  buyerId?: string;
   buyer: PublicIdentity;
   shop: ShopIdentity;
   books: V4BookSnapshot[];
@@ -123,6 +125,7 @@ export interface V4Order {
     openedBy: ViewRole;
     openedAtISO: string;
   };
+  missedMeetingReportedAtISO?: string;
   cancelReason?: string;
   /** Shop profile id, used to link back to the public shop page. */
   shopId?: string;

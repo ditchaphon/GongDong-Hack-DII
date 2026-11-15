@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import React, { Suspense, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Button, Toast, GradeBadge } from '@/components/ui';
 import { useListing } from '@/hooks/useListing';
 import { useLiff } from '@/hooks/useLiff';
@@ -14,29 +14,40 @@ import {
   MessageCircle,
 } from 'lucide-react';
 
-export default function SellerListSuccessPage() {
+function SellerListSuccessContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const createdId = searchParams.get('id');
   const { draft, grade, resetDraft } = useListing();
   const { shareTargetPicker } = useLiff();
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const liffId = process.env.NEXT_PUBLIC_LIFF_ID;
+  const bookPath = createdId ? `/book/${createdId}` : '/search';
+  const shareUrl =
+    liffId && createdId
+      ? `https://liff.line.me/${liffId}${bookPath}`
+      : typeof window !== 'undefined'
+        ? `${window.location.origin}${bookPath}`
+        : bookPath;
 
   const handleShare = async () => {
     const shared = await shareTargetPicker([
       {
         type: 'text',
-        text: `หนังสือสภาพดีจากกองดอง: ${draft.title} ราคา ฿${draft.price.toLocaleString()}`,
+        text: `หนังสือสภาพดีจากกองดอง: ${draft.title} ราคา ฿${draft.price.toLocaleString()}\n${shareUrl}`,
       },
     ]);
     if (!shared) {
       try {
-        await navigator.clipboard.writeText(
-          `https://liff.line.me/mock-liff-id/book/listing-01`
-        );
+        await navigator.clipboard.writeText(shareUrl);
       } catch {
         // clipboard can be blocked inside LINE — still confirm a fallback action
       }
+      setToastMessage('คัดลอกลิงก์ประกาศแล้ว');
+      return;
     }
-    setToastMessage('คัดลอกลิงก์ประกาศแล้ว (TSHARE)');
+    setToastMessage('แชร์ประกาศผ่าน LINE แล้ว');
   };
 
   return (
@@ -144,5 +155,13 @@ export default function SellerListSuccessPage() {
         message={toastMessage || ''}
       />
     </div>
+  );
+}
+
+export default function SellerListSuccessPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
+      <SellerListSuccessContent />
+    </Suspense>
   );
 }

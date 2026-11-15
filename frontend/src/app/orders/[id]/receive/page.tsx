@@ -1,6 +1,6 @@
 'use client';
 
-import React, { use, useState } from 'react';
+import React, { use, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import clsx from 'clsx';
 import { TopBar } from '@/components/layout/TopBar';
@@ -16,8 +16,12 @@ const DEMO_PHOTO = 'https://images.unsplash.com/photo-1544947950-fa07a98d237f?w=
 export default function ReceiveParcelPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
-  const { getOrder, confirmReceived } = useV4Orders();
+  const { getOrder, fetchOrder, loading, confirmReceived } = useV4Orders();
   const order = getOrder(id);
+
+  useEffect(() => {
+    if (!order) fetchOrder(id);
+  }, [id, order, fetchOrder]);
 
   const [photo, setPhoto] = useState<string | null>(null);
   const [cameraOpen, setCameraOpen] = useState(false);
@@ -27,11 +31,22 @@ export default function ReceiveParcelPage({ params }: { params: Promise<{ id: st
   const [comment, setComment] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
+
+  if (!order && loading) {
+    return (
+      <div className="flex flex-col min-h-screen bg-slate-50">
+        <TopBar title="ยืนยันรับของ" onBack={() => router.push('/orders')} />
+        <p className="p-6 text-center text-xs text-slate-500">กำลังโหลดข้อมูลออเดอร์...</p>
+      </div>
+    );
+  }
 
   if (
     !order ||
-    (!done && !['PAID', 'SHIPPED', 'SCHEDULED'].includes(order.status))
+    order.delivery !== 'PARCEL' ||
+    (!done && order.status !== 'SHIPPED')
   ) {
     return (
       <div className="flex flex-col min-h-screen bg-slate-50">
@@ -41,12 +56,24 @@ export default function ReceiveParcelPage({ params }: { params: Promise<{ id: st
     );
   }
 
-  const submit = () => {
+  const submit = async () => {
     if (!photo) return setError('ถ่ายรูปหนังสือที่ได้รับก่อน');
     if (!rating) return setError('ให้คะแนนอย่างน้อย 1 ดาว');
     if (gradeMatched === null) return setError('บอกเราว่าสภาพหนังสือตรงเกรดไหม');
+    setError(null);
+    setSubmitting(true);
+    const res = await confirmReceived(order.id, photo, {
+      rating,
+      isGradeMatched: gradeMatched,
+      tags,
+      comment: comment.trim(),
+    });
+    setSubmitting(false);
+    if (!res.ok) {
+      setError(res.error || 'ยืนยันรับของไม่สำเร็จ');
+      return;
+    }
     setDone(true);
-    confirmReceived(order.id, photo, { rating, isGradeMatched: gradeMatched, tags, comment: comment.trim() });
     setToast('ยืนยันรับของแล้ว · ชำระเงินปลายทางเรียบร้อย');
     setTimeout(() => router.push(`/orders/${order.id}`), 900);
   };
@@ -147,8 +174,8 @@ export default function ReceiveParcelPage({ params }: { params: Promise<{ id: st
 
       <div className="fixed bottom-0 left-0 right-0 z-30 flex justify-center pointer-events-none">
         <div className="w-full max-w-[430px] bg-white border-t border-slate-200 p-3 pointer-events-auto safe-area-bottom shadow-lg">
-          <Button fullWidth size="lg" onClick={submit}>
-            ยืนยันได้รับของและส่งรีวิว
+          <Button fullWidth size="lg" onClick={submit} disabled={submitting}>
+            {submitting ? 'กำลังบันทึกการรับสินค้า...' : 'ยืนยันได้รับของและส่งรีวิว'}
           </Button>
         </div>
       </div>
@@ -159,6 +186,7 @@ export default function ReceiveParcelPage({ params }: { params: Promise<{ id: st
         title="ถ่ายรูปหนังสือที่ได้รับ"
         hint="ถ่ายให้เห็นปกและสภาพหนังสือชัดเจน"
         demoImage={DEMO_PHOTO}
+        bucket="order-receives"
         onClose={() => setCameraOpen(false)}
         onCapture={(url) => {
           setPhoto(url);

@@ -43,7 +43,7 @@ describe('GradingService - Book Grading & Price Recommendation', () => {
 
     expect(result.grade).toBe('WELL_LOVED');
     expect(result.discountPercent).toBe(0.45);
-    expect(result.recommendedPrice).toBe(130.50); // 290 * 0.45 = 130.50
+    expect(result.recommendedPrice).toBe(131); // Math.round(290 * 0.45 = 130.50) -> 131
   });
 
   it('ควรตัดเกรด WELL_LOVED (45%) เมื่อมีตำหนิ 1 จุดที่ markings', () => {
@@ -95,17 +95,17 @@ describe('GradingService - Book Grading & Price Recommendation', () => {
     expect(result.recommendedPrice).toBe(150);
   });
 
-  it('ควรปัดเศษทศนิยม 2 ตำแหน่งอย่างถูกต้องสำหรับราคาที่มีเศษสตางค์', () => {
-    // 299 * 0.75 = 224.25
+  it('ควรปัดเศษเป็นจำนวนเต็มบาทอย่างถูกต้องสำหรับราคาที่มีเศษสตางค์', () => {
+    // 299 * 0.75 = 224.25 -> 224
     const result = calculateBookGrade(cleanAnswers, 299);
-    expect(result.recommendedPrice).toBe(224.25);
+    expect(result.recommendedPrice).toBe(224);
 
-    // 199 * 0.45 = 89.55
+    // 199 * 0.45 = 89.55 -> 90
     const wellLovedResult = calculateBookGrade(
       { ...cleanAnswers, stains: true },
       199
     );
-    expect(wellLovedResult.recommendedPrice).toBe(89.55);
+    expect(wellLovedResult.recommendedPrice).toBe(90);
   });
 
   it('ควรโยน Error เมื่อระบุราคาปกติดลบ', () => {

@@ -18,6 +18,7 @@ changes. Wording stays short, honest, and never promises a guarantee.
 | CANCELLED | ยกเลิกแล้ว | คำขอหรือออเดอร์นี้ถูกยกเลิก |
 | DISPUTED | อยู่ระหว่างตรวจสอบ | แอดมินกำลังตรวจสอบ · เวลาทั้งหมดหยุดชั่วคราว |
 
+
 ## 2. "Who acts" chips
 
 - BUYER → `ผู้ซื้อต้องทำ`

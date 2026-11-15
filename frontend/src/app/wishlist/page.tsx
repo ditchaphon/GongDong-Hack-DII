@@ -1,20 +1,54 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { TopBar } from '@/components/layout/TopBar';
 import { BottomTab } from '@/components/layout/BottomTab';
 import { Button, Input, BottomSheet, Toast, EmptyState } from '@/components/ui';
-import { MOCK_WISHLIST, WishlistItem } from '@/mocks/books';
-import { Bell, Plus, Trash2, Sparkles, CheckCircle2, ChevronRight, BookOpen } from 'lucide-react';
+import { Bell, Plus, Trash2, Sparkles, BookOpen } from 'lucide-react';
 import Link from 'next/link';
 
+interface WishlistItem {
+  id: string;
+  title: string;
+  maxPrice: number;
+  meetupZone?: string;
+  createdAt: string;
+  matchCount: number;
+}
+
+const WISHLIST_STORAGE_KEY = 'gongdong.wishlist.v1';
+
 export default function WishlistPage() {
-  const [items, setItems] = useState<WishlistItem[]>(MOCK_WISHLIST);
+  const [items, setItems] = useState<WishlistItem[]>([]);
+  const [hydrated, setHydrated] = useState(false);
   const [isAddSheetOpen, setIsAddSheetOpen] = useState(false);
   const [newTitle, setNewTitle] = useState('');
   const [newMaxPrice, setNewMaxPrice] = useState('200');
   const [newZone, setNewZone] = useState('หน้าหอสมุดกลาง มช.');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(WISHLIST_STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) setItems(parsed);
+      }
+    } catch {
+      // Ignore storage errors
+    } finally {
+      setHydrated(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    try {
+      window.localStorage.setItem(WISHLIST_STORAGE_KEY, JSON.stringify(items));
+    } catch {
+      // Ignore storage errors
+    }
+  }, [items, hydrated]);
 
   const handleAddWishlist = () => {
     if (!newTitle.trim()) return;
@@ -31,7 +65,7 @@ export default function WishlistPage() {
     setItems((prev) => [newItem, ...prev]);
     setIsAddSheetOpen(false);
     setNewTitle('');
-    setToastMessage('บันทึกการฝากตามหาแล้ว (B4OK)! ระบบจะแจ้งเตือนใน LINE เมื่อมีคนลงขาย 🔔');
+    setToastMessage('บันทึกรายการตามหาไว้บนอุปกรณ์นี้แล้ว (ระบบแจ้งเตือน LINE กำลังพัฒนา)');
   };
 
   const handleDeleteItem = (id: string) => {
@@ -42,7 +76,7 @@ export default function WishlistPage() {
   return (
     <div className="flex flex-col min-h-screen bg-slate-50 select-none pb-20">
       <TopBar
-        title="ฝากตามหาหนังสือ (B4)"
+        title="ฝากตามหาหนังสือ"
         showBack={false}
         rightAction={
           <button
@@ -61,10 +95,10 @@ export default function WishlistPage() {
       <div className="p-4 bg-white border-b border-slate-100 space-y-2">
         <div className="flex items-center gap-2 text-xs font-bold text-slate-800">
           <Bell className="w-4 h-4 text-[#8B5E3C]" />
-          <span>ระบบแจ้งเตือนอัตโนมัติผ่าน LINE</span>
+          <span>รายการหนังสือที่อยากได้ (ระบบแจ้งเตือน LINE กำลังพัฒนา)</span>
         </div>
         <p className="text-xs text-slate-500 leading-relaxed">
-          หาหนังสือไม่เจอใช่ไหม? ระบุชื่อหนังสือและงบประมาณของคุณไว้ เมื่อมีผู้ลงขายในราคาและสภาพที่คุณต้องการ แชทบอท LINE จะส่งข้อความบอกคุณคนแรกทันที!
+          บันทึกชื่อหนังสือและงบประมาณที่ต้องการไว้บนอุปกรณ์นี้ก่อนได้ ฟีเจอร์ส่งข้อความแจ้งเตือนอัตโนมัติผ่าน LINE กำลังอยู่ในระหว่างการพัฒนา
         </p>
       </div>
 
@@ -117,8 +151,8 @@ export default function WishlistPage() {
                 </Link>
               ) : (
                 <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
-                  <div className="w-2 h-2 rounded-full bg-slate-300 animate-ping" />
-                  <span>กำลังรอผู้ลงขาย... เมื่อมีคนลงจะส่งแจ้งเตือนใน LINE</span>
+                  <div className="w-2 h-2 rounded-full bg-slate-300" />
+                  <span>บันทึกไว้บนอุปกรณ์นี้ · แจ้งเตือน LINE กำลังพัฒนา</span>
                 </div>
               )}
             </div>

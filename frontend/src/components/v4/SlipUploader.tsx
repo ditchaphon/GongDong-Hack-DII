@@ -1,12 +1,13 @@
 'use client';
 
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import clsx from 'clsx';
 import { Camera, X, Check, Loader2, Lock, AlertCircle } from 'lucide-react';
+import { uploadImageFile } from '@/lib/api';
 
 export interface SlipUploaderProps {
   previewUrl?: string;
-  onChange: (previewUrl: string) => void;
+  onChange: (uploadedUrl: string) => void;
   onRemove: () => void;
   isUploading?: boolean;
   error?: string;
@@ -16,8 +17,8 @@ export interface SlipUploaderProps {
 
 /**
  * Slip upload for order/top-up payment.
- * The preview is a local object URL only — real slips live in a private bucket
- * and are shown through short-lived signed URLs (v4 storage rule).
+ * Compresses the slip image to WebP and uploads to the private `slips` bucket
+ * via POST /api/upload, returning a short-lived signed URL.
  */
 export const SlipUploader: React.FC<SlipUploaderProps> = ({
   previewUrl,
@@ -29,10 +30,24 @@ export const SlipUploader: React.FC<SlipUploaderProps> = ({
   className,
 }) => {
   const inputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
-  const handleFile = (file?: File) => {
+  const busy = isUploading || uploading;
+  const displayError = error || uploadError;
+
+  const handleFile = async (file?: File) => {
     if (!file) return;
-    onChange(URL.createObjectURL(file));
+    setUploadError(null);
+    setUploading(true);
+    try {
+      const uploaded = await uploadImageFile(file, 'slips');
+      onChange(uploaded.url);
+    } catch (err: any) {
+      setUploadError(err?.message || 'อัปโหลดสลิปไม่สำเร็จ กรุณาลองใหม่');
+    } finally {
+      setUploading(false);
+    }
   };
 
   return (
@@ -51,7 +66,11 @@ export const SlipUploader: React.FC<SlipUploaderProps> = ({
         type="file"
         accept="image/*"
         className="hidden"
-        onChange={(event) => handleFile(event.target.files?.[0])}
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          event.target.value = '';
+          void handleFile(file);
+        }}
       />
 
       {previewUrl ? (
@@ -65,7 +84,7 @@ export const SlipUploader: React.FC<SlipUploaderProps> = ({
           >
             <X className="w-4 h-4" />
           </button>
-          {!isUploading && (
+          {!busy && (
             <span className="absolute bottom-2 right-2 inline-flex items-center gap-1 bg-emerald-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
               <Check className="w-3 h-3" /> แนบแล้ว
             </span>
@@ -75,15 +94,15 @@ export const SlipUploader: React.FC<SlipUploaderProps> = ({
         <button
           type="button"
           onClick={() => inputRef.current?.click()}
-          disabled={isUploading}
+          disabled={busy}
           className={clsx(
             'w-full aspect-[5/3] rounded-2xl border-2 border-dashed flex flex-col items-center justify-center gap-1.5 text-center transition',
-            error
+            displayError
               ? 'border-rose-300 bg-rose-50/50'
               : 'border-slate-300 bg-slate-50 hover:bg-slate-100'
           )}
         >
-          {isUploading ? (
+          {busy ? (
             <>
               <Loader2 className="w-6 h-6 text-slate-400 animate-spin" />
               <span className="text-xs text-slate-500">กำลังอัปโหลด...</span>
@@ -107,10 +126,10 @@ export const SlipUploader: React.FC<SlipUploaderProps> = ({
         สลิปถูกเก็บแบบส่วนตัว · ผู้ซื้อและผู้ขายเห็นได้เฉพาะในออเดอร์นี้
       </p>
 
-      {error && (
+      {displayError && (
         <p className="flex items-start gap-1 text-[11px] text-rose-600 font-medium">
           <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-          {error}
+          {displayError}
         </p>
       )}
     </div>

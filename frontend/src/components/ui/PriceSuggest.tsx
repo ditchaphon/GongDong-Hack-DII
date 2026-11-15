@@ -29,7 +29,7 @@ export const PriceSuggest: React.FC<PriceSuggestProps> = ({
   className,
 }) => {
   const percent = GRADE_PERCENTAGES[grade] || 0.6;
-  const suggestedPrice = Math.round((originalPrice * percent) / 5) * 5; // rounded to nearest 5 baht
+  const suggestedPrice = Math.round(originalPrice * percent); // match backend gradingService integer baht rounding
 
   return (
     <div

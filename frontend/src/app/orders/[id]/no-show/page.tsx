@@ -16,30 +16,48 @@ export default function NoShowPage({
 }) {
   const resolvedParams = use(params);
   const router = useRouter();
-  const { getOrder, openDispute } = useV4Orders();
+  const {
+    getOrder,
+    fetchOrder,
+    loading,
+    reportMissedMeeting,
+    disputeMissedMeeting,
+    isMineAsBuyer,
+  } = useV4Orders();
 
   const order = getOrder(resolvedParams.id);
+
+  useEffect(() => {
+    if (!order) fetchOrder(resolvedParams.id);
+  }, [resolvedParams.id, order, fetchOrder]);
+
   const [role, setRole] = useState<ViewRole>('SELLER');
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [rebuttal, setRebuttal] = useState('');
+  const [submitting, setSubmitting] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [devBypass, setDevBypass] = useState(false);
 
+  const enableDemoControls = process.env.NEXT_PUBLIC_ENABLE_DEMO_CONTROLS === 'true';
+
   useEffect(() => {
-    const search = new URLSearchParams(window.location.search);
-    setRole(search.get('role') === 'buyer' ? 'BUYER' : 'SELLER');
-  }, []);
+    if (!order) return;
+    setRole(isMineAsBuyer(order) ? 'BUYER' : 'SELLER');
+  }, [order, isMineAsBuyer]);
 
   if (!order) {
     return (
       <div className="flex flex-col min-h-screen bg-slate-50">
         <TopBar title="แจ้งไม่มาตามนัด" onBack={() => router.push('/orders')} />
-        <p className="p-6 text-center text-xs text-slate-500">ไม่พบออเดอร์นี้</p>
+        <p className="p-6 text-center text-xs text-slate-500">
+          {loading ? 'กำลังโหลดข้อมูลออเดอร์...' : 'ไม่พบออเดอร์นี้'}
+        </p>
       </div>
     );
   }
 
-  const alreadyDisputed = order.status === 'DISPUTED';
+  const alreadyDisputed =
+    order.status === 'DISPUTED' || !!order.missedMeetingReportedAtISO;
 
   // ตรวจสอบเงื่อนไขว่าเลยเวลานัดหมายมาแล้วอย่างน้อย 15 นาทีหรือไม่
   const checkCanReport = () => {
@@ -68,16 +86,29 @@ export default function NoShowPage({
 
   const { canReport, reportTimeStr } = checkCanReport();
 
-  const handleReport = () => {
-    openDispute(order.id, 'ผู้ซื้อไม่มาตามนัด', 'SELLER');
+  const handleReport = async () => {
+    setSubmitting(true);
+    const res = await reportMissedMeeting(order.id);
+    setSubmitting(false);
     setConfirmOpen(false);
+    if (!res.ok) {
+      setToastMessage(res.error || 'ส่งรายงานไม่สำเร็จ');
+      return;
+    }
     setToastMessage('แจ้งไม่มาตามนัดแล้ว · แอดมินจะตรวจสอบและติดต่อทั้งสองฝ่าย');
     setTimeout(() => router.push(`/orders/${order.id}?role=seller`), 900);
   };
 
-  const handleRebuttal = () => {
+  const handleRebuttal = async () => {
     if (rebuttal.trim().length < 5) {
       setToastMessage('เขียนคำชี้แจงอย่างน้อย 5 ตัวอักษร');
+      return;
+    }
+    setSubmitting(true);
+    const res = await disputeMissedMeeting(order.id, rebuttal.trim());
+    setSubmitting(false);
+    if (!res.ok) {
+      setToastMessage(res.error || 'ส่งคำชี้แจงไม่สำเร็จ');
       return;
     }
     setToastMessage('ส่งคำชี้แจงให้แอดมินแล้ว');
@@ -131,15 +162,17 @@ export default function NoShowPage({
                   <p className="leading-relaxed">
                     ระบบล็อกปุ่มแจ้งไม่มาตามนัดไว้จนกว่าจะเลยเวลานัด 15 นาที (จะสามารถกดแจ้งได้เวลา <strong>{reportTimeStr}</strong> เป็นต้นไป)
                   </p>
-                  <div className="pt-1 border-t border-slate-200">
-                    <button
-                      type="button"
-                      onClick={() => setDevBypass(true)}
-                      className="text-[10px] text-indigo-600 font-semibold hover:underline"
-                    >
-                      ⚡ ข้ามเวลา 15 นาทีทันที (สำหรับทดสอบในโหมดเดโม)
-                    </button>
-                  </div>
+                  {enableDemoControls && (
+                    <div className="pt-1 border-t border-slate-200">
+                      <button
+                        type="button"
+                        onClick={() => setDevBypass(true)}
+                        className="text-[10px] text-indigo-600 font-semibold hover:underline"
+                      >
+                        ⚡ ข้ามเวลา 15 นาทีทันที (สำหรับทดสอบในโหมดเดโม)
+                      </button>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="flex items-start gap-2 p-3 rounded-xl bg-amber-50 border border-amber-200 text-[11px] text-amber-900 leading-relaxed">
@@ -161,10 +194,10 @@ export default function NoShowPage({
               <Button
                 fullWidth
                 size="lg"
-                disabled={!canReport}
+                disabled={!canReport || submitting}
                 onClick={() => setConfirmOpen(true)}
               >
-                แจ้งผู้ซื้อไม่มาตามนัด
+                {submitting ? 'กำลังส่งรายงาน...' : 'แจ้งผู้ซื้อไม่มาตามนัด'}
               </Button>
             </>
           )
@@ -190,8 +223,8 @@ export default function NoShowPage({
                   placeholder="อธิบายสถานการณ์ เช่น ไปถึงจุดนัดแล้วแต่หาไม่เจอ หรือติดธุระด่วน"
                   className="w-full text-xs p-3 rounded-xl border border-slate-200 focus:outline-none focus:border-[var(--color-primary)]"
                 />
-                <Button fullWidth onClick={handleRebuttal}>
-                  ส่งคำชี้แจงให้แอดมิน
+                <Button fullWidth onClick={handleRebuttal} disabled={submitting}>
+                  {submitting ? 'กำลังส่งคำชี้แจง...' : 'ส่งคำชี้แจงให้แอดมิน'}
                 </Button>
               </div>
             )}

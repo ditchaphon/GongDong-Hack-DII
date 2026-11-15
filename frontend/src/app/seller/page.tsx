@@ -13,10 +13,9 @@ import {
   Toast,
 } from '@/components/ui';
 import { useSeller } from '@/hooks/useSeller';
-import { useLiff } from '@/hooks/useLiff';
 import { useAppMode } from '@/hooks/useAppMode';
 import { useV4Orders } from '@/hooks/useV4Orders';
-import { StatusBadgeV4 } from '@/components/v4';
+import { StatusBadgeV4, LineOaBanner } from '@/components/v4';
 import {
   Plus,
   BookOpen,
@@ -38,13 +37,11 @@ type Tab = 'LISTINGS' | 'WAITING' | 'CLOSED';
 
 export default function SellerShopPage() {
   const router = useRouter();
-  const { user } = useLiff();
   const {
     shop,
     isShopSetup,
     credits,
     listings,
-    orders,
     setListingStatus,
   } = useSeller();
 
@@ -60,19 +57,19 @@ export default function SellerShopPage() {
   const [tab, setTab] = useState<Tab>('LISTINGS');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  const pendingRequestTitles = new Set(
+  const pendingRequestBookIds = new Set(
     sales
       .filter((order) => order.status === 'REQUESTED')
-      .flatMap((order) => order.books.map((book) => book.title))
+      .flatMap((order) => order.books.map((book) => book.id))
   );
-  const hasPendingRequest = (title: string) => pendingRequestTitles.has(title);
+  const hasPendingRequest = (bookId: string) => pendingRequestBookIds.has(bookId);
   const activeListings = listings.filter(
     (l) =>
       (l.status === 'ACTIVE' || l.status === 'WAITING_PAYMENT') &&
-      !hasPendingRequest(l.title)
+      !hasPendingRequest(l.id)
   );
   const pendingRequestListings = listings.filter(
-    (l) => l.status !== 'HIDDEN' && hasPendingRequest(l.title)
+    (l) => l.status !== 'HIDDEN' && hasPendingRequest(l.id)
   );
   const hiddenListings = listings.filter((l) => l.status === 'HIDDEN');
   const completedSales = sales.filter((o) => o.status === 'COMPLETED');
@@ -121,13 +118,14 @@ export default function SellerShopPage() {
       />
 
       <div className="p-4 space-y-4">
+        <LineOaBanner />
         {/* Shop header */}
         <div className="bg-white rounded-2xl border border-slate-200 p-4 space-y-3">
           <div className="flex items-center gap-3">
-            {shop?.avatar || user.pictureUrl ? (
+            {shop?.avatar ? (
               <img
-                src={shop?.avatar || user.pictureUrl}
-                alt={shop?.shopName || 'ร้านของฉัน'}
+                src={shop.avatar}
+                alt={shop.shopName || 'ร้านของฉัน'}
                 className="w-12 h-12 rounded-full object-cover bg-slate-100 border border-slate-200"
               />
             ) : (
@@ -140,11 +138,6 @@ export default function SellerShopPage() {
                 {shop?.shopName || 'ยังไม่ได้ตั้งชื่อร้าน'}
               </h1>
               <div className="flex items-center gap-1.5 text-[11px] text-slate-500 flex-wrap">
-                <span className="inline-flex items-center text-amber-500 font-semibold">
-                  <Star className="w-3 h-3 fill-amber-400 stroke-amber-400 mr-0.5" />
-                  4.9
-                </span>
-                <span>•</span>
                 <span>ขายแล้ว {completedCount} ครั้ง</span>
                 {shop?.payeeVerified ? (
                   <span className="text-emerald-700 font-medium">• ยืนยันตัวตนแล้ว</span>
@@ -251,7 +244,9 @@ export default function SellerShopPage() {
         {/* S4L — listings */}
         {tab === 'LISTINGS' && (
           <div className="space-y-3">
-            {activeListings.length === 0 && hiddenListings.length === 0 ? (
+            {activeListings.length === 0 &&
+            hiddenListings.length === 0 &&
+            pendingRequestListings.length === 0 ? (
               <div className="bg-white rounded-2xl border border-slate-200">
                 <EmptyState
                   icon={<BookOpen className="w-8 h-8 text-slate-400" />}
@@ -304,7 +299,14 @@ export default function SellerShopPage() {
                       <button
                         type="button"
                         disabled={listing.status === 'WAITING_PAYMENT'}
-                        onClick={() => setListingStatus(listing.id, 'HIDDEN')}
+                        onClick={async () => {
+                          try {
+                            await setListingStatus(listing.id, 'HIDDEN');
+                            setToastMessage('ซ่อนประกาศแล้ว');
+                          } catch (err) {
+                            setToastMessage(err instanceof Error ? err.message : 'อัปเดตไม่สำเร็จ');
+                          }
+                        }}
                         title={
                           listing.status === 'WAITING_PAYMENT'
                             ? 'ซ่อนไม่ได้ขณะมีคนขอซื้อ'
@@ -385,7 +387,14 @@ export default function SellerShopPage() {
                     </div>
                     <button
                       type="button"
-                      onClick={() => setListingStatus(listing.id, 'ACTIVE')}
+                      onClick={async () => {
+                        try {
+                          await setListingStatus(listing.id, 'ACTIVE');
+                          setToastMessage('แสดงประกาศอีกครั้งแล้ว');
+                        } catch (err) {
+                          setToastMessage(err instanceof Error ? err.message : 'อัปเดตไม่สำเร็จ');
+                        }
+                      }}
                       className="px-2.5 py-1 rounded-lg border border-emerald-200 bg-emerald-50 text-[11px] font-semibold text-emerald-700"
                     >
                       แสดงอีกครั้ง

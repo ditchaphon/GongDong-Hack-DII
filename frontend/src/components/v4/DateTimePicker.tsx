@@ -37,8 +37,11 @@ export function nextDays(count = 7): { iso: string; dayLabel: string; dateLabel:
   return Array.from({ length: count }, (_, index) => {
     const date = new Date();
     date.setDate(date.getDate() + index);
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
     return {
-      iso: date.toISOString().slice(0, 10),
+      iso: `${year}-${month}-${day}`,
       dayLabel: index === 0 ? 'วันนี้' : index === 1 ? 'พรุ่งนี้' : THAI_DAYS[date.getDay()],
       dateLabel: `${date.getDate()} ${THAI_MONTHS[date.getMonth()]}`,
     };

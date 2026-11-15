@@ -81,8 +81,9 @@ describe('OrderService - State Machine & Core Transactions', () => {
     it('กรณีสำเร็จ: ต้องหัก 1 เครดิต, ล็อกหนังสือเป็น RESERVED, ตัดคำขออื่นเป็น REJECTED, และเปลี่ยนสถานะเป็น ACCEPTED', async () => {
       mockTx.order.findUnique.mockResolvedValue(baseOrder);
       mockTx.user.update.mockResolvedValue({ id: mockSellerId, credits: 2 });
+      mockTx.bookListing.updateMany.mockResolvedValue({ count: 1 });
       mockTx.orderItem.findMany.mockResolvedValue([
-        { orderId: 'ord_competing_888' },
+        { orderId: 'ord_competing_888', order: { buyerId: 'usr_competing_buyer' } },
       ]);
 
       const result = await acceptOrder(mockOrderId, mockSellerId, mockPrisma);
@@ -96,17 +97,18 @@ describe('OrderService - State Machine & Core Transactions', () => {
 
       // 2. ตรวจสอบการบันทึก Audit Trail
       expect(mockTx.creditTransaction.create).toHaveBeenCalledWith({
-        data: {
+        data: expect.objectContaining({
           userId: mockSellerId,
           amount: -1,
+          balanceAfter: 2,
           type: 'ORDER_ACCEPT',
           orderId: mockOrderId,
-        },
+        }),
       });
 
-      // 3. ตรวจสอบการล็อกสต็อกหนังสือเป็น RESERVED
+      // 3. ตรวจสอบการล็อกสต็อกหนังสือเป็น RESERVED แบบมีเงื่อนไข status = AVAILABLE
       expect(mockTx.bookListing.updateMany).toHaveBeenCalledWith({
-        where: { id: { in: [mockBookId] } },
+        where: { id: { in: [mockBookId] }, status: 'AVAILABLE' },
         data: { status: 'RESERVED' },
       });
 
@@ -131,6 +133,17 @@ describe('OrderService - State Machine & Core Transactions', () => {
         remainingCredits: 2,
         lockedBookIds: [mockBookId],
         rejectedOrderIds: ['ord_competing_888'],
+      });
+    });
+
+    it('ต้องปฏิเสธด้วย 409 BOOK_NOT_AVAILABLE หากหนังสือถูกจองไปก่อนหน้าในเสี้ยววินาที (Conditional updateMany count ไม่ครบ)', async () => {
+      mockTx.order.findUnique.mockResolvedValue(baseOrder);
+      mockTx.user.update.mockResolvedValue({ id: mockSellerId, credits: 2 });
+      mockTx.bookListing.updateMany.mockResolvedValue({ count: 0 });
+
+      await expect(acceptOrder(mockOrderId, mockSellerId, mockPrisma)).rejects.toMatchObject({
+        statusCode: 409,
+        code: 'BOOK_NOT_AVAILABLE',
       });
     });
 
@@ -161,9 +174,10 @@ describe('OrderService - State Machine & Core Transactions', () => {
       );
     });
 
-    it('ต้องปฏิเสธหากผู้ขายยังไม่ผ่าน KYC ระดับ 2 (SELLER_NOT_VERIFIED)', async () => {
+    it('ต้องปฏิเสธออเดอร์จัดส่งพัสดุ (DELIVERY) หากผู้ขายยังไม่ผ่าน KYC (SELLER_NOT_VERIFIED)', async () => {
       mockTx.order.findUnique.mockResolvedValue({
         ...baseOrder,
+        shippingMethod: 'DELIVERY',
         seller: {
           ...baseOrder.seller,
           isVerifiedSeller: false,
@@ -171,8 +185,26 @@ describe('OrderService - State Machine & Core Transactions', () => {
       });
 
       await expect(acceptOrder(mockOrderId, mockSellerId, mockPrisma)).rejects.toThrow(
-        'ผู้ขายยังไม่ได้ยืนยันบัญชีรับเงิน (Frictionless KYC)'
+        'การจัดส่งพัสดุจำเป็นต้องยืนยันตัวตนผู้ขาย (KYC) ก่อนรับคำสั่งซื้อ'
       );
+    });
+
+    it('ต้องยอมรับออเดอร์นัดรับ (PICKUP) ได้แม้ผู้ขายยังไม่ผ่าน KYC (Selective KYC)', async () => {
+      mockTx.order.findUnique.mockResolvedValue({
+        ...baseOrder,
+        shippingMethod: 'PICKUP',
+        seller: {
+          ...baseOrder.seller,
+          isVerifiedSeller: false,
+          credits: 2,
+        },
+      });
+      mockTx.user.update.mockResolvedValue({ id: mockSellerId, credits: 1 });
+      mockTx.orderItem.findMany.mockResolvedValue([]);
+
+      const result = await acceptOrder(mockOrderId, mockSellerId, mockPrisma);
+      expect(result.status).toBe('ACCEPTED');
+      expect(result.remainingCredits).toBe(1);
     });
 
     it('ต้องปฏิเสธหากเครดิตผู้ขายไม่พอ (INSUFFICIENT_CREDITS)', async () => {
@@ -418,6 +450,63 @@ describe('OrderService - State Machine & Core Transactions', () => {
       await expect(
         verifyHandoverCode(mockOrderId, mockSellerId, '482910', mockPrisma)
       ).rejects.toThrow('ออเดอร์ต้องอยู่ในสถานะ SCHEDULED เท่านั้นเพื่อตรวจรหัสส่งมอบ');
+    });
+
+    it('Concurrency Guard: reject 409 ORDER_STATUS_CONFLICT หาก cancelOrder ชนพร้อมกันเพื่อไม่คืนเครดิตซ้ำ', async () => {
+      const { cancelOrder } = await import('../orderService');
+      const raceTx = {
+        order: {
+          findUnique: vi.fn().mockResolvedValue({
+            id: 'ord_race_1',
+            buyerId: 'buyer-1',
+            sellerId: 'seller-1',
+            status: 'ACCEPTED',
+            orderItems: [{ bookListingId: 'b1' }],
+          }),
+          updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+          update: vi.fn(),
+        },
+        user: { update: vi.fn() },
+        bookListing: { updateMany: vi.fn() },
+      };
+
+      await expect(
+        cancelOrder('ord_race_1', 'buyer-1', 'ซ้ำ', {
+          $transaction: vi.fn(async (cb: any) => cb(raceTx)),
+        })
+      ).rejects.toMatchObject({
+        statusCode: 409,
+        code: 'ORDER_STATUS_CONFLICT',
+      });
+      expect(raceTx.user.update).not.toHaveBeenCalled();
+    });
+
+    it('Concurrency Guard: acceptOrder ปฏิเสธ INSUFFICIENT_CREDITS เมื่อ user.updateMany เงื่อนไข credits >= 1 ไม่ผ่าน', async () => {
+      const raceTx = {
+        order: {
+          findUnique: vi.fn().mockResolvedValue({
+            id: 'ord_cred_race',
+            sellerId: 'usr_seller_123',
+            buyerId: 'usr_buyer_999',
+            status: 'REQUESTED',
+            shippingMethod: 'PICKUP',
+            seller: { id: 'usr_seller_123', isVerifiedSeller: true, credits: 1 },
+            orderItems: [{ bookListingId: 'b1', bookListing: { id: 'b1', status: 'AVAILABLE' } }],
+          }),
+        },
+        user: {
+          updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+        },
+      };
+
+      await expect(
+        acceptOrder('ord_cred_race', 'usr_seller_123', {
+          $transaction: vi.fn(async (cb: any) => cb(raceTx)),
+        })
+      ).rejects.toMatchObject({
+        statusCode: 400,
+        code: 'INSUFFICIENT_CREDITS',
+      });
     });
   });
 });

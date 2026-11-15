@@ -1,5 +1,5 @@
 // =============================================================================
-// GongDong (กองดอง) - Core Services Type Definitions
+// GongDong (กองดอง) - Core Services Type Definitions (v3.0.0)
 // =============================================================================
 
 /**
@@ -27,8 +27,8 @@ export type BookGrade =
  */
 export interface GradingResult {
   grade: BookGrade;
-  discountPercent: number; // สัดส่วนราคาเทียบราคาปก (0.75, 0.60, 0.45, 0.30)
-  recommendedPrice: number; // ราคาแนะนำหลังคำนวณและปัดเศษทศนิยม 2 ตำแหน่ง
+  discountPercent: number;
+  recommendedPrice: number;
 }
 
 /**
@@ -45,25 +45,48 @@ export interface BookCatalogData {
 }
 
 /**
+ * แหล่งที่มาของข้อมูลหนังสือจากการค้นหาด้วย ISBN
+ */
+export type BookCatalogSource = 'DATABASE' | 'GOOGLE_BOOKS' | 'OPEN_LIBRARY';
+
+/**
+ * ผลลัพธ์การค้นหา ISBN พร้อมระบุแหล่งที่มาและสถานะ fallback
+ */
+export interface IsbnLookupResult {
+  found: boolean;
+  isbn: string;
+  source: BookCatalogSource | null;
+  book: BookCatalogData | null;
+  warningCode?: 'GOOGLE_BOOKS_RATE_LIMITED' | 'EXTERNAL_LOOKUP_FAILED';
+  warningMessage?: string;
+}
+
+/**
  * ผลลัพธ์จากการสร้าง PromptPay QR Code
  */
 export interface PromptPayQRResult {
-  qrDataUrl: string; // Base64 Data URL (data:image/png;base64,...)
-  payload: string; // Raw EMVCo payload string
+  qrDataUrl: string;
+  payload: string;
 }
 
 /**
  * ประเภทข้อมูลส่วนตัวที่ถูกตรวจจับใน Data Masking
  */
-export type SensitiveDataType = 'PHONE' | 'BANK_ACCOUNT' | 'LINE_ID';
+export type SensitiveDataType =
+  | 'PHONE'
+  | 'BANK_ACCOUNT'
+  | 'LINE_ID'
+  | 'EMAIL'
+  | 'SOCIAL'
+  | 'OFF_APP';
 
 /**
  * ผลลัพธ์จากการตรวจจับและเซ็นเซอร์ข้อมูลส่วนตัวในข้อความ
  */
 export interface MaskingResult {
-  maskedText: string; // ข้อความที่เซ็นเซอร์ข้อมูลส่วนตัวเป็น ••• แล้ว
-  hasMaskedData: boolean; // มีข้อมูลติดต่อต้องห้ามปนมาหรือไม่
-  detectedTypes: SensitiveDataType[]; // ประเภทของข้อมูลที่ตรวจพบ
+  maskedText: string;
+  hasMaskedData: boolean;
+  detectedTypes: SensitiveDataType[];
 }
 
 /**
@@ -89,12 +112,15 @@ export class AppError extends Error {
   }
 }
 
+export type PaymentMethod = 'COD' | 'TRANSFER';
+export type ViewRole = 'BUYER' | 'SELLER';
+
 /**
  * ผลลัพธ์จากการตอบรับคำสั่งซื้อ (acceptOrder)
  */
 export interface AcceptOrderResult {
   orderId: string;
-  status: 'ACCEPTED';
+  status: 'ACCEPTED' | 'SCHEDULED';
   remainingCredits: number;
   lockedBookIds: string[];
   rejectedOrderIds: string[];
@@ -108,6 +134,10 @@ export interface SchedulePickupInput {
   pickupLat: number;
   pickupLng: number;
   pickupLocationName?: string;
+  scheduleDateIso?: string;
+  scheduleTimeLabel?: string;
+  scheduleProposedBy?: ViewRole;
+  scheduleConfirmedByBuyer?: boolean;
 }
 
 /**
@@ -117,7 +147,7 @@ export interface SchedulePickupResult {
   orderId: string;
   status: 'SCHEDULED';
   scheduledAt: Date;
-  handoverCode: string;
+  handoverCode: string | null;
 }
 
 /**
@@ -130,12 +160,13 @@ export interface VerifyHandoverResult {
 }
 
 /**
- * ชนิดของรูปถ่ายหนังสือ
+ * ชนิดของรูปถ่ายหนังสือ (รองรับทั้ง INNER v4 และ EDGE เดิม)
  */
 export type BookImageType =
   | 'FRONT_COVER'
   | 'BACK_COVER'
   | 'SPINE'
+  | 'INNER'
   | 'EDGE'
   | 'DEFECT';
 
@@ -149,6 +180,12 @@ export interface BookImageInput {
   isCover?: boolean;
 }
 
+export interface BookDefectInput {
+  id?: string;
+  note: string;
+  photo?: string;
+}
+
 /**
  * ข้อมูล Input สำหรับสร้างรายการลงขายหนังสือ (POST /api/books)
  */
@@ -158,6 +195,13 @@ export interface CreateBookListingInput {
   author?: string | null;
   publisher?: string | null;
   category?: string;
+  categories?: string[];
+  description?: string | null;
+  isSet?: boolean;
+  totalVolumes?: number | null;
+  missingVolumes?: number[];
+  defects?: BookDefectInput[];
+  photoChecks?: Record<string, unknown>;
   coverUrl?: string | null;
   originalPrice?: number | null;
   price: number;
@@ -167,7 +211,24 @@ export interface CreateBookListingInput {
   pickupLng?: number | null;
   pickupLocationName?: string | null;
   allowDelivery?: boolean;
+  codEnabled?: boolean;
   images: BookImageInput[];
+}
+
+/**
+ * ข้อมูล Input สำหรับแก้ไขประกาศหนังสือ (PATCH /api/books/:id)
+ */
+export interface UpdateBookListingInput {
+  price?: number;
+  description?: string | null;
+  categories?: string[];
+  allowPickup?: boolean;
+  allowDelivery?: boolean;
+  codEnabled?: boolean;
+  pickupLat?: number | null;
+  pickupLng?: number | null;
+  pickupLocationName?: string | null;
+  status?: 'AVAILABLE' | 'HIDDEN';
 }
 
 /**
@@ -190,6 +251,9 @@ export interface BookListingItem {
   title: string;
   author: string | null;
   category: string;
+  categories: string[];
+  isSet: boolean;
+  totalVolumes: number | null;
   coverImageUrl: string;
   price: number;
   originalPrice: number | null;
@@ -197,9 +261,11 @@ export interface BookListingItem {
   allowPickup: boolean;
   pickupLocationName: string | null;
   allowDelivery: boolean;
+  codEnabled: boolean;
   seller: {
     id: string;
     nickname: string | null;
+    shopName: string | null;
     avatarUrl: string | null;
     isVerifiedSeller: boolean;
   };
@@ -215,6 +281,13 @@ export interface BookListingDetail {
   author: string | null;
   publisher: string | null;
   category: string;
+  categories: string[];
+  isSet: boolean;
+  totalVolumes: number | null;
+  missingVolumes: number[];
+  description: string | null;
+  defects: unknown;
+  photoChecks: unknown;
   originalPrice: number | null;
   price: number;
   grade: BookGrade;
@@ -231,10 +304,12 @@ export interface BookListingDetail {
   pickupLng: number | null;
   pickupLocationName: string | null;
   allowDelivery: boolean;
+  codEnabled: boolean;
   status: string;
   seller: {
     id: string;
     nickname: string | null;
+    shopName: string | null;
     avatarUrl: string | null;
     isVerifiedSeller: boolean;
   };
@@ -246,10 +321,17 @@ export interface BookListingDetail {
 export interface UserBookListingItem {
   id: string;
   title: string;
+  description: string | null;
   category: string;
+  categories: string[];
+  isSet: boolean;
+  totalVolumes: number | null;
   price: number;
   grade: BookGrade;
   coverImageUrl: string;
+  allowPickup: boolean;
+  allowDelivery: boolean;
+  codEnabled: boolean;
   status: string;
   createdAt: Date;
 }
@@ -261,12 +343,35 @@ export interface CreateOrderInput {
   sellerId: string;
   bookIds: string[];
   shippingMethod: 'PICKUP' | 'DELIVERY';
+  paymentMethod?: PaymentMethod;
   recipientName?: string;
-  recipientPhone?: string;
+  recipientPhone?: string | null;
+  buyerProvince?: string;
   deliveryAddress?: string;
   pickupLat?: number;
   pickupLng?: number;
   pickupLocationName?: string;
+  scheduledAt?: Date | string;
+  scheduleDateIso?: string;
+  scheduleTimeLabel?: string;
+  shipWithinDays?: number;
+  expectedTotal?: number;
+  idempotencyKey?: string;
+}
+
+/**
+ * ข้อมูลสำหรับสร้างคำสั่งซื้อหลายร้านค้าพร้อมกันแบบ All-or-Nothing (POST /api/orders/batch)
+ */
+export interface CreateBatchOrdersInput {
+  orders: CreateOrderInput[];
+  idempotencyKey?: string;
+}
+
+/**
+ * ผลลัพธ์จากการสร้างคำสั่งซื้อแบบ Batch
+ */
+export interface CreateBatchOrdersResult {
+  orders: CreateOrderResult[];
 }
 
 /**
@@ -276,6 +381,7 @@ export interface CreateOrderResult {
   orderId: string;
   totalPrice: number;
   shippingFee: number;
+  paymentMethod: PaymentMethod;
   status: 'REQUESTED';
   createdAt: Date;
 }
@@ -287,28 +393,52 @@ export interface OrderDetail {
   id: string;
   status: string;
   shippingMethod: string;
+  paymentMethod: PaymentMethod;
   shippingFee: number;
   totalPrice: number;
   pickupLat: number | null;
   pickupLng: number | null;
   pickupLocationName: string | null;
   scheduledAt: Date | null;
+  scheduleDateIso: string | null;
+  scheduleTimeLabel: string | null;
+  scheduleProposedBy: string | null;
+  scheduleConfirmedByBuyer: boolean;
   handoverCode?: string | null;
+  receivedPhotoUrl: string | null;
+  receivedAt: Date | null;
+  missedMeetingReportedAt?: Date | null;
+  cancelReason: string | null;
+  dispute: {
+    reason: string;
+    openedBy: string | null;
+    openedAt: Date;
+  } | null;
+  review?: {
+    rating: number;
+    isConditionAccurate: boolean | null;
+    tags: string[];
+    comment: string | null;
+    createdAt: Date;
+  } | null;
   items: Array<{
     bookId: string;
     title: string;
     price: number;
     coverImageUrl: string;
+    grade?: BookGrade;
   }>;
   buyer: {
     id: string;
     nickname: string | null;
     avatarUrl: string | null;
     phoneNumber?: string | null;
+    noShowCount?: number;
   };
   seller: {
     id: string;
     nickname: string | null;
+    shopName: string | null;
     avatarUrl: string | null;
     promptpayId: string | null;
     verifiedName: string | null;
@@ -316,14 +446,17 @@ export interface OrderDetail {
   };
   deliveryDetails: {
     recipientName: string;
-    recipientPhone: string;
+    recipientPhone: string | null;
+    province: string | null;
     deliveryAddress: string;
     courierName: string | null;
     trackingNumber: string | null;
     parcelImageUrl: string | null;
     shippedAt: Date | null;
   } | null;
+  paymentSlipUrl?: string | null;
   createdAt: Date;
+  updatedAt: Date;
 }
 
 /**
@@ -333,6 +466,7 @@ export interface OrderSummaryItem {
   id: string;
   status: string;
   shippingMethod: string;
+  paymentMethod: string;
   totalPrice: number;
   itemsCount: number;
   buyerNickname?: string | null;
@@ -350,10 +484,24 @@ export interface ShipOrderInput {
 }
 
 /**
+ * ข้อมูลสำหรับผู้ซื้อถ่ายรูปยืนยันรับของและรีวิวพร้อมกัน (POST /api/orders/:id/receive)
+ */
+export interface ReceiveOrderInput {
+  receivedPhotoUrl: string;
+  review?: {
+    rating: number;
+    isConditionAccurate: boolean;
+    tags?: string[];
+    comment?: string;
+  };
+}
+
+/**
  * ข้อมูลสำหรับแนบสลิปชำระเงิน (POST /api/orders/:id/payment-slip)
  */
 export interface PaymentSlipInput {
   slipImageUrl: string;
+  storagePath?: string;
   transRef?: string;
   amount?: number;
   receiverName?: string;
@@ -373,6 +521,8 @@ export interface UserProfileResponse {
   verified_name: string | null;
   promptpay_id: string | null;
   is_verified_seller: boolean;
+  pdpa_consent_at?: Date | null;
+  no_show_count: number;
   credits: number;
   created_at: Date;
 }
@@ -385,6 +535,7 @@ export interface UpdateUserProfileInput {
   avatar_url?: string | null;
   phone_number?: string | null;
   promptpay_id?: string | null;
+  pdpa_consent?: boolean;
 }
 
 /**
@@ -392,10 +543,13 @@ export interface UpdateUserProfileInput {
  */
 export interface TopupSlipInput {
   slip_image_url: string;
+  storage_path?: string;
+  pack_id?: string;
+  packId?: string;
 }
 
 /**
- * ผลลัพธ์จากการเติมเครดิตและทำ Frictionless KYC Level 2 (POST /api/users/me/topup-slip)
+ * ผลลัพธ์จากการเติมเครดิตและทำ Frictionless KYC Level 2
  */
 export interface TopupSlipResult {
   added_credits: number;
@@ -405,11 +559,24 @@ export interface TopupSlipResult {
 }
 
 /**
+ * ข้อมูลประวัติธุรกรรมเครดิต (GET /api/users/me/credits/history)
+ */
+export interface CreditLedgerItem {
+  id: string;
+  amount: number;
+  balance_after: number | null;
+  type: string;
+  order_id: string | null;
+  note: string | null;
+  created_at: Date;
+}
+
+/**
  * Payload ที่ได้จากการ verify LINE ID token
  */
 export interface LineTokenPayload {
   iss?: string;
-  sub: string; // LINE user ID
+  sub: string;
   aud?: string;
   exp?: number;
   iat?: number;
@@ -422,8 +589,9 @@ export interface LineTokenPayload {
  * ข้อมูลสำหรับส่งรีวิวคำสั่งซื้อ (POST /api/orders/:id/review)
  */
 export interface CreateReviewInput {
-  rating: number; // 1 to 5
-  is_condition_accurate?: boolean; // บังคับสำหรับผู้ซื้อ
+  rating: number;
+  is_condition_accurate?: boolean;
+  tags?: string[];
   comment?: string;
 }
 
@@ -431,9 +599,9 @@ export interface CreateReviewInput {
  * สรุปคะแนนและความน่าเชื่อถือของผู้ขาย (Trust Metrics)
  */
 export interface ReviewSummary {
-  average_rating: number; // e.g. 4.8
+  average_rating: number;
   total_reviews: number;
-  condition_accuracy_rate: number | null; // e.g. 96.5 หรือ null ถ้าไม่มีผู้ซื้อรีวิว
+  condition_accuracy_rate: number | null;
   rating_breakdown: {
     1: number;
     2: number;
@@ -456,6 +624,7 @@ export interface ReviewItem {
   };
   rating: number;
   is_condition_accurate: boolean | null;
+  tags: string[];
   comment: string | null;
   book_titles: string[];
   created_at: Date;
@@ -475,5 +644,58 @@ export interface UserReviewsResult {
   };
 }
 
+/**
+ * Shop Profile & Meetup Points Types
+ */
+export interface UpsertShopInput {
+  shopName: string;
+  description?: string | null;
+  avatarUrl?: string | null;
+  province: string;
+  availableDays: string[];
+  availableSlots: string[];
+  supportsParcel: boolean;
+  shipMode?: 'DAILY' | 'AFTER_ACCEPT';
+  shipWithinDays?: number;
+}
 
+export interface MeetupPointInput {
+  name: string;
+  province: string;
+  lat: number;
+  lng: number;
+  note?: string | null;
+}
 
+export interface SellerKycInput {
+  firstName: string;
+  lastName: string;
+  nationalId: string;
+  pdpaConsent?: boolean;
+}
+
+/**
+ * User Address Types (PDPA v4)
+ */
+export interface UserAddressInput {
+  fullName?: string;
+  full_name?: string;
+  province: string;
+  district: string;
+  subdistrict: string;
+  postalCode?: string;
+  postal_code?: string;
+  detail: string;
+  isDefault?: boolean;
+  is_default?: boolean;
+}
+
+/**
+ * Upload Bucket Types
+ */
+export type UploadBucket =
+  | 'book-listings'
+  | 'avatars'
+  | 'order-receives'
+  | 'slips'
+  | 'disputes';

@@ -1,12 +1,18 @@
 'use client';
 
-import React, { useState, use } from 'react';
+import React, { useEffect, useState, use } from 'react';
 import { useRouter } from 'next/navigation';
 import { TopBar } from '@/components/layout/TopBar';
-import { BookCard, Button, Toast } from '@/components/ui';
+import { BookCard, Button, EmptyState, Toast } from '@/components/ui';
 import { ConfirmSheet } from '@/components/v4';
-import { MOCK_BOOKS } from '@/mocks/books';
-import { getShopById } from '@/mocks/shops';
+import { api } from '@/lib/api';
+import {
+  BackendPublicShopResponse,
+  BackendReviewsResponse,
+  mapPublicShopListingsToBooks,
+  mapPublicShopToShopProfile,
+} from '@/lib/mappers';
+import { Book, ShopProfile } from '@/types';
 import {
   Star,
   MapPin,
@@ -26,12 +32,77 @@ export default function SellerShopPage({
   const resolvedParams = use(params);
   const router = useRouter();
 
-  const shop = getShopById(resolvedParams.sellerId);
-  const sellerBooks = MOCK_BOOKS.filter((b) => b.sellerId === resolvedParams.sellerId);
-  const sellerInfo = sellerBooks[0] || MOCK_BOOKS[0];
-
+  const [shop, setShop] = useState<ShopProfile | null>(null);
+  const [sellerBooks, setSellerBooks] = useState<Book[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [isReportOpen, setIsReportOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    const loadShop = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const shopRes = await api.get<BackendPublicShopResponse>(
+          `/api/shops/${resolvedParams.sellerId}`
+        );
+        const sellerUserId = shopRes.seller_id || resolvedParams.sellerId;
+        const reviewsRes = await api
+          .get<BackendReviewsResponse>(`/api/users/${sellerUserId}/reviews`)
+          .catch(() => null);
+        if (!active) return;
+        const mappedShop = mapPublicShopToShopProfile(shopRes, reviewsRes);
+        setShop(mappedShop);
+        setSellerBooks(mapPublicShopListingsToBooks(shopRes));
+      } catch (err) {
+        if (!active) return;
+        setError(err instanceof Error ? err.message : 'ไม่พบข้อมูลร้านค้า');
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+    loadShop();
+    return () => {
+      active = false;
+    };
+  }, [resolvedParams.sellerId]);
+
+  if (loading) {
+    return (
+      <div className="flex flex-col min-h-screen bg-slate-50 select-none pb-12">
+        <TopBar title="ร้านค้า" />
+        <div className="p-4 space-y-4">
+          <div className="h-28 rounded-2xl bg-slate-200 animate-pulse" />
+          <div className="grid grid-cols-2 gap-3">
+            <div className="h-56 rounded-2xl bg-slate-200 animate-pulse" />
+            <div className="h-56 rounded-2xl bg-slate-200 animate-pulse" />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error || !shop) {
+    return (
+      <div className="flex flex-col min-h-screen bg-slate-50 select-none pb-12">
+        <TopBar title="ร้านค้า" />
+        <div className="p-4">
+          <div className="bg-white rounded-2xl border border-slate-200 p-6">
+            <EmptyState
+              title="ไม่พบร้านค้านี้"
+              description={error || 'ร้านอาจถูกปิดหรือยังไม่ได้ตั้งค่าร้าน'}
+              actionText="กลับหน้าหลัก"
+              onAction={() => router.push('/')}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const sellerInfo = sellerBooks[0];
 
   return (
     <div className="flex flex-col min-h-screen bg-slate-50 select-none pb-12">
@@ -52,23 +123,38 @@ export default function SellerShopPage({
       {/* Shop header */}
       <div className="p-4 bg-white border-b border-slate-100 space-y-4">
         <div className="flex items-center gap-4">
-          <img
-            src={shop?.avatar || sellerInfo.sellerAvatar || sellerInfo.photos.cover}
-            alt={shop?.shopName || sellerInfo.sellerName}
-            className="w-16 h-16 rounded-full object-cover border-2 border-emerald-400 shadow-xs shrink-0"
-          />
+          {shop.avatar || sellerInfo?.photos.cover ? (
+            <img
+              src={shop.avatar || sellerInfo?.photos.cover}
+              alt={shop.shopName}
+              className="w-16 h-16 rounded-full object-cover border-2 border-emerald-400 shadow-xs shrink-0"
+            />
+          ) : (
+            <div className="w-16 h-16 rounded-full bg-[#8B5E3C] text-white flex items-center justify-center font-bold text-xl shrink-0">
+              {shop.shopName.slice(0, 1)}
+            </div>
+          )}
           <div className="space-y-1 min-w-0">
             <h1 className="text-lg font-bold text-slate-900 leading-snug truncate">
-              {shop?.shopName || sellerInfo.sellerName}
+              {shop.shopName}
             </h1>
             <div className="flex items-center gap-1.5 text-[11px] text-slate-500 flex-wrap">
-              <span className="flex items-center text-amber-500 font-bold">
-                <Star className="w-3.5 h-3.5 fill-amber-400 stroke-amber-400 mr-1" />
-                {shop?.rating ?? sellerInfo.sellerRating} / 5.0
+              <span className="flex items-center font-bold">
+                {shop.rating > 0 ? (
+                  <span className="flex items-center text-amber-500">
+                    <Star className="w-3.5 h-3.5 fill-amber-400 stroke-amber-400 mr-1" />
+                    {shop.rating.toFixed(1)} / 5.0
+                  </span>
+                ) : (
+                  <span className="flex items-center text-slate-400 font-semibold">
+                    <Star className="w-3.5 h-3.5 stroke-slate-300 mr-1" />
+                    ยังไม่มีคะแนน
+                  </span>
+                )}
               </span>
               <span>•</span>
-              <span>ขายแล้ว {shop?.completedSales ?? 0} ครั้ง</span>
-              {shop?.memberSince && (
+              <span>ขายแล้ว {shop.completedSales} ครั้ง</span>
+              {shop.memberSince && (
                 <>
                   <span>•</span>
                   <span>สมาชิกตั้งแต่ {shop.memberSince}</span>
@@ -79,7 +165,7 @@ export default function SellerShopPage({
         </div>
 
         <div className="flex flex-wrap gap-2 pt-1 border-t border-slate-100">
-          {shop?.payeeVerified ? (
+          {shop.payeeVerified ? (
             <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
               <CheckCircle2 className="w-3 h-3" />
               ยืนยันตัวตนแล้ว
@@ -90,13 +176,13 @@ export default function SellerShopPage({
               ยังไม่ยืนยันตัวตน · นัดรับเท่านั้น
             </span>
           )}
-          {shop?.meetupPoints.length ? (
+          {shop.meetupPoints.length ? (
             <span className="inline-flex items-center gap-1 text-[11px] font-medium text-teal-700 bg-teal-50 border border-teal-200 px-2 py-0.5 rounded-full">
               <MapPin className="w-3 h-3" />
               นัดรับ {shop.meetupPoints.length} จุด · {shop.province}
             </span>
           ) : null}
-          {shop?.supportsParcel && (
+          {shop.supportsParcel && (
             <span className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-600 bg-slate-50 border border-slate-200 px-2 py-0.5 rounded-full">
               <Truck className="w-3 h-3" />
               ส่งพัสดุได้
@@ -198,17 +284,17 @@ export default function SellerShopPage({
       <ConfirmSheet
         isOpen={isReportOpen}
         onClose={() => setIsReportOpen(false)}
-        title="รายงานร้านนี้?"
-        description="ใช้เมื่อพบรูปปลอม ราคาผิด หรือข้อความชวนโอนนอกระบบ · แอดมินจะตรวจสอบ"
-        confirmLabel="ส่งรายงาน"
-        tone="danger"
+        title="รายงานร้านนี้ · ฟีเจอร์กำลังพัฒนา"
+        description="ระบบส่งรายงานร้านค้าอัตโนมัติกำลังพัฒนา หากพบร้านค้าที่น่าสงสัย รูปปลอม หรือชวนโอนนอกระบบ สามารถแจ้งทีมงานผ่านหน้าช่วยเหลือได้ทันที"
+        confirmLabel="ไปหน้าช่วยเหลือ"
+        cancelLabel="ปิด"
         onConfirm={() => {
           setIsReportOpen(false);
-          setToastMessage('ส่งรายงานร้านให้แอดมินแล้ว');
+          router.push('/help');
         }}
       >
         <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-[11px] text-slate-600">
-          ร้าน: {shop?.shopName || sellerInfo.sellerName}
+          ร้าน: {shop?.shopName || sellerInfo?.sellerName || 'ร้านค้ากองดอง'}
         </div>
       </ConfirmSheet>
 

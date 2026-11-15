@@ -42,7 +42,7 @@ Personas: Sky (cautious student), Tham (mint-condition reader), Bio (hates chatt
 - Accessibility: touch targets ≥ 44px, contrast ≥ 4.5:1, visible focus, Thai line-height ≥ 1.5. Never use color alone to carry meaning.
 - Keep components small and reusable. No giant files.
 - **UX principles you must apply:** (1) one main action per screen, shown clearly; (2) always show "what happens next" and "who must act" on every order screen; (3) show safety evidence at the moment the user worries (photos, grade, verified badge, QR name warning); (4) honest copy only — no "100% safe", no "guarantee", no escrow language; (5) every screen has loading, empty and error states; (6) any money or irreversible action has a confirm step.
-
+  
 ## 3-0. ALREADY CONFIGURED BY THE OWNER (do not redo; use these facts)
 
 - LINE Official Account: **GongDong**, basic ID `@848xkfsj` → set `NEXT_PUBLIC_LINE_OA_ID=848xkfsj` (store WITHOUT the `@`; add the `@` in code when building `https://line.me/R/ti/p/@...`).

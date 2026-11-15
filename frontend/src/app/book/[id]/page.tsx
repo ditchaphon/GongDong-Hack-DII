@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, use } from 'react';
+import React, { useEffect, useState, use } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { TopBar } from '@/components/layout/TopBar';
@@ -8,13 +8,21 @@ import {
   Button,
   GradeBadge,
   ConditionChecklist,
+  EmptyState,
   Modal,
   Toast,
 } from '@/components/ui';
 import { PhotoGallery, ConfirmSheet, CartAddedSheet, CartAddedState } from '@/components/v4';
 import { calcParcelFee } from '@/lib/delivery';
-import { MOCK_BOOKS } from '@/mocks/books';
-import { getShopById } from '@/mocks/shops';
+import { api } from '@/lib/api';
+import {
+  BackendBookDetail,
+  BackendPublicShopResponse,
+  BackendReviewsResponse,
+  mapBackendBookDetailToBook,
+  mapPublicShopToShopProfile,
+} from '@/lib/mappers';
+import { Book, ShopProfile } from '@/types';
 import { useCart } from '@/hooks/useCart';
 import {
   Share2,
@@ -29,6 +37,8 @@ import {
   Store,
   CheckCircle2,
   CalendarDays,
+  ZoomIn,
+  AlertTriangle,
 } from 'lucide-react';
 
 export default function BookDetailPage({
@@ -38,10 +48,12 @@ export default function BookDetailPage({
 }) {
   const resolvedParams = use(params);
   const router = useRouter();
-  const { addToCart, replaceCart, items: cartItems } = useCart();
+  const { addToCart, items: cartItems, shopGroups } = useCart();
 
-  const book = MOCK_BOOKS.find((b) => b.id === resolvedParams.id) || MOCK_BOOKS[0];
-  const shop = getShopById(book.sellerId);
+  const [book, setBook] = useState<Book | null>(null);
+  const [shop, setShop] = useState<ShopProfile | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const [activePhotoIdx, setActivePhotoIdx] = useState(0);
   const [isGalleryOpen, setIsGalleryOpen] = useState(false);
@@ -49,44 +61,135 @@ export default function BookDetailPage({
   const [isReportOpen, setIsReportOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [cartSheet, setCartSheet] = useState<CartAddedState | null>(null);
-  const [buyAfterReplace, setBuyAfterReplace] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    const loadBook = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const detail = await api.get<BackendBookDetail>(`/api/books/${resolvedParams.id}`);
+        const mappedBook = mapBackendBookDetailToBook(detail);
+        if (!active) return;
+        setBook(mappedBook);
+
+        const sellerId = mappedBook.sellerId;
+        if (sellerId) {
+          const [shopRes, reviewsRes] = await Promise.all([
+            api.get<BackendPublicShopResponse>(`/api/shops/${sellerId}`).catch(() => null),
+            api.get<BackendReviewsResponse>(`/api/users/${sellerId}/reviews`).catch(() => null),
+          ]);
+          if (!active) return;
+          if (shopRes) {
+            setShop(mapPublicShopToShopProfile(shopRes, reviewsRes));
+          }
+        }
+      } catch (err) {
+        if (!active) return;
+        setError(err instanceof Error ? err.message : 'ไม่พบหนังสือเล่มนี้');
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+    loadBook();
+    return () => {
+      active = false;
+    };
+  }, [resolvedParams.id]);
+
+  if (loading) {
+    return (
+      <div className="flex flex-col min-h-screen bg-slate-50 select-none pb-24">
+        <TopBar title="รายละเอียดหนังสือ" />
+        <div className="w-full aspect-square bg-slate-200 animate-pulse" />
+        <div className="p-4 space-y-3">
+          <div className="h-7 w-1/3 bg-slate-200 rounded animate-pulse" />
+          <div className="h-5 w-3/4 bg-slate-200 rounded animate-pulse" />
+          <div className="h-24 bg-slate-200 rounded-2xl animate-pulse" />
+        </div>
+      </div>
+    );
+  }
+
+  if (error || !book) {
+    return (
+      <div className="flex flex-col min-h-screen bg-slate-50 select-none pb-24">
+        <TopBar title="รายละเอียดหนังสือ" />
+        <div className="p-4">
+          <div className="bg-white rounded-2xl border border-slate-200 p-6">
+            <EmptyState
+              title="ไม่พบหนังสือเล่มนี้"
+              description={error || 'รายการอาจถูกลบหรือขายออกแล้ว'}
+              actionText="กลับหน้าหลัก"
+              onAction={() => router.push('/')}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const baseAnglePhotos = [
+    { src: book.photos.cover, label: 'ปกหน้า', isDefect: false },
+    { src: book.photos.back, label: 'ปกหลัง', isDefect: false },
+    { src: book.photos.spine, label: 'สันหนังสือ', isDefect: false },
+    ...(book.photos.nameTag
+      ? [{ src: book.photos.nameTag, label: 'หน้าด้านใน', isDefect: false }]
+      : []),
+  ];
+
+  const defectStartIndex = baseAnglePhotos.length;
 
   const photoList = [
-    { src: book.photos.cover, label: 'ปกหน้า' },
-    { src: book.photos.back, label: 'ปกหลัง' },
-    { src: book.photos.spine, label: 'สันหนังสือ' },
-    ...(book.defects || []).map((defect) => ({
+    ...baseAnglePhotos,
+    ...(book.defects || []).map((defect, idx) => ({
       src: defect.photo,
-      label: defect.label,
+      label: defect.label || `จุดตำหนิ #${idx + 1}`,
+      note: defect.label,
       isDefect: true,
     })),
   ];
 
   const sameShopCount = cartItems.filter((item) => item.sellerId === book.sellerId).length;
+  const isBookAvailable = !book.status || book.status === 'AVAILABLE';
 
   const handleAddToCart = () => {
+    if (!isBookAvailable) {
+      setToastMessage('หนังสือเล่มนี้ถูกจองหรือขายไปแล้ว');
+      return;
+    }
     const res = addToCart(book);
     if (res.success) {
-      setCartSheet({ kind: 'ADDED', book, count: sameShopCount + 1 });
-    } else if (res.reason === 'OTHER_SHOP') {
-      setBuyAfterReplace(false);
-      setCartSheet({ kind: 'OTHER_SHOP', book, currentShop: cartItems[0]?.sellerName ?? 'ร้านอื่น' });
+      const nextShopCount = shopGroups.some((g) => g.sellerId === book.sellerId)
+        ? shopGroups.length
+        : shopGroups.length + 1;
+      setCartSheet({
+        kind: 'ADDED',
+        book,
+        count: sameShopCount + 1,
+        totalCount: cartItems.length + 1,
+        shopCount: nextShopCount,
+      });
     } else {
-      setCartSheet({ kind: 'DUPLICATE', book, count: sameShopCount });
+      setCartSheet({
+        kind: 'DUPLICATE',
+        book,
+        count: sameShopCount,
+        totalCount: cartItems.length,
+        shopCount: shopGroups.length,
+      });
     }
   };
 
   const handleBuyNow = () => {
-    const res = addToCart(book);
-    if (!res.success && res.reason === 'OTHER_SHOP') {
-      setBuyAfterReplace(true);
-      setCartSheet({ kind: 'OTHER_SHOP', book, currentShop: cartItems[0]?.sellerName ?? 'ร้านอื่น' });
+    if (!isBookAvailable) {
+      setToastMessage('หนังสือเล่มนี้ถูกจองหรือขายไปแล้ว');
       return;
     }
-    router.push('/cart');
+    router.push(`/cart?buyNow=${encodeURIComponent(book.id)}`);
   };
 
-  const offersMeetup = book.deliveryMethods.includes('MEETUP') && (shop?.meetupPoints.length ?? 0) > 0;
+  const offersMeetup = book.deliveryMethods.includes('MEETUP') && (shop ? shop.meetupPoints.length > 0 : (book.meetupZones?.length ?? 0) > 0);
   const offersParcel =
     book.deliveryMethods.includes('PARCEL') && (shop ? shop.supportsParcel && shop.payeeVerified : true);
 
@@ -115,29 +218,46 @@ export default function BookDetailPage({
         }
       />
 
-      {/* Photo gallery (watermarked, v4) */}
-      <div className="relative w-full aspect-square bg-slate-900 overflow-hidden">
+      {/* Photo gallery (watermarked, v4, tap to zoom) */}
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={() => setIsGalleryOpen(true)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') setIsGalleryOpen(true);
+        }}
+        className="relative w-full aspect-square bg-slate-900 overflow-hidden cursor-zoom-in group"
+      >
         <img
-          src={photoList[activePhotoIdx].src}
+          src={photoList[activePhotoIdx]?.src || book.photos.cover}
           alt={book.title}
-          className="w-full h-full object-contain"
+          className="w-full h-full object-contain group-hover:scale-[1.02] transition-transform"
         />
+
+        {photoList[activePhotoIdx]?.isDefect && (
+          <div className="absolute top-3 left-3 inline-flex items-center gap-1 bg-amber-500/95 text-slate-950 text-[11px] font-bold px-2.5 py-1 rounded-full shadow-md">
+            <AlertTriangle className="w-3.5 h-3.5" /> จุดตำหนิที่ผู้ขายแจ้ง
+          </div>
+        )}
 
         <button
           type="button"
-          onClick={() => setIsGalleryOpen(true)}
-          className="absolute top-3 right-3 p-2 rounded-full bg-black/50 text-white backdrop-blur-xs hover:bg-black/70 transition"
-          aria-label="ดูภาพขนาดใหญ่"
+          onClick={(e) => {
+            e.stopPropagation();
+            setIsGalleryOpen(true);
+          }}
+          className="absolute top-3 right-3 px-2.5 py-1.5 rounded-full bg-black/55 text-white backdrop-blur-xs hover:bg-black/75 transition inline-flex items-center gap-1.5 text-[11px] font-semibold"
+          aria-label="ซูมดูภาพขนาดใหญ่"
         >
-          <Maximize2 className="w-4 h-4" />
+          <ZoomIn className="w-3.5 h-3.5" /> ซูมดูภาพ
         </button>
 
         <div className="absolute bottom-3 right-3 bg-black/60 backdrop-blur-xs text-white text-xs px-2.5 py-1 rounded-full font-mono">
           {activePhotoIdx + 1} / {photoList.length}
         </div>
 
-        <div className="absolute bottom-3 left-3 bg-black/60 backdrop-blur-xs text-white text-[11px] px-2.5 py-1 rounded-full font-medium max-w-[60%] truncate">
-          {photoList[activePhotoIdx].label}
+        <div className="absolute bottom-3 left-3 bg-black/60 backdrop-blur-xs text-white text-[11px] px-2.5 py-1 rounded-full font-medium max-w-[65%] truncate">
+          {photoList[activePhotoIdx]?.label}
         </div>
       </div>
 
@@ -148,14 +268,19 @@ export default function BookDetailPage({
             key={`${photo.src}-${index}`}
             type="button"
             onClick={() => setActivePhotoIdx(index)}
-            aria-label={`ดูรูปที่ ${index + 1}`}
+            aria-label={`ดูรูปที่ ${index + 1}: ${photo.label}`}
             className={`relative w-14 h-14 rounded-xl overflow-hidden border-2 transition shrink-0 ${
               activePhotoIdx === index
-                ? 'border-[var(--color-primary)]'
-                : 'border-transparent opacity-60'
+                ? photo.isDefect
+                  ? 'border-amber-500 ring-2 ring-amber-400/30'
+                  : 'border-[var(--color-primary)]'
+                : 'border-transparent opacity-60 hover:opacity-90'
             }`}
           >
             <img src={photo.src} alt="" className="w-full h-full object-cover" />
+            {photo.isDefect && (
+              <span className="absolute top-1 right-1 w-2.5 h-2.5 rounded-full bg-amber-500 border border-white" />
+            )}
           </button>
         ))}
       </div>
@@ -322,22 +447,49 @@ export default function BookDetailPage({
       {/* Defects */}
       {book.defects && book.defects.length > 0 && (
         <div className="mt-2 p-4 bg-white border-y border-slate-100 space-y-2.5">
-          <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-            ตำหนิที่แจ้งไว้
-          </h2>
-          {book.defects.map((defect) => (
-            <div
-              key={defect.label}
-              className="flex items-center gap-3 p-2.5 rounded-xl border border-amber-200 bg-amber-50/60"
-            >
-              <img
-                src={defect.photo}
-                alt={defect.label}
-                className="w-12 h-12 rounded-lg object-cover bg-slate-100"
-              />
-              <span className="text-[11px] text-amber-900 leading-relaxed">{defect.label}</span>
-            </div>
-          ))}
+          <div className="flex items-center justify-between">
+            <h2 className="text-xs font-bold text-amber-800 uppercase tracking-wider inline-flex items-center gap-1.5">
+              <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
+              จุดตำหนิที่ผู้ขายแจ้งไว้ ({book.defects.length} จุด)
+            </h2>
+            <span className="text-[10px] font-semibold text-amber-700 inline-flex items-center gap-1">
+              <ZoomIn className="w-3 h-3" /> แตะที่รายการเพื่อซูมดูภาพ
+            </span>
+          </div>
+          {book.defects.map((defect, idx) => {
+            const galleryIdx = defectStartIndex + idx;
+            return (
+              <button
+                key={`${defect.label}-${idx}`}
+                type="button"
+                onClick={() => {
+                  setActivePhotoIdx(galleryIdx);
+                  setIsGalleryOpen(true);
+                }}
+                className="w-full text-left flex items-center gap-3 p-2.5 rounded-xl border border-amber-200 bg-amber-50/60 hover:bg-amber-100/60 transition group"
+              >
+                <div className="relative w-14 h-14 rounded-lg overflow-hidden bg-slate-100 shrink-0 border border-amber-200">
+                  <img
+                    src={defect.photo}
+                    alt={defect.label}
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                  />
+                  <span className="absolute bottom-0.5 right-0.5 p-0.5 rounded bg-black/60 text-white">
+                    <ZoomIn className="w-2.5 h-2.5" />
+                  </span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-bold text-amber-950 leading-snug">
+                    {defect.label}
+                  </p>
+                  <p className="text-[10px] text-amber-700 mt-0.5 inline-flex items-center gap-1 font-medium">
+                    แตะเพื่อเปิดรูปตำหนิและซูมดูรายละเอียด
+                  </p>
+                </div>
+                <ChevronRight className="w-4 h-4 text-amber-600 shrink-0" />
+              </button>
+            );
+          })}
         </div>
       )}
 
@@ -483,11 +635,22 @@ export default function BookDetailPage({
       {/* Bottom actions */}
       <div className="fixed bottom-0 left-0 right-0 z-30 flex justify-center pointer-events-none">
         <div className="w-full max-w-[430px] bg-white border-t border-slate-200 p-3 flex gap-2.5 pointer-events-auto safe-area-bottom shadow-lg">
-          <Button variant="outline" fullWidth onClick={handleAddToCart} className="flex-1">
-            ใส่ตะกร้า
+          <Button
+            variant="outline"
+            fullWidth
+            disabled={!isBookAvailable}
+            onClick={handleAddToCart}
+            className="flex-1"
+          >
+            {isBookAvailable ? 'ใส่ตะกร้า' : 'ไม่พร้อมขาย'}
           </Button>
-          <Button fullWidth onClick={handleBuyNow} className="flex-1">
-            ส่งคำขอซื้อ
+          <Button
+            fullWidth
+            disabled={!isBookAvailable}
+            onClick={handleBuyNow}
+            className="flex-1"
+          >
+            {isBookAvailable ? 'ส่งคำขอซื้อ' : 'ถูกจอง/ขายแล้ว'}
           </Button>
         </div>
       </div>
@@ -498,15 +661,6 @@ export default function BookDetailPage({
         onViewCart={() => {
           setCartSheet(null);
           router.push('/cart');
-        }}
-        onReplace={() => {
-          replaceCart(book);
-          if (buyAfterReplace) {
-            setCartSheet(null);
-            router.push('/cart');
-            return;
-          }
-          setCartSheet({ kind: 'ADDED', book, count: 1 });
         }}
       />
 

@@ -1,14 +1,16 @@
 'use client';
 
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import clsx from 'clsx';
-import { Camera, X, Check, Image as ImageIcon } from 'lucide-react';
+import { Camera, X, Check, Loader2 } from 'lucide-react';
+import { uploadImageFile, UploadBucket } from '@/lib/api';
 
 export interface PhotoUploaderProps {
   label: string;
   description?: string;
   isRequired?: boolean;
   isNameTag?: boolean;
+  bucket?: UploadBucket;
   previewUrl?: string;
   onChange?: (url: string) => void;
   onRemove?: () => void;
@@ -21,6 +23,7 @@ export const PhotoUploader: React.FC<PhotoUploaderProps> = ({
   description,
   isRequired = false,
   isNameTag = false,
+  bucket = 'book-listings',
   previewUrl,
   onChange,
   onRemove,
@@ -28,20 +31,33 @@ export const PhotoUploader: React.FC<PhotoUploaderProps> = ({
   className,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      const simulatedUrl = URL.createObjectURL(file);
-      onChange?.(simulatedUrl);
+    e.target.value = '';
+    if (!file) return;
+
+    setUploadError(null);
+    setIsUploading(true);
+    try {
+      const uploaded = await uploadImageFile(file, bucket);
+      onChange?.(uploaded.url);
+    } catch (err: any) {
+      setUploadError(err?.message || 'อัปโหลดรูปไม่สำเร็จ กรุณาลองใหม่');
+    } finally {
+      setIsUploading(false);
     }
   };
 
   const handleContainerClick = () => {
-    if (!previewUrl) {
+    if (!previewUrl && !isUploading) {
       fileInputRef.current?.click();
     }
   };
+
+  const displayError = error || uploadError;
 
   return (
     <div className={clsx('flex flex-col gap-1.5 w-full', className)}>
@@ -102,6 +118,11 @@ export const PhotoUploader: React.FC<PhotoUploaderProps> = ({
               <Check className="w-3.5 h-3.5" />
             </div>
           </>
+        ) : isUploading ? (
+          <div className="flex flex-col items-center gap-1.5 text-slate-500">
+            <Loader2 className="w-6 h-6 animate-spin text-[#8B5E3C]" />
+            <span className="text-xs font-semibold">กำลังอัปโหลดรูป...</span>
+          </div>
         ) : (
           <div className="flex flex-col items-center gap-1.5 text-slate-400">
             <div className="p-2.5 bg-white rounded-full shadow-xs border border-slate-200 text-slate-500">
@@ -115,7 +136,7 @@ export const PhotoUploader: React.FC<PhotoUploaderProps> = ({
         )}
       </div>
 
-      {error && <span className="text-[11px] text-rose-500 font-medium pl-1">{error}</span>}
+      {displayError && <span className="text-[11px] text-rose-500 font-medium pl-1">{displayError}</span>}
     </div>
   );
 };

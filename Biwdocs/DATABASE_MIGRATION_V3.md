@@ -1,0 +1,482 @@
+# แผนปรับปรุงฐานข้อมูล GongDong Database Migration Spec (v2.2.0 ➔ v3.0.0)
+
+> **วันที่จัดทำ:** 14 พฤศจิกายน 2569  
+> **ฐานข้อมูลเป้าหมาย:** PostgreSQL (Supabase) ผ่าน Prisma ORM  
+> **วัตถุประสงค์:** ขยายสคีมาฐานข้อมูลจาก `v2.2.0` (10 ตาราง) เป็น `v3.0.0` (15 ตาราง) เพื่อรองรับ Frontend v4 (COD + Transfer Dual Mode, Shop Setup, PDPA Addresses, Multi-category/Set Books, In-Order Chat, Notifications และ Review Tags)
+
+---
+
+## 1. สรุปการเปลี่ยนแปลงระดับโครงสร้าง (Schema Summary)
+
+| สถานะ | ชื่อตาราง | สรุปการเปลี่ยนแปลงจาก v2.2.0 |
+|:---:|---|---|
+| 🔄 **อัปเดต** | `users` | เพิ่มคอลัมน์ KYC บัตรประชาชน (`kyc_first_name`, `kyc_last_name`, `kyc_national_id_masked`, `kyc_verified_at`) และ `no_show_count` |
+| ✨ **เพิ่มใหม่** | `shop_profiles` | เก็บข้อมูลร้านค้าแยกจาก `users` (`shop_name`, `description`, `province`, `available_days`, `available_slots`, `supports_parcel`, `ship_mode`) |
+| ✨ **เพิ่มใหม่** | `shop_meetup_points` | เก็บจุดนัดรับหลายจุดของร้านค้าพร้อมพิกัด GPS (`lat`, `lng`, `province`, `name`) |
+| ✨ **เพิ่มใหม่** | `user_addresses` | เก็บที่อยู่จัดส่งหลายรายการของผู้ซื้อ (ไม่มีเบอร์โทรตามกติกา PDPA v4) |
+| 🔄 **อัปเดต** | `book_listings` | เพิ่มขายยกชุด (`is_set`, `total_volumes`, `missing_volumes`), `description`, หลายหมวดหมู่ (`categories[]`), `defects` (JSON), `photo_checks` (JSON) และรองรับสถานะ `HIDDEN` |
+| 🔄 **อัปเดต** | `book_listing_images` | รองรับ `image_type = 'INNER'` สำหรับรูปหน้าด้านใน (ควบคู่ `EDGE` เดิม) |
+| 🔄 **อัปเดต** | `orders` | เพิ่ม `payment_method` (`COD` \| `TRANSFER`), ข้อมูลนัดรับแบบเต็ม, `received_photo_url`, `received_at`, `cancel_reason`, `dispute_opened_by` |
+| 🔄 **อัปเดต** | `order_delivery_details` | ปรับ `recipient_phone` เป็น **Nullable** (ตาม PDPA v4) และเพิ่ม `province` สำหรับคำนวณค่าส่งข้ามภาค |
+| ✨ **เพิ่มใหม่** | `order_messages` | เก็บประวัติแชทในออเดอร์ (`TEXT`, `SYSTEM`, `SCHEDULE_CARD`) ที่ผ่าน Data Masking แล้ว |
+| 🔄 **อัปเดต** | `reviews` | เพิ่ม `tags` (`String[]` เช่น `["ตรงปก", "แพ็กดี"]`) |
+| 🔄 **อัปเดต** | `credit_transactions` | เพิ่ม `balance_after` และ `note` เพื่อให้หน้าประวัติเครดิตแสดงยอดคงเหลือย้อนหลังได้ตรงกับ UI |
+| ✨ **เพิ่มใหม่** | `notifications` | เก็บประวัติการแจ้งเตือนในแอปแยกตาม Role (`BUYER` \| `SELLER`) และสถานะ `is_read` |
+| ✅ **คงเดิม** | `book_catalog`, `order_items`, `payment_slips` | ใช้โครงสร้างเดิม (ใช้ `payment_slips` ทั้งสำหรับเติมเครดิตและออเดอร์โหมด `TRANSFER`) |
+
+---
+
+## 2. แผนภาพความสัมพันธ์ฐานข้อมูล (ER Diagram — v3.0.0)
+
+```mermaid
+erDiagram
+    users ||--o| shop_profiles : "owns"
+    shop_profiles ||--o{ shop_meetup_points : "has"
+    users ||--o{ user_addresses : "saves"
+    users ||--o{ book_listings : "sells"
+    book_catalog ||--o{ book_listings : "references"
+    book_listings ||--o{ book_listing_images : "has"
+    users ||--o{ orders : "buys_or_sells"
+    orders ||--o| order_delivery_details : "has"
+    orders ||--o{ order_items : "contains"
+    book_listings ||--o{ order_items : "ordered_in"
+    orders ||--o{ order_messages : "has_chat"
+    orders ||--o{ payment_slips : "paid_with"
+    orders ||--o{ reviews : "reviewed_in"
+    orders ||--o{ credit_transactions : "spends_or_refunds"
+    users ||--o{ notifications : "receives"
+```
+
+---
+
+## 3. สเปก Prisma Schema ฉบับสมบูรณ์ (v3.0.0 Draft)
+
+> สามารถนำไปใช้แทนที่ `backend/prisma/schema.prisma` แล้วรัน `npx prisma migrate dev` หรือ `npm run prisma:push`
+
+```prisma
+// =============================================================================
+// GongDong (กองดอง) - Prisma Schema (v3.0.0)
+// Synced with Frontend v4 (COD + Transfer Dual Mode)
+// =============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// -----------------------------------------------------------------------------
+// 1. User Model
+// -----------------------------------------------------------------------------
+model User {
+  id                   String    @id @default(uuid()) @db.Uuid
+  lineUserId           String    @unique @map("line_user_id") @db.VarChar(64)
+  displayName          String    @map("display_name") @db.VarChar(255)
+  pictureUrl           String?   @map("picture_url") @db.Text
+  nickname             String?   @db.VarChar(100)
+  avatarUrl            String?   @map("avatar_url") @db.Text
+  phoneNumber          String?   @map("phone_number") @db.VarChar(20)
+  verifiedName         String?   @map("verified_name") @db.VarChar(255)
+  promptpayId          String?   @map("promptpay_id") @db.VarChar(30)
+  isVerifiedSeller     Boolean   @default(false) @map("is_verified_seller")
+  kycFirstName         String?   @map("kyc_first_name") @db.VarChar(100)
+  kycLastName          String?   @map("kyc_last_name") @db.VarChar(100)
+  kycNationalIdMasked  String?   @map("kyc_national_id_masked") @db.VarChar(25)
+  kycVerifiedAt        DateTime? @map("kyc_verified_at") @db.Timestamptz
+  isBlacklisted        Boolean   @default(false) @map("is_blacklisted")
+  noShowCount          Int       @default(0) @map("no_show_count")
+  credits              Int       @default(1)
+  createdAt            DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt            DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relations
+  shopProfile        ShopProfile?
+  addresses          UserAddress[]
+  listings           BookListing[]
+  buyerOrders        Order[]             @relation("BuyerOrders")
+  sellerOrders       Order[]             @relation("SellerOrders")
+  disputedOrders     Order[]             @relation("DisputedOrders")
+  orderMessages      OrderMessage[]
+  paymentSlips       PaymentSlip[]
+  writtenReviews     Review[]            @relation("Reviewer")
+  receivedReviews    Review[]            @relation("Reviewee")
+  creditTransactions CreditTransaction[]
+  notifications      Notification[]
+
+  @@map("users")
+}
+
+// -----------------------------------------------------------------------------
+// 2. ShopProfile Model (1:1 Seller Storefront & Schedule)
+// -----------------------------------------------------------------------------
+model ShopProfile {
+  id             String   @id @default(uuid()) @db.Uuid
+  userId         String   @unique @map("user_id") @db.Uuid
+  shopName       String   @map("shop_name") @db.VarChar(120)
+  description    String?  @db.Text
+  avatarUrl      String?  @map("avatar_url") @db.Text
+  province       String   @default("เชียงใหม่") @db.VarChar(100)
+  availableDays  String[] @default([]) @map("available_days")
+  availableSlots String[] @default([]) @map("available_slots")
+  supportsParcel Boolean  @default(false) @map("supports_parcel")
+  shipMode       String   @default("AFTER_ACCEPT") @map("ship_mode") @db.VarChar(20) // DAILY, AFTER_ACCEPT
+  shipWithinDays Int      @default(2) @map("ship_within_days") @db.SmallInt
+  setupComplete  Boolean  @default(false) @map("setup_complete")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relations
+  user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  meetupPoints ShopMeetupPoint[]
+
+  @@map("shop_profiles")
+}
+
+// -----------------------------------------------------------------------------
+// 3. ShopMeetupPoint Model (Seller Meet-up Pins)
+// -----------------------------------------------------------------------------
+model ShopMeetupPoint {
+  id            String   @id @default(uuid()) @db.Uuid
+  shopProfileId String   @map("shop_profile_id") @db.Uuid
+  name          String   @db.VarChar(255)
+  province      String   @db.VarChar(100)
+  lat           Decimal  @db.Decimal(10, 7)
+  lng           Decimal  @db.Decimal(10, 7)
+  note          String?  @db.Text
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  // Relations
+  shopProfile ShopProfile @relation(fields: [shopProfileId], references: [id], onDelete: Cascade)
+
+  @@index([shopProfileId])
+  @@map("shop_meetup_points")
+}
+
+// -----------------------------------------------------------------------------
+// 4. UserAddress Model (PDPA v4 Delivery Addresses — No Phone Required)
+// -----------------------------------------------------------------------------
+model UserAddress {
+  id          String   @id @default(uuid()) @db.Uuid
+  userId      String   @map("user_id") @db.Uuid
+  fullName    String   @map("full_name") @db.VarChar(255)
+  province    String   @db.VarChar(100)
+  district    String   @db.VarChar(100)
+  subdistrict String   @db.VarChar(100)
+  postalCode  String   @map("postal_code") @db.VarChar(10)
+  detail      String   @db.Text
+  isDefault   Boolean  @default(false) @map("is_default")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isDefault])
+  @@map("user_addresses")
+}
+
+// -----------------------------------------------------------------------------
+// 5. BookCatalog Model (Master ISBN Catalog)
+// -----------------------------------------------------------------------------
+model BookCatalog {
+  isbn          String   @id @db.VarChar(20)
+  title         String   @db.VarChar(255)
+  author        String?  @db.VarChar(255)
+  publisher     String?  @db.VarChar(255)
+  category      String?  @db.VarChar(100)
+  coverUrl      String?  @map("cover_url") @db.Text
+  originalPrice Decimal? @map("original_price") @db.Decimal(10, 2)
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relations
+  listings BookListing[]
+
+  @@map("book_catalog")
+}
+
+// -----------------------------------------------------------------------------
+// 6. BookListing Model (Single / Set Listings)
+// -----------------------------------------------------------------------------
+model BookListing {
+  id                 String   @id @default(uuid()) @db.Uuid
+  isbn               String   @db.VarChar(20)
+  sellerId           String   @map("seller_id") @db.Uuid
+  isSet              Boolean  @default(false) @map("is_set")
+  totalVolumes       Int?     @map("total_volumes") @db.SmallInt
+  missingVolumes     Int[]    @default([]) @map("missing_volumes")
+  description        String?  @db.Text
+  price              Decimal  @db.Decimal(10, 2)
+  conditionAnswers   Json     @map("condition_answers")
+  photoChecks        Json?    @map("photo_checks")
+  defects            Json?    @db.JsonB
+  grade              String   @db.VarChar(30) // LIKE_NEW, GENTLY_READ, WELL_LOVED, WORN_BUT_READABLE
+  category           String   @default("ทั่วไป / ไลฟ์สไตล์") @db.VarChar(100)
+  categories         String[] @default([])
+  allowPickup        Boolean  @default(true) @map("allow_pickup")
+  pickupLat          Decimal? @map("pickup_lat") @db.Decimal(10, 7)
+  pickupLng          Decimal? @map("pickup_lng") @db.Decimal(10, 7)
+  pickupLocationName String?  @map("pickup_location_name") @db.VarChar(255)
+  allowDelivery      Boolean  @default(true) @map("allow_delivery")
+  codEnabled         Boolean  @default(true) @map("cod_enabled")
+  status             String   @default("AVAILABLE") @db.VarChar(20) // AVAILABLE, RESERVED, HIDDEN, SOLD
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt          DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relations
+  bookCatalog BookCatalog        @relation(fields: [isbn], references: [isbn], onDelete: Restrict)
+  seller      User               @relation(fields: [sellerId], references: [id], onDelete: Restrict)
+  images      BookListingImage[]
+  orderItems  OrderItem[]
+
+  @@index([status, createdAt(sort: Desc)])
+  @@index([sellerId])
+  @@index([isbn])
+  @@index([category])
+  @@map("book_listings")
+}
+
+// -----------------------------------------------------------------------------
+// 7. BookListingImage Model
+// -----------------------------------------------------------------------------
+model BookListingImage {
+  id            String   @id @default(uuid()) @db.Uuid
+  bookListingId String   @map("book_listing_id") @db.Uuid
+  imageUrl      String   @map("image_url") @db.Text
+  imageType     String   @map("image_type") @db.VarChar(30) // FRONT_COVER, BACK_COVER, SPINE, INNER, EDGE, DEFECT
+  displayOrder  Int      @default(1) @map("display_order") @db.SmallInt
+  isCover       Boolean  @default(false) @map("is_cover")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  // Relations
+  bookListing BookListing @relation(fields: [bookListingId], references: [id], onDelete: Cascade)
+
+  @@index([bookListingId, displayOrder])
+  @@map("book_listing_images")
+}
+
+// -----------------------------------------------------------------------------
+// 8. Order Model (Supports Dual Mode: COD & TRANSFER)
+// -----------------------------------------------------------------------------
+model Order {
+  id                      String    @id @default(uuid()) @db.Uuid
+  buyerId                 String    @map("buyer_id") @db.Uuid
+  sellerId                String    @map("seller_id") @db.Uuid
+  shippingMethod          String    @map("shipping_method") @db.VarChar(20) // PICKUP, DELIVERY
+  paymentMethod           String    @default("COD") @map("payment_method") @db.VarChar(20) // COD, TRANSFER
+  pickupLat               Decimal?  @map("pickup_lat") @db.Decimal(10, 7)
+  pickupLng               Decimal?  @map("pickup_lng") @db.Decimal(10, 7)
+  pickupLocationName      String?   @map("pickup_location_name") @db.VarChar(255)
+  scheduledAt             DateTime? @map("scheduled_at") @db.Timestamptz
+  scheduleDateIso         String?   @map("schedule_date_iso") @db.VarChar(20)
+  scheduleTimeLabel       String?   @map("schedule_time_label") @db.VarChar(60)
+  scheduleProposedBy      String?   @map("schedule_proposed_by") @db.VarChar(20) // BUYER, SELLER
+  scheduleConfirmedByBuyer Boolean  @default(false) @map("schedule_confirmed_by_buyer")
+  handoverCode            String?   @map("handover_code") @db.VarChar(6)
+  receivedPhotoUrl        String?   @map("received_photo_url") @db.Text
+  receivedAt              DateTime? @map("received_at") @db.Timestamptz
+  missedMeetingReportedAt DateTime? @map("missed_meeting_reported_at") @db.Timestamptz
+  shipWithinDays          Int?      @map("ship_within_days") @db.SmallInt
+  shipBy                  DateTime? @map("ship_by") @db.Timestamptz
+  shippingFee             Decimal   @default(0.00) @map("shipping_fee") @db.Decimal(10, 2)
+  totalPrice              Decimal   @map("total_price") @db.Decimal(10, 2)
+  status                  String    @default("REQUESTED") @db.VarChar(20)
+  cancelReason            String?   @map("cancel_reason") @db.Text
+  cancelledBy             String?   @map("cancelled_by") @db.VarChar(20) // BUYER, SELLER
+  disputedBy              String?   @map("disputed_by") @db.Uuid
+  disputeOpenedBy         String?   @map("dispute_opened_by") @db.VarChar(20) // BUYER, SELLER
+  disputeReason           String?   @map("dispute_reason") @db.Text
+  disputedAt              DateTime? @map("disputed_at") @db.Timestamptz
+  createdAt               DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt               DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relations
+  buyer              User                 @relation("BuyerOrders", fields: [buyerId], references: [id], onDelete: Restrict)
+  seller             User                 @relation("SellerOrders", fields: [sellerId], references: [id], onDelete: Restrict)
+  disputer           User?                @relation("DisputedOrders", fields: [disputedBy], references: [id], onDelete: SetNull)
+  deliveryDetail     OrderDeliveryDetail?
+  orderItems         OrderItem[]
+  messages           OrderMessage[]
+  paymentSlips       PaymentSlip[]
+  reviews            Review[]
+  creditTransactions CreditTransaction[]
+
+  @@index([buyerId, status])
+  @@index([sellerId, status])
+  @@index([status, createdAt])
+  @@map("orders")
+}
+
+// -----------------------------------------------------------------------------
+// 9. OrderDeliveryDetail Model (PDPA Protected 1:1)
+// -----------------------------------------------------------------------------
+model OrderDeliveryDetail {
+  id              String    @id @default(uuid()) @db.Uuid
+  orderId         String    @unique @map("order_id") @db.Uuid
+  recipientName   String    @map("recipient_name") @db.VarChar(255)
+  recipientPhone  String?   @map("recipient_phone") @db.VarChar(20) // Nullable per PDPA v4
+  province        String?   @db.VarChar(100)
+  deliveryAddress String    @map("delivery_address") @db.Text
+  courierName     String?   @map("courier_name") @db.VarChar(50)
+  trackingNumber  String?   @map("tracking_number") @db.VarChar(100)
+  parcelImageUrl  String?   @map("parcel_image_url") @db.Text
+  shippedAt       DateTime? @map("shipped_at") @db.Timestamptz
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relations
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@map("order_delivery_details")
+}
+
+// -----------------------------------------------------------------------------
+// 10. OrderItem Model
+// -----------------------------------------------------------------------------
+model OrderItem {
+  id            String  @id @default(uuid()) @db.Uuid
+  orderId       String  @map("order_id") @db.Uuid
+  bookListingId String  @map("book_listing_id") @db.Uuid
+  price         Decimal @db.Decimal(10, 2)
+
+  // Relations
+  order       Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  bookListing BookListing @relation(fields: [bookListingId], references: [id], onDelete: Restrict)
+
+  @@index([orderId])
+  @@index([bookListingId])
+  @@map("order_items")
+}
+
+// -----------------------------------------------------------------------------
+// 11. OrderMessage Model (In-Order Chat with PDPA Masking)
+// -----------------------------------------------------------------------------
+model OrderMessage {
+  id         String   @id @default(uuid()) @db.Uuid
+  orderId    String   @map("order_id") @db.Uuid
+  senderId   String?  @map("sender_id") @db.Uuid
+  senderRole String   @map("sender_role") @db.VarChar(20) // BUYER, SELLER, SYSTEM
+  kind       String   @default("TEXT") @db.VarChar(20) // TEXT, SYSTEM, SCHEDULE_CARD
+  text       String   @db.Text
+  isMasked   Boolean  @default(false) @map("is_masked")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  // Relations
+  order  Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  sender User? @relation(fields: [senderId], references: [id], onDelete: SetNull)
+
+  @@index([orderId, createdAt])
+  @@map("order_messages")
+}
+
+// -----------------------------------------------------------------------------
+// 12. PaymentSlip Model (Credit Topups & Transfer Orders)
+// -----------------------------------------------------------------------------
+model PaymentSlip {
+  id                 String    @id @default(uuid()) @db.Uuid
+  userId             String    @map("user_id") @db.Uuid
+  orderId            String?   @map("order_id") @db.Uuid
+  slipType           String    @map("slip_type") @db.VarChar(30) // ORDER_PAYMENT, CREDIT_TOPUP
+  slipImageUrl       String    @map("slip_image_url") @db.Text
+  transRef           String?   @unique @map("trans_ref") @db.VarChar(100)
+  amount             Decimal   @db.Decimal(10, 2)
+  receiverName       String?   @map("receiver_name") @db.VarChar(255)
+  verificationStatus String    @default("PENDING_VERIFY") @map("verification_status") @db.VarChar(30)
+  rejectionReason    String?   @map("rejection_reason") @db.Text
+  verifiedAt         DateTime? @map("verified_at") @db.Timestamptz
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  // Relations
+  user  User   @relation(fields: [userId], references: [id], onDelete: Restrict)
+  order Order? @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([userId, slipType])
+  @@map("payment_slips")
+}
+
+// -----------------------------------------------------------------------------
+// 13. Review Model
+// -----------------------------------------------------------------------------
+model Review {
+  id                  String   @id @default(uuid()) @db.Uuid
+  orderId             String   @map("order_id") @db.Uuid
+  reviewerId          String   @map("reviewer_id") @db.Uuid
+  revieweeId          String   @map("reviewee_id") @db.Uuid
+  rating              Int      @db.SmallInt
+  isConditionAccurate Boolean? @map("is_condition_accurate")
+  tags                String[] @default([])
+  comment             String?  @db.Text
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  // Relations
+  order    Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  reviewer User  @relation("Reviewer", fields: [reviewerId], references: [id], onDelete: Restrict)
+  reviewee User  @relation("Reviewee", fields: [revieweeId], references: [id], onDelete: Restrict)
+
+  @@index([revieweeId])
+  @@map("reviews")
+}
+
+// -----------------------------------------------------------------------------
+// 14. CreditTransaction Model
+// -----------------------------------------------------------------------------
+model CreditTransaction {
+  id           String   @id @default(uuid()) @db.Uuid
+  userId       String   @map("user_id") @db.Uuid
+  amount       Int
+  balanceAfter Int?     @map("balance_after")
+  type         String   @db.VarChar(30) // SIGNUP_BONUS, ORDER_ACCEPT, TOPUP, REFUND_NO_SHOW
+  orderId      String?  @map("order_id") @db.Uuid
+  note         String?  @db.Text
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  // Relations
+  user  User   @relation(fields: [userId], references: [id], onDelete: Restrict)
+  order Order? @relation(fields: [orderId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@map("credit_transactions")
+}
+
+// -----------------------------------------------------------------------------
+// 15. Notification Model (In-App Notifications)
+// -----------------------------------------------------------------------------
+model Notification {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  role      String   @default("BUYER") @db.VarChar(20) // BUYER, SELLER
+  type      String   @db.VarChar(30) // ORDER, WISHLIST, SYSTEM, CREDIT
+  title     String   @db.VarChar(255)
+  message   String   @db.Text
+  linkUrl   String?  @map("link_url") @db.Text
+  isRead    Boolean  @default(false) @map("is_read")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, role, isRead, createdAt(sort: Desc)])
+  @@map("notifications")
+}
+```
+
+---
+
+## 4. รายการตรวจสอบก่อนรัน Migration (Checklist)
+
+1. **Supabase Storage Buckets (สำหรับ Upload API):**
+   - `book-listings` (Public) — รูปหนังสือ 4 ด้าน + รูปตำหนิ
+   - `avatars` (Public) — รูปโปรไฟล์และโลโก้ร้าน
+   - `order-receives` (Public/Authenticated) — รูปยืนยันรับหนังสือที่ `/orders/[id]/receive`
+   - `slips` (**Private**) — รูปสลิปเติมเครดิต / สลิปโอนเงิน
+   - `disputes` (**Private**) — รูปหลักฐานข้อพิพาท
+2. **Data Migration & Seed Data (`backend/prisma/seed.ts`):**
+   - อัปเดต `seed.ts` ให้สร้าง `ShopProfile` และ `ShopMeetupPoint` ให้กับผู้ขายตัวอย่างทั้ง 4 ราย
+   - อัปเดตข้อมูลหนังสือตัวอย่างให้รองรับ `categories[]` และเปลี่ยนรูปที่ 4 เป็น `INNER` (หรือระบุให้ครบ)
+3. **PDPA Compliance Check:**
+   - ตรวจสอบ Endpoint `GET /api/shops/:id` และ `GET /api/orders/:id` ไม่ให้ส่ง `kycFirstName`, `kycLastName`, `kycNationalIdMasked`, `phoneNumber`, หรือ `recipientPhone` ออกไปใน Shared Response เด็ดขาด
