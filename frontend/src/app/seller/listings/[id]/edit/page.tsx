@@ -132,8 +132,8 @@ export default function EditListingPage({
           <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
             ราคาขาย
           </h2>
-          <div className="flex items-center gap-2">
-            <span className="text-2xl font-black text-slate-300">฿</span>
+          <div className="flex items-center gap-2 w-full">
+            <span className="text-2xl font-black text-slate-300 shrink-0 select-none">฿</span>
             <input
               type="number"
               inputMode="numeric"
@@ -145,7 +145,7 @@ export default function EditListingPage({
                 setError(null);
               }}
               aria-label="ราคาขาย"
-              className="flex-1 min-h-[52px] px-3 text-2xl font-black text-slate-900 bg-slate-50 rounded-xl border border-slate-200 focus:outline-none focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
+              className="flex-1 min-w-0 w-full min-h-[52px] px-3 text-2xl font-black text-slate-900 bg-slate-50 rounded-xl border border-slate-200 focus:outline-none focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
             />
           </div>
           <p className="text-[11px] text-slate-400">
