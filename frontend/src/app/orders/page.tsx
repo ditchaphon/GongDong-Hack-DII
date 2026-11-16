@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { TopBar } from '@/components/layout/TopBar';
 import { BottomTab } from '@/components/layout/BottomTab';
@@ -8,9 +8,10 @@ import { EmptyState } from '@/components/ui';
 import { StatusBadgeV4, LineOaBanner } from '@/components/v4';
 import { useV4Orders } from '@/hooks/useV4Orders';
 import { useAppMode } from '@/hooks/useAppMode';
+import { useSeller } from '@/hooks/useSeller';
 import { getNextAction, getTimerInfo, isTerminal } from '@/lib/orderStateMachine';
 import { V4Order, ViewRole } from '@/types/v4';
-import { Package, Clock, ChevronRight } from 'lucide-react';
+import { Package, Clock, ChevronRight, ShoppingBag, Store } from 'lucide-react';
 
 type Tab = 'BUYING' | 'SELLING';
 
@@ -85,11 +86,33 @@ function OrderRow({
 export default function OrdersPage() {
   const router = useRouter();
   const { orders, loading, error, refreshOrders, isMineAsBuyer } = useV4Orders();
-  const { mode } = useAppMode();
-  const tab: Tab = mode === 'SELLER' ? 'SELLING' : 'BUYING';
+  const { mode, setMode } = useAppMode();
+  const { isShopSetup } = useSeller();
+  const [explicitTab, setExplicitTab] = useState<Tab | null>(null);
+
+  useEffect(() => {
+    try {
+      const param = new URLSearchParams(window.location.search).get('tab')?.toLowerCase();
+      if (param === 'buying') setExplicitTab('BUYING');
+      else if (param === 'selling') setExplicitTab('SELLING');
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  const tab: Tab = explicitTab ?? (mode === 'SELLER' ? 'SELLING' : 'BUYING');
 
   const buying = orders.filter(isMineAsBuyer);
   const selling = orders.filter((order) => !isMineAsBuyer(order));
+
+  const handleSelectTab = (next: Tab) => {
+    setExplicitTab(next);
+    if (next === 'BUYING') {
+      if (mode !== 'BUYER') setMode('BUYER');
+    } else if ((isShopSetup || selling.length > 0) && mode !== 'SELLER') {
+      setMode('SELLER');
+    }
+  };
 
   const needsBuyer = buying.filter((order) => {
     const action = getNextAction(order, 'BUYER');
@@ -117,6 +140,51 @@ export default function OrdersPage() {
       />
 
       <div className="p-4 space-y-3 flex-1">
+        <div
+          role="tablist"
+          aria-label="ประเภทคำสั่งซื้อ"
+          className="grid grid-cols-2 gap-1.5 p-1 rounded-2xl bg-slate-200/70"
+        >
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === 'BUYING'}
+            onClick={() => handleSelectTab('BUYING')}
+            className={`flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl text-xs font-bold transition ${
+              tab === 'BUYING'
+                ? 'bg-white text-[#8B5E3C] shadow-xs'
+                : 'text-slate-600 hover:text-slate-800'
+            }`}
+          >
+            <ShoppingBag className="w-3.5 h-3.5" />
+            <span>ออเดอร์ที่ซื้อ</span>
+            {needsBuyer > 0 && (
+              <span className="min-w-4 h-4 px-1 rounded-full bg-rose-500 text-white text-[10px] font-bold inline-flex items-center justify-center">
+                {needsBuyer}
+              </span>
+            )}
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === 'SELLING'}
+            onClick={() => handleSelectTab('SELLING')}
+            className={`flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl text-xs font-bold transition ${
+              tab === 'SELLING'
+                ? 'bg-white text-teal-700 shadow-xs'
+                : 'text-slate-600 hover:text-slate-800'
+            }`}
+          >
+            <Store className="w-3.5 h-3.5" />
+            <span>ออเดอร์ร้าน</span>
+            {needsSeller > 0 && (
+              <span className="min-w-4 h-4 px-1 rounded-full bg-rose-500 text-white text-[10px] font-bold inline-flex items-center justify-center">
+                {needsSeller}
+              </span>
+            )}
+          </button>
+        </div>
+
         <LineOaBanner />
         {loading && orders.length === 0 ? (
           <div className="space-y-3">
@@ -165,7 +233,10 @@ export default function OrdersPage() {
         )}
       </div>
 
-      <BottomTab orderBadge={tab === 'BUYING' ? needsBuyer : needsSeller} />
+      <BottomTab
+        forceMode={tab === 'SELLING' ? 'SELLER' : 'BUYER'}
+        orderBadge={tab === 'BUYING' ? needsBuyer : needsSeller}
+      />
     </div>
   );
 }

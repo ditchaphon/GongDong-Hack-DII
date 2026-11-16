@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useState, ReactNode } from 'react';
 
 /**
  * One LINE account, two hats. Buyers browse with zero setup; seller mode
@@ -29,14 +29,14 @@ export const AppModeProvider: React.FC<{ children: ReactNode }> = ({ children })
     }
   }, []);
 
-  const setMode = (next: AppMode) => {
+  const setMode = useCallback((next: AppMode) => {
     setModeState(next);
     try {
       window.localStorage.setItem(STORAGE_KEY, next);
     } catch {
       /* ignore */
     }
-  };
+  }, []);
 
   return (
     <AppModeContext.Provider value={{ mode, setMode }}>{children}</AppModeContext.Provider>

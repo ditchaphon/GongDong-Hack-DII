@@ -4,6 +4,9 @@ import React, { useEffect, useState } from 'react';
 import { TopBar } from '@/components/layout/TopBar';
 import { BottomTab } from '@/components/layout/BottomTab';
 import { Button, Input, BottomSheet, Toast, EmptyState } from '@/components/ui';
+import { useAppMode } from '@/hooks/useAppMode';
+import { useV4Orders } from '@/hooks/useV4Orders';
+import { isTerminal } from '@/lib/orderStateMachine';
 import { Bell, Plus, Trash2, Sparkles, BookOpen } from 'lucide-react';
 import Link from 'next/link';
 
@@ -19,7 +22,17 @@ interface WishlistItem {
 const WISHLIST_STORAGE_KEY = 'gongdong.wishlist.v1';
 
 export default function WishlistPage() {
+  const { mode, setMode } = useAppMode();
+  const { orders, isMineAsBuyer } = useV4Orders();
   const [items, setItems] = useState<WishlistItem[]>([]);
+
+  useEffect(() => {
+    if (mode !== 'BUYER') setMode('BUYER');
+  }, [mode, setMode]);
+
+  const activeBuyerOrderCount = orders.filter(
+    (o) => isMineAsBuyer(o) && !isTerminal(o.status)
+  ).length;
   const [hydrated, setHydrated] = useState(false);
   const [isAddSheetOpen, setIsAddSheetOpen] = useState(false);
   const [newTitle, setNewTitle] = useState('');
@@ -221,7 +234,7 @@ export default function WishlistPage() {
         message={toastMessage || ''}
       />
 
-      <BottomTab orderBadge={1} />
+      <BottomTab forceMode="BUYER" orderBadge={activeBuyerOrderCount || undefined} />
     </div>
   );
 }

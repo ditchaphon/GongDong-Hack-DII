@@ -5,21 +5,23 @@ import clsx from 'clsx';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Home, Package, Store, PlusCircle, UserRound } from 'lucide-react';
-import { useAppMode } from '@/hooks/useAppMode';
+import { useAppMode, type AppMode } from '@/hooks/useAppMode';
 
 export interface BottomTabProps {
   orderBadge?: number;
+  forceMode?: AppMode;
   className?: string;
 }
 
 export const BottomTab: React.FC<BottomTabProps> = ({
   orderBadge,
+  forceMode,
   className,
 }) => {
   const pathname = usePathname();
 
   const { mode } = useAppMode();
-  const isSeller = mode === 'SELLER';
+  const isSeller = (forceMode ?? mode) === 'SELLER';
 
   type Tab = {
     id: string;

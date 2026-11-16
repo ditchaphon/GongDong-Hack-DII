@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { TopBar } from '@/components/layout/TopBar';
 import {
@@ -13,6 +13,7 @@ import {
 } from '@/components/ui';
 import { useListing } from '@/hooks/useListing';
 import { useSeller } from '@/hooks/useSeller';
+import { useAppMode } from '@/hooks/useAppMode';
 import { IsbnScanner } from '@/components/v4';
 import { api } from '@/lib/api';
 import { mapApiCategoryToThaiCategories } from '@/lib/catalog';
@@ -50,7 +51,12 @@ interface PreviousListingOption {
 export default function SellerListStep1Page() {
   const router = useRouter();
   const { isShopSetup } = useSeller();
+  const { mode, setMode } = useAppMode();
   const { draft, update, toggleMissingVolume, resetDraft } = useListing();
+
+  useEffect(() => {
+    if (isShopSetup && mode !== 'SELLER') setMode('SELLER');
+  }, [isShopSetup, mode, setMode]);
 
   const [isManualIsbnOpen, setIsManualIsbnOpen] = useState(false);
   const [isScannerOpen, setIsScannerOpen] = useState(false);

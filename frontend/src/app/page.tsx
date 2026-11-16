@@ -10,6 +10,7 @@ import { BackendBookFeedItem, BackendNotification, mapBackendBookToBook } from '
 import { Book } from '@/types';
 import { Bell, MoreHorizontal, BookOpen, ChevronRight, Sparkles, ShoppingBag } from 'lucide-react';
 import { useCart } from '@/hooks/useCart';
+import { useAppMode } from '@/hooks/useAppMode';
 import { useLiff } from '@/hooks/useLiff';
 import { useV4Orders } from '@/hooks/useV4Orders';
 import { isTerminal } from '@/lib/orderStateMachine';
@@ -17,8 +18,14 @@ import { isTerminal } from '@/lib/orderStateMachine';
 export default function HomePage() {
   const router = useRouter();
   const { isReady, isLoggedIn, idToken, user } = useLiff();
+  const { mode, setMode } = useAppMode();
   const { items: cartItems } = useCart();
   const { orders, isMineAsBuyer } = useV4Orders();
+
+  // Opening the buyer marketplace (e.g. from LINE OA Rich Menu) switches back to BUYER mode.
+  useEffect(() => {
+    if (mode !== 'BUYER') setMode('BUYER');
+  }, [mode, setMode]);
   const [books, setBooks] = useState<Book[]>([]);
   const [recommendedBook, setRecommendedBook] = useState<Book | null>(null);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -335,7 +342,7 @@ export default function HomePage() {
       </BottomSheet>
 
       {/* Fixed Bottom Navigation */}
-      <BottomTab orderBadge={activeBuyerOrderCount || undefined} />
+      <BottomTab forceMode="BUYER" orderBadge={activeBuyerOrderCount || undefined} />
     </div>
   );
 }
