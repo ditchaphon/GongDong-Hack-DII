@@ -145,11 +145,6 @@ export const BookCard: React.FC<BookCardProps> = ({
             ร้านของคุณ
           </div>
         )}
-        {book.isPromptPayVerified && (
-          <div className="absolute bottom-2 right-2 bg-black/60 backdrop-blur-xs text-white text-[10px] px-2 py-0.5 rounded-full font-medium">
-            ยืนยันบัญชีรับเงิน
-          </div>
-        )}
       </div>
 
       <div className="p-3 flex flex-col flex-1 justify-between gap-2">

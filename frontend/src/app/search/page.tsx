@@ -162,7 +162,7 @@ export default function SearchPage() {
           </button>
 
           <select
-            aria-label="กรองเกรดสภาพ"
+            aria-label="กรองเกรดคุณภาพ"
             value={gradeFilter}
             onChange={(event) =>
               setGradeFilter(event.target.value as 'ALL' | 'A' | 'B' | 'C' | 'D')

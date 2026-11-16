@@ -40,10 +40,14 @@ export default function SellerListDetailsPage() {
         : [...draft.categories, category],
     });
 
+  const isOtherCategorySelected = draft.categories.includes('อื่น ๆ');
+
+  const canProceed =
+    !!draft.title.trim() &&
+    (!isOtherCategorySelected || !!draft.customCategory.trim());
+
   const handleNext = () => {
-    if (!draft.title.trim()) {
-      return;
-    }
+    if (!canProceed) return;
     router.push('/seller/list/step-2');
   };
 
@@ -126,8 +130,8 @@ export default function SellerListDetailsPage() {
             }
             helperText={
               isSet
-                ? `กรอกราคามือหนึ่งรวมของหนังสือทั้ง ${actualVolumes} เล่มเพื่อคำนวณราคาแนะนำ`
-                : 'ใช้คำนวณราคาแนะนำในขั้นตอนสุดท้าย'
+                ? `กรอกราคามือหนึ่งรวมของหนังสือทั้ง ${actualVolumes} เล่มเพื่อคำนวณราคาแนะนำ (ไม่จำเป็นต้องใส่)`
+                : 'ใช้คำนวณราคาแนะนำในขั้นตอนสุดท้าย ไม่จำเป็นต้องใส่'
             }
           />
 
@@ -154,7 +158,7 @@ export default function SellerListDetailsPage() {
               maxLength={500}
               value={draft.description}
               onChange={(event) => update({ description: event.target.value })}
-              placeholder="สภาพหนังสือ จุดเด่น หรือหมายเหตุถึงผู้ซื้อ"
+              placeholder="คุณภาพหนังสือ จุดเด่น หรือหมายเหตุถึงผู้ซื้อ"
               className="w-full text-sm p-3 rounded-xl border border-slate-200 resize-none focus:outline-none focus:border-[#8B5E3C]"
             />
             <p className="text-[10px] text-slate-400 text-right">
@@ -175,11 +179,10 @@ export default function SellerListDetailsPage() {
                     type="button"
                     aria-pressed={on}
                     onClick={() => toggleCategory(category)}
-                    className={`px-3 py-1.5 rounded-full text-[11px] font-semibold border ${
-                      on
+                    className={`px-3 py-1.5 rounded-full text-[11px] font-semibold border ${on
                         ? 'bg-[#8B5E3C] border-[#8B5E3C] text-white'
                         : 'bg-white border-slate-200 text-slate-600'
-                    }`}
+                      }`}
                   >
                     {on ? '✓ ' : ''}
                     {category}
@@ -187,6 +190,18 @@ export default function SellerListDetailsPage() {
                 );
               })}
             </div>
+
+            {isOtherCategorySelected && (
+              <Input
+                id="listing-custom-category"
+                label="ระบุหมวดหมู่อื่น ๆ *"
+                placeholder="เช่น ศาสนา, จิตวิทยา, ท่องเที่ยว"
+                value={draft.customCategory}
+                maxLength={40}
+                onChange={(event) => update({ customCategory: event.target.value })}
+                helperText="ชื่อหมวดนี้จะแสดงบนประกาศของคุณ"
+              />
+            )}
           </div>
         </section>
 
@@ -203,7 +218,7 @@ export default function SellerListDetailsPage() {
           <Button
             fullWidth
             size="lg"
-            disabled={!draft.title.trim()}
+            disabled={!canProceed}
             onClick={handleNext}
             rightIcon={<ChevronRight className="w-4 h-4" />}
           >

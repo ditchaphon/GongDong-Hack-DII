@@ -44,9 +44,9 @@ export default function LinePreviewPage() {
             <h2 className="text-sm font-bold text-slate-900">Rich Menu (spec only)</h2>
           </div>
           <p className="text-xs text-slate-500">
-            5 ปุ่ม · แต่ละปุ่มเปิด LIFF deep link · ไม่เรียก LINE API
+            {RICH_MENU_ITEMS.length} ปุ่ม · แต่ละปุ่มเปิด LIFF deep link · ไม่เรียก LINE API
           </p>
-          <div className="grid grid-cols-5 gap-2">
+          <div className="grid grid-cols-4 gap-2">
             {RICH_MENU_ITEMS.map((item) => (
               <div
                 key={item.label}

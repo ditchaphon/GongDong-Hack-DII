@@ -63,7 +63,7 @@ export default function SellerListStep2Page() {
             <div>
               <h3 className="text-sm font-bold text-slate-800">เพิ่มรูปหนังสือ {slots.length} มุม</h3>
               <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
-                ถ่ายจากกล้องหรือเลือกจากแกลอรี่ · ให้เห็นสภาพจริง · ขั้นต่อไปจะใช้รูปเหล่านี้ตรวจสภาพ
+                ถ่ายจากกล้องหรือเลือกจากแกลอรี่ · ให้เห็นคุณภาพจริง · ขั้นต่อไปจะใช้รูปเหล่านี้ตรวจคุณภาพ
               </p>
             </div>
             <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full shrink-0">

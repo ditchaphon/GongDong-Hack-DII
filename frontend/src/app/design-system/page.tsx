@@ -119,7 +119,7 @@ export default function DesignSystemPage() {
               <span className="text-xs">70%</span>
             </div>
             <div className="p-3 bg-sky-50 text-sky-800 border border-sky-300 rounded-xl font-semibold flex justify-between items-center">
-              <span>Grade B (สภาพดีมาก)</span>
+              <span>Grade B (คุณภาพดีมาก)</span>
               <span className="text-xs">60%</span>
             </div>
             <div className="p-3 bg-amber-50 text-amber-800 border border-amber-300 rounded-xl font-semibold flex justify-between items-center">
@@ -264,7 +264,7 @@ export default function DesignSystemPage() {
         {/* 7. Condition Checklist & Price Suggest */}
         <section className="space-y-3">
           <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-            7. Condition Checklist (เช็กสภาพ 5 จุด)
+            7. Condition Checklist (เช็กคุณภาพ 5 จุด)
           </h3>
           <div className="bg-white p-4 rounded-2xl border border-slate-200 space-y-4">
             <div className="flex items-center justify-between pb-2 border-b border-slate-100">
@@ -297,7 +297,7 @@ export default function DesignSystemPage() {
             <PhotoUploader
               label="2. ปกหลัง"
               isRequired
-              description="เห็นสภาพปกหลังชัดเจน"
+              description="เห็นคุณภาพปกหลังชัดเจน"
             />
           </div>
         </section>
@@ -374,7 +374,7 @@ export default function DesignSystemPage() {
           <div className="bg-white rounded-2xl border border-slate-200">
             <EmptyState
               title="ยังไม่มีหนังสือในตะกร้า"
-              description="เริ่มค้นหาหนังสือมือสองสภาพดี หรือดูรายการแนะนำในหน้าแรก"
+              description="เริ่มค้นหาหนังสือมือสองคุณภาพดี หรือดูรายการแนะนำในหน้าแรก"
               actionText="ไปค้นหาหนังสือ"
               onAction={() => setToastMessage('นำทางไปหน้าค้นหา')}
             />

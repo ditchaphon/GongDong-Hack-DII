@@ -127,7 +127,7 @@ export default function AddressEditPage() {
 
       <div className="p-4 space-y-4 flex-1">
         <p className="text-[11px] text-slate-500 leading-relaxed">
-          ใช้สำหรับจัดส่งเท่านั้น · ระบบไม่ขอและไม่แสดงเบอร์โทรให้ผู้ขายเห็น
+          ใช้สำหรับจัดส่งเท่านั้น
         </p>
 
         {/* Quick presets */}

@@ -13,7 +13,6 @@ Mobile-first LIFF app. Width target 390px, max 430px. All routes open as
 | `/seller/[sellerId]` | Public shop page (rating, reviews, report shop) | 2 |
 | `/cart` | Cart split by shop, request rules | 2 |
 | `/cart/success` | Request sent confirmation | 2 |
-| `/wishlist` | Wishlist | 2 |
 | `/addresses` | Address list | 2 |
 | `/addresses/edit` | Address form (buyer's own phone only) | 2 |
 | `/orders` | Tabs ที่ซื้อ / ที่ขาย, action badges, timers | 4 |

@@ -347,13 +347,12 @@ export default function BookDetailPage({
             type="button"
             onClick={() => setActivePhotoIdx(index)}
             aria-label={`ดูรูปที่ ${index + 1}: ${photo.label}`}
-            className={`relative w-14 h-14 rounded-xl overflow-hidden border-2 transition shrink-0 ${
-              activePhotoIdx === index
-                ? photo.isDefect
-                  ? 'border-amber-500 ring-2 ring-amber-400/30'
-                  : 'border-[var(--color-primary)]'
-                : 'border-transparent opacity-60 hover:opacity-90'
-            }`}
+            className={`relative w-14 h-14 rounded-xl overflow-hidden border-2 transition shrink-0 ${activePhotoIdx === index
+              ? photo.isDefect
+                ? 'border-amber-500 ring-2 ring-amber-400/30'
+                : 'border-[var(--color-primary)]'
+              : 'border-transparent opacity-60 hover:opacity-90'
+              }`}
           >
             <img src={photo.src} alt="" className="w-full h-full object-cover" />
             {photo.isDefect && (
@@ -456,7 +455,7 @@ export default function BookDetailPage({
               เทียบกับอีก {compareData.totalOffers} ร้านที่ขายเล่มนี้ ↓
             </a>
           ) : (
-            'เทียบราคาและสภาพกับร้านอื่นด้านล่าง'
+            'เทียบราคาและคุณภาพกับร้านอื่นด้านล่าง'
           )}
         </p>
         {book.description && (
@@ -543,7 +542,7 @@ export default function BookDetailPage({
       {/* 5-point checklist */}
       <div className="mt-2 p-4 bg-white border-y border-slate-100 space-y-3">
         <div className="flex items-center justify-between">
-          <h2 className="text-sm font-bold text-slate-800">ผลตรวจสภาพ 5 จุดโดยผู้ขาย</h2>
+          <h2 className="text-sm font-bold text-slate-800">ผลตรวจคุณภาพ 5 จุดโดยผู้ขาย</h2>
           <span className="text-xs text-[var(--color-primary-dark)] font-semibold">
             เกรด {book.grade}
           </span>
@@ -607,7 +606,7 @@ export default function BookDetailPage({
             <div>
               <h2 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
                 <ArrowUpDown className="w-4 h-4 text-[var(--color-primary)]" />
-                {book.isSet ? 'เทียบกับชุดอื่น (ISBN เดียวกัน)' : 'เทียบกับร้านอื่น (ISBN เดียวกัน)'}
+                {book.isSet ? 'เทียบกับชุดอื่น (ISBN เดียวกัน)' : 'เทียบกับร้านอื่น'}
               </h2>
               <p className="text-[11px] text-slate-400 mt-0.5">
                 ISBN {compareData.isbn}
@@ -626,20 +625,19 @@ export default function BookDetailPage({
             <>
               {/* Current book competitiveness banner */}
               <div
-                className={`p-2.5 rounded-xl border text-[11px] font-semibold flex items-center gap-2 ${
-                  compareData.cheapestOfferPrice !== null &&
+                className={`p-2.5 rounded-xl border text-[11px] font-semibold flex items-center gap-2 ${compareData.cheapestOfferPrice !== null &&
                   compareData.cheapestOfferPrice < book.price
-                    ? 'bg-amber-50 border-amber-200 text-amber-900'
-                    : 'bg-emerald-50 border-emerald-200 text-emerald-900'
-                }`}
+                  ? 'bg-amber-50 border-amber-200 text-amber-900'
+                  : 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                  }`}
               >
                 <Sparkles className="w-3.5 h-3.5 shrink-0" />
                 <span>
                   {compareData.cheapestOfferPrice !== null &&
-                  compareData.cheapestOfferPrice < book.price
+                    compareData.cheapestOfferPrice < book.price
                     ? `มีร้านอื่นขายเล่มนี้ถูกกว่า ฿${(book.price - compareData.cheapestOfferPrice).toLocaleString()} (เริ่ม ฿${compareData.cheapestOfferPrice.toLocaleString()})`
                     : 'เล่มนี้ราคาต่ำที่สุดสำหรับ ISBN นี้ในขณะนี้'}
-                  {compareData.isCurrentBestGrade ? ' · สภาพเกรดสูงสุดที่มีอยู่' : ''}
+                  {compareData.isCurrentBestGrade ? ' · คุณภาพเกรดสูงสุดที่มีอยู่' : ''}
                 </span>
               </div>
 
@@ -648,19 +646,17 @@ export default function BookDetailPage({
                 {(
                   [
                     { key: 'PRICE', label: 'ราคาต่ำสุด' },
-                    { key: 'GRADE', label: 'สภาพดีสุด' },
-                    { key: 'PICKUP', label: 'นัดรับ ฿0 ก่อน' },
+                    { key: 'GRADE', label: 'คุณภาพดีสุด' },
                   ] as const
                 ).map((opt) => (
                   <button
                     key={opt.key}
                     type="button"
                     onClick={() => setCompareSort(opt.key)}
-                    className={`px-3 py-1.5 rounded-full text-[11px] font-bold border transition shrink-0 ${
-                      compareSort === opt.key
-                        ? 'bg-[var(--color-primary)] border-[var(--color-primary)] text-white'
-                        : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
-                    }`}
+                    className={`px-3 py-1.5 rounded-full text-[11px] font-bold border transition shrink-0 ${compareSort === opt.key
+                      ? 'bg-[var(--color-primary)] border-[var(--color-primary)] text-white'
+                      : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                      }`}
                   >
                     {opt.label}
                   </button>
@@ -731,7 +727,7 @@ export default function BookDetailPage({
                             )}
                             {offer.isBestGrade && (
                               <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-sky-100 text-sky-800">
-                                สภาพดีสุด
+                                คุณภาพดีสุด
                               </span>
                             )}
                           </div>
@@ -880,7 +876,7 @@ export default function BookDetailPage({
                 {review.gradeMatched && (
                   <span className="inline-flex items-center gap-1 mt-1 text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded">
                     <ShieldCheck className="w-3 h-3" />
-                    สภาพตรงเกรด
+                    คุณภาพตรงเกรด
                   </span>
                 )}
               </div>
@@ -911,7 +907,7 @@ export default function BookDetailPage({
             <div className="text-emerald-700 mt-0.5">ไม่มีตำหนิเลยทั้ง 5 จุด</div>
           </div>
           <div className="p-2.5 rounded-xl bg-sky-50 border border-sky-200">
-            <div className="font-bold text-sky-800">สภาพดีมาก (60% ของราคามือหนึ่ง)</div>
+            <div className="font-bold text-sky-800">คุณภาพดีมาก (60% ของราคามือหนึ่ง)</div>
             <div className="text-sky-700 mt-0.5">ตำหนิ 1 จุด เล็กน้อย</div>
           </div>
           <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200">

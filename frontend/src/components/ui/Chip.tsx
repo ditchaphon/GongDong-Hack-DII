@@ -28,9 +28,9 @@ export const Chip: React.FC<ChipProps> = ({
       type="button"
       disabled={disabled}
       className={clsx(
-        'inline-flex items-center gap-1.5 rounded-full font-medium transition-all select-none',
+        'inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full font-medium leading-5 transition-all select-none',
         'active:scale-95 focus:outline-none focus:ring-2 focus:ring-offset-1',
-        size === 'sm' ? 'text-xs px-2.5 py-1' : 'text-sm px-3.5 py-1.5',
+        size === 'sm' ? 'text-xs px-2.5 py-1.5' : 'text-sm px-3.5 py-1.5',
         selected
           ? 'bg-[#8B5E3C] text-white focus:ring-[#8B5E3C] shadow-xs'
           : 'bg-slate-100 text-slate-700 hover:bg-slate-200 active:bg-slate-300 focus:ring-slate-300',

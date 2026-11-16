@@ -498,7 +498,7 @@ export default function SellerShopPage() {
                           />
                         ))}
                         <span className="ml-1 text-[10px] font-semibold text-slate-500">
-                          {order.review.isGradeMatched ? '· สภาพตรงเกรด' : '· ไม่ตรงเกรด'}
+                          {order.review.isGradeMatched ? '· คุณภาพตรงเกรด' : '· ไม่ตรงเกรด'}
                         </span>
                       </div>
                       {order.review.comment && (

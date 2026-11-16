@@ -91,7 +91,7 @@ function SellerListSuccessContent() {
     const shared = await shareTargetPicker([
       {
         type: 'text',
-        text: `หนังสือสภาพดีจากกองดอง: ${summary.title} ราคา ฿${summary.price.toLocaleString()}\n${shareUrl}`,
+        text: `หนังสือคุณภาพดีจากกองดอง: ${summary.title} ราคา ฿${summary.price.toLocaleString()}\n${shareUrl}`,
       },
     ]);
     if (!shared) {

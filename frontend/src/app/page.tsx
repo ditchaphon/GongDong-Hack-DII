@@ -8,7 +8,7 @@ import { BottomTab } from '@/components/layout/BottomTab';
 import { api } from '@/lib/api';
 import { BackendBookFeedItem, BackendNotification, mapBackendBookToBook } from '@/lib/mappers';
 import { Book } from '@/types';
-import { Bell, BookOpen, ChevronRight, Sparkles, ShoppingBag } from 'lucide-react';
+import { Bell, Sparkles, ShoppingBag } from 'lucide-react';
 import { useCart } from '@/hooks/useCart';
 import { useAppMode } from '@/hooks/useAppMode';
 import { useLiff } from '@/hooks/useLiff';
@@ -27,7 +27,6 @@ export default function HomePage() {
     if (mode !== 'BUYER') setMode('BUYER');
   }, [mode, setMode]);
   const [books, setBooks] = useState<Book[]>([]);
-  const [recommendedBook, setRecommendedBook] = useState<Book | null>(null);
   const [unreadCount, setUnreadCount] = useState(0);
   const [homeSearch, setHomeSearch] = useState('');
   const [loading, setLoading] = useState(true);
@@ -38,16 +37,10 @@ export default function HomePage() {
     setLoading(true);
     setError(null);
     try {
-      const [feedRes, recRes] = await Promise.all([
-        api.get<{ books: BackendBookFeedItem[]; total: number }>('/api/books?limit=30'),
-        api
-          .get<{ books: BackendBookFeedItem[] }>('/api/books/recommended?limit=1')
-          .catch(() => ({ books: [] })),
-      ]);
-      const mapped = (feedRes.books ?? []).map(mapBackendBookToBook);
-      setBooks(mapped);
-      const rec = recRes.books?.[0] ? mapBackendBookToBook(recRes.books[0]) : null;
-      setRecommendedBook(rec);
+      const feedRes = await api.get<{ books: BackendBookFeedItem[]; total: number }>(
+        '/api/books?limit=30'
+      );
+      setBooks((feedRes.books ?? []).map(mapBackendBookToBook));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'โหลดรายการหนังสือไม่สำเร็จ');
     } finally {
@@ -83,29 +76,21 @@ export default function HomePage() {
 
   const categories = [
     { id: 'all', label: 'ทั้งหมด' },
-    { id: 'meetup', label: '🤝 นัดรับ ฿0', isHighlight: true },
-    { id: 'parcel', label: '📦 ส่งพัสดุ' },
     { id: 'นิยาย', label: 'นิยาย' },
     { id: 'วิชาการ', label: 'วิชาการ' },
     { id: 'การ์ตูน', label: 'การ์ตูน' },
     { id: 'หนังสือเรียน', label: 'หนังสือเรียน' },
   ];
 
-  const filteredBooks = books.filter((b) => {
-    if (activeCategory === 'all') return true;
-    if (activeCategory === 'meetup') return b.deliveryMethods.includes('MEETUP');
-    if (activeCategory === 'parcel') return b.deliveryMethods.includes('PARCEL');
-    return (b.categories ?? []).includes(activeCategory);
-  });
+  const filteredBooks = books.filter(
+    (b) => activeCategory === 'all' || (b.categories ?? []).includes(activeCategory)
+  );
 
   const handleHomeSearch = (rawQuery: string) => {
     const trimmed = rawQuery.trim();
     router.push(trimmed ? `/search?q=${encodeURIComponent(trimmed)}` : '/search');
   };
 
-  const spotlightBook = filteredBooks[0] ?? recommendedBook ?? books[0] ?? null;
-  const activeCategoryLabel =
-    categories.find((category) => category.id === activeCategory)?.label ?? 'ทั้งหมด';
   const activeBuyerOrderCount = orders.filter(
     (o) => isMineAsBuyer(o) && !isTerminal(o.status)
   ).length;
@@ -178,7 +163,7 @@ export default function HomePage() {
         </div>
 
         {/* Filter Categories */}
-        <div className="flex gap-2 overflow-x-auto pt-3 pb-1 no-scrollbar">
+        <div className="flex flex-wrap items-center gap-1.5 pt-3 pb-1">
           {categories.map((c) => (
             <Chip
               key={c.id}
@@ -186,7 +171,6 @@ export default function HomePage() {
               selected={activeCategory === c.id}
               onClick={() => setActiveCategory(c.id)}
               size="sm"
-              className={c.isHighlight && activeCategory !== c.id ? 'border-teal-300 text-teal-800 bg-teal-50' : ''}
             />
           ))}
         </div>
@@ -194,43 +178,12 @@ export default function HomePage() {
 
       {/* Feed Content */}
       <div className="p-4 space-y-6">
-        {spotlightBook && (
-          <button
-            type="button"
-            onClick={() => router.push(`/book/${spotlightBook.id}`)}
-            className="w-full text-left p-4 rounded-2xl bg-gradient-to-r from-[#8B5E3C] to-[#B07A50] text-white shadow-xs flex items-center gap-3"
-          >
-            <div className="flex-1 min-w-0 space-y-1">
-              <span className="text-[10px] font-bold uppercase tracking-wider bg-white/20 px-2 py-0.5 rounded-full inline-block">
-                แนะนำสำหรับคุณ
-              </span>
-              <h3 className="font-bold text-base">เรื่องนี้คุณอาจสนใจ</h3>
-              <p className="text-xs text-white/90 line-clamp-1">{spotlightBook.title}</p>
-              <p className="text-[11px] text-white/75 line-clamp-1">
-                {spotlightBook.grade} · ฿{spotlightBook.price.toLocaleString()} · {activeCategoryLabel}
-              </p>
-            </div>
-            <div className="w-14 h-16 rounded-xl bg-white/15 backdrop-blur-xs flex items-center justify-center shrink-0 overflow-hidden">
-              {spotlightBook.photos?.cover ? (
-                <img
-                  src={spotlightBook.photos.cover}
-                  alt=""
-                  className="w-full h-full object-cover"
-                />
-              ) : (
-                <BookOpen className="w-6 h-6 text-white" />
-              )}
-            </div>
-            <ChevronRight className="w-4 h-4 text-white/70 shrink-0" />
-          </button>
-        )}
-
         {/* Book Feed Grid */}
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
               <Sparkles className="w-4 h-4 text-[#8B5E3C]" />
-              หนังสือแนะนำสภาพดี
+              หนังสือแนะนำคุณภาพดี
             </h2>
             <span className="text-xs text-slate-400">
               พบ {filteredBooks.length} เล่ม

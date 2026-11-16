@@ -276,7 +276,7 @@ export interface BackendNotification {
 
 export interface AppNotificationItem {
   id: string;
-  type: 'order' | 'wishlist' | 'system' | 'credit';
+  type: 'order' | 'system' | 'credit';
   title: string;
   message: string;
   createdAt: string;
@@ -709,7 +709,6 @@ export function mapBackendNotificationToItem(
   const typeLower = n.type.toLowerCase();
   const mappedType =
     typeLower === 'order' ||
-    typeLower === 'wishlist' ||
     typeLower === 'credit'
       ? typeLower
       : 'system';

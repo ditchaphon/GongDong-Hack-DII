@@ -20,7 +20,7 @@ const DEFAULT_STEPS: StepItem[] = [
   { step: 1, title: 'ISBN' },
   { step: 2, title: 'รายละเอียด' },
   { step: 3, title: 'รูปถ่าย' },
-  { step: 4, title: 'สภาพ' },
+  { step: 4, title: 'คุณภาพ' },
   { step: 5, title: 'ราคา/ส่ง' },
 ];
 

@@ -1285,7 +1285,7 @@ export default function CartPage() {
             </li>
             <li className="flex gap-2">
               <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
-              ตรวจสอบสภาพหนังสือเมื่อได้รับ แล้วจ่ายเงินปลายทาง/หน้างาน
+              ตรวจสอบคุณภาพหนังสือเมื่อได้รับ แล้วจ่ายเงินปลายทาง/หน้างาน
             </li>
           </ol>
         </section>
