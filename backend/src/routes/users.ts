@@ -19,6 +19,7 @@ import {
 } from '../services/userService';
 import { getUserIdFromRequest } from '../utils/requestUser';
 import { isSlipOkConfigured, verifySlipWithSlipOk } from '../services/slipokService';
+import { serializeOrderDetailDto } from './orders';
 
 export const userRouter = Router();
 
@@ -197,12 +198,18 @@ userRouter.get(
     try {
       const userId = getUserIdFromRequest(req);
       const role = req.query.role as 'buying' | 'selling' | undefined;
+      const includeDetails = req.query.include === 'details';
 
-      const result = await getUserOrders(userId, role);
+      const result = await getUserOrders(userId, role, undefined, { includeDetails });
 
       res.status(200).json({
         success: true,
-        data: result,
+        data: includeDetails
+          ? {
+              ...result,
+              details: (result.details ?? []).map(serializeOrderDetailDto),
+            }
+          : result,
       });
     } catch (error) {
       next(error);

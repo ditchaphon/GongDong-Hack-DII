@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createAuthMiddleware, verifyLineToken } from '../auth';
+import {
+  clearVerifiedLineTokenCacheForTest,
+  createAuthMiddleware,
+  verifyLineToken,
+} from '../auth';
 
 const mockFindUnique = vi.fn();
 const mockTransaction = vi.fn();
@@ -229,5 +233,44 @@ describe('verifyLineToken helper', () => {
       code: 'UNAUTHORIZED',
       message: 'IdToken is expired',
     });
+  });
+
+  it('authMiddleware ต้อง cache ผลจาก LINE verify API ภายใน 60 วินาทีเพื่อลดการยิง LINE ซ้ำ', async () => {
+    clearVerifiedLineTokenCacheForTest();
+    mockFindUnique.mockReset();
+    mockFindUnique.mockResolvedValue({
+      id: 'usr-cached-1',
+      lineUserId: 'U_CACHED_1',
+      displayName: 'Cached User',
+      credits: 2,
+    });
+
+    const futureExp = Math.floor(Date.now() / 1000) + 3600;
+    const originalFetch = global.fetch;
+    const fetchSpy = vi.fn().mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue({
+        sub: 'U_CACHED_1',
+        name: 'Cached User',
+        exp: futureExp,
+      }),
+    });
+    global.fetch = fetchSpy as any;
+
+    try {
+      const middleware = createAuthMiddleware();
+      const next1 = vi.fn();
+      const next2 = vi.fn();
+
+      await middleware({ headers: { authorization: 'Bearer cached_id_token_xyz' } } as any, {} as any, next1);
+      await middleware({ headers: { authorization: 'Bearer cached_id_token_xyz' } } as any, {} as any, next2);
+
+      expect(next1).toHaveBeenCalledWith();
+      expect(next2).toHaveBeenCalledWith();
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      global.fetch = originalFetch;
+      clearVerifiedLineTokenCacheForTest();
+    }
   });
 });

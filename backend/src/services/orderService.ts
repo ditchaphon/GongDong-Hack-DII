@@ -43,6 +43,28 @@ const handoverAttemptsStore = new Map<
   { failedCount: number; windowExpiresAt: number; lockedUntil: number }
 >();
 
+const USER_LAZY_MAINTENANCE_COOLDOWN_MS = 5 * 60 * 1000;
+const userMaintenanceCooldown = new Map<string, number>();
+
+export function clearUserMaintenanceCooldownForTest(): void {
+  userMaintenanceCooldown.clear();
+}
+
+function shouldRunUserLazyMaintenance(userId: string): boolean {
+  const now = Date.now();
+  const nextAllowedAt = userMaintenanceCooldown.get(userId);
+  if (nextAllowedAt && nextAllowedAt > now) {
+    return false;
+  }
+  if (userMaintenanceCooldown.size > 2000) {
+    for (const [uid, exp] of userMaintenanceCooldown.entries()) {
+      if (exp <= now) userMaintenanceCooldown.delete(uid);
+    }
+  }
+  userMaintenanceCooldown.set(userId, now + USER_LAZY_MAINTENANCE_COOLDOWN_MS);
+  return true;
+}
+
 export function clearHandoverAttemptsForTest(): void {
   handoverAttemptsStore.clear();
 }
@@ -976,61 +998,51 @@ export async function createBatchOrders(
   );
 }
 
-/**
- * ดูรายละเอียดคำสั่งซื้อ (GET /api/orders/:id)
- * มี Logic ปกป้องข้อมูลส่วนบุคคล (PDPA) ซ่อนที่อยู่และเบอร์ผู้รับตามสถานะและ Payment Mode
- */
-export async function getOrderDetail(
-  orderId: string,
-  userId: string,
-  prismaClient?: any
-): Promise<OrderDetail> {
-  const db = prismaClient || defaultPrisma;
-
-  let order = await loadAndAuthorizeOrder(db, orderId, userId, {
-    role: 'PARTICIPANT',
-    forbiddenMessage: 'คุณไม่มีสิทธิ์ดูคำสั่งซื้อนี้',
+const ORDER_DETAIL_INCLUDE = {
+  buyer: {
+    select: {
+      id: true,
+      nickname: true,
+      avatarUrl: true,
+      phoneNumber: true,
+      noShowCount: true,
+    },
+  },
+  seller: {
+    select: {
+      id: true,
+      nickname: true,
+      avatarUrl: true,
+      promptpayId: true,
+      verifiedName: true,
+      isVerifiedSeller: true,
+      shopProfile: { select: { shopName: true } },
+    },
+  },
+  deliveryDetail: true,
+  reviews: true,
+  paymentSlips: {
+    orderBy: { createdAt: 'desc' as const },
+    take: 1,
+  },
+  orderItems: {
     include: {
-      buyer: true,
-      seller: {
-        include: {
-          shopProfile: { select: { shopName: true } },
-        },
-      },
-      deliveryDetail: true,
-      reviews: true,
-      paymentSlips: {
-        orderBy: { createdAt: 'desc' },
-        take: 1,
-      },
-      orderItems: {
-        include: {
-          bookListing: {
-            include: {
-              bookCatalog: true,
-              images: {
-                orderBy: [{ isCover: 'desc' }, { displayOrder: 'asc' }],
-                take: 1,
-              },
-            },
+      bookListing: {
+        select: {
+          grade: true,
+          bookCatalog: { select: { title: true, coverUrl: true } },
+          images: {
+            orderBy: [{ isCover: 'desc' as const }, { displayOrder: 'asc' as const }],
+            take: 1,
+            select: { imageUrl: true },
           },
         },
       },
     },
-  });
+  },
+};
 
-  if (isRequestedOrderExpired(order)) {
-    const updatedCount = await expireOverdueRequestedOrders(db, { id: orderId });
-    if (updatedCount > 0) {
-      order = { ...order, status: 'EXPIRED' };
-    }
-  } else if (isShippedOrderAutoCompletable(order)) {
-    const completedCount = await autoCompleteOverdueShippedOrders(db, { id: orderId });
-    if (completedCount > 0) {
-      order = { ...order, status: 'COMPLETED' };
-    }
-  }
-
+async function formatOrderDetail(order: any, userId: string): Promise<OrderDetail> {
   const isSeller = userId === order.sellerId;
   const isBuyer = userId === order.buyerId;
   const paymentMethod = (order.paymentMethod || 'COD') as PaymentMethod;
@@ -1063,7 +1075,7 @@ export async function getOrderDetail(
         }
       : null;
 
-  const safeBuyerPhone = isBuyer ? order.buyer.phoneNumber ?? null : null;
+  const safeBuyerPhone = isBuyer ? order.buyer?.phoneNumber ?? null : null;
 
   const buyerReview = Array.isArray(order.reviews)
     ? order.reviews.find((r: any) => !order.buyerId || r.reviewerId === order.buyerId) ||
@@ -1112,7 +1124,7 @@ export async function getOrderDetail(
           openedAt: order.disputedAt,
         }
       : null,
-    items: order.orderItems.map((item: any) => ({
+    items: (order.orderItems || []).map((item: any) => ({
       bookId: item.bookListingId,
       title: item.bookListing.bookCatalog.title,
       price: Number(item.price),
@@ -1148,33 +1160,144 @@ export async function getOrderDetail(
 }
 
 /**
+ * ดูรายละเอียดคำสั่งซื้อ (GET /api/orders/:id)
+ * มี Logic ปกป้องข้อมูลส่วนบุคคล (PDPA) ซ่อนที่อยู่และเบอร์ผู้รับตามสถานะและ Payment Mode
+ */
+export async function getOrderDetail(
+  orderId: string,
+  userId: string,
+  prismaClient?: any
+): Promise<OrderDetail> {
+  const db = prismaClient || defaultPrisma;
+
+  let order = await loadAndAuthorizeOrder(db, orderId, userId, {
+    role: 'PARTICIPANT',
+    forbiddenMessage: 'คุณไม่มีสิทธิ์ดูคำสั่งซื้อนี้',
+    include: ORDER_DETAIL_INCLUDE,
+  });
+
+  if (isRequestedOrderExpired(order)) {
+    const updatedCount = await expireOverdueRequestedOrders(db, { id: orderId });
+    if (updatedCount > 0) {
+      order = { ...order, status: 'EXPIRED' };
+    }
+  } else if (isShippedOrderAutoCompletable(order)) {
+    const completedCount = await autoCompleteOverdueShippedOrders(db, { id: orderId });
+    if (completedCount > 0) {
+      order = { ...order, status: 'COMPLETED' };
+    }
+  }
+
+  return formatOrderDetail(order, userId);
+}
+
+/**
  * ดึงรายการคำสั่งซื้อของผู้ใช้ (GET /api/users/me/orders)
+ * รองรับ ?include=details เพื่อลด N+1 request จากฝั่ง Frontend ให้เหลือครั้งเดียว
  */
 export async function getUserOrders(
   userId: string,
   role?: 'buying' | 'selling',
-  prismaClient?: any
-): Promise<{ buying?: OrderSummaryItem[]; selling?: OrderSummaryItem[] }> {
+  prismaClient?: any,
+  options?: { includeDetails?: boolean }
+): Promise<{ buying?: OrderSummaryItem[]; selling?: OrderSummaryItem[]; details?: OrderDetail[] }> {
   const db = prismaClient || defaultPrisma;
-  const result: { buying?: OrderSummaryItem[]; selling?: OrderSummaryItem[] } = {};
+  const result: {
+    buying?: OrderSummaryItem[];
+    selling?: OrderSummaryItem[];
+    details?: OrderDetail[];
+  } = {};
 
-  await expireOverdueRequestedOrders(db, {
-    OR: [{ buyerId: userId }, { sellerId: userId }],
-  });
-  await autoCompleteOverdueShippedOrders(db, {
-    OR: [{ buyerId: userId }, { sellerId: userId }],
-  });
+  if (shouldRunUserLazyMaintenance(userId)) {
+    await Promise.all([
+      expireOverdueRequestedOrders(db, {
+        OR: [{ buyerId: userId }, { sellerId: userId }],
+      }),
+      autoCompleteOverdueShippedOrders(db, {
+        OR: [{ buyerId: userId }, { sellerId: userId }],
+      }),
+    ]);
+  }
 
-  if (!role || role === 'buying') {
-    const buyingOrders = await db.order.findMany({
-      where: { buyerId: userId },
+  if (options?.includeDetails) {
+    const whereClause =
+      role === 'buying'
+        ? { buyerId: userId }
+        : role === 'selling'
+        ? { sellerId: userId }
+        : { OR: [{ buyerId: userId }, { sellerId: userId }] };
+
+    const allOrders = await db.order.findMany({
+      where: whereClause,
       orderBy: { createdAt: 'desc' },
-      include: {
-        seller: { select: { nickname: true } },
-        orderItems: { select: { id: true } },
-      },
+      include: ORDER_DETAIL_INCLUDE,
     });
 
+    const formattedDetails = await Promise.all(
+      (allOrders || []).map((o: any) => formatOrderDetail(o, userId))
+    );
+    result.details = formattedDetails;
+
+    if (!role || role === 'buying') {
+      result.buying = (allOrders || [])
+        .filter((o: any) => o.buyerId === userId)
+        .map((o: any) => ({
+          id: o.id,
+          status: o.status,
+          shippingMethod: o.shippingMethod,
+          paymentMethod: o.paymentMethod || 'COD',
+          totalPrice: Number(o.totalPrice),
+          itemsCount: (o.orderItems || []).length,
+          sellerNickname: o.seller?.nickname || 'ร้านค้ากองดอง',
+          createdAt: o.createdAt,
+        }));
+    }
+
+    if (!role || role === 'selling') {
+      result.selling = (allOrders || [])
+        .filter((o: any) => o.sellerId === userId)
+        .map((o: any) => ({
+          id: o.id,
+          status: o.status,
+          shippingMethod: o.shippingMethod,
+          paymentMethod: o.paymentMethod || 'COD',
+          totalPrice: Number(o.totalPrice),
+          itemsCount: (o.orderItems || []).length,
+          buyerNickname:
+            o.status === 'REQUESTED'
+              ? `ผู้ซื้อ #${String(o.id).slice(-4)}`
+              : o.buyer?.nickname || 'ผู้ซื้อกองดอง',
+          createdAt: o.createdAt,
+        }));
+    }
+
+    return result;
+  }
+
+  const [buyingOrders, sellingOrders] = await Promise.all([
+    !role || role === 'buying'
+      ? db.order.findMany({
+          where: { buyerId: userId },
+          orderBy: { createdAt: 'desc' },
+          include: {
+            seller: { select: { nickname: true } },
+            orderItems: { select: { id: true } },
+          },
+        })
+      : Promise.resolve(null),
+    !role || role === 'selling'
+      ? db.order.findMany({
+          where: { sellerId: userId },
+          orderBy: { createdAt: 'desc' },
+          include: {
+            buyer: { select: { nickname: true } },
+            orderItems: { select: { id: true } },
+          },
+        })
+      : Promise.resolve(null),
+  ]);
+
+  if (buyingOrders) {
     result.buying = buyingOrders.map((o: any) => ({
       id: o.id,
       status: o.status,
@@ -1187,16 +1310,7 @@ export async function getUserOrders(
     }));
   }
 
-  if (!role || role === 'selling') {
-    const sellingOrders = await db.order.findMany({
-      where: { sellerId: userId },
-      orderBy: { createdAt: 'desc' },
-      include: {
-        buyer: { select: { nickname: true } },
-        orderItems: { select: { id: true } },
-      },
-    });
-
+  if (sellingOrders) {
     result.selling = sellingOrders.map((o: any) => ({
       id: o.id,
       status: o.status,
