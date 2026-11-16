@@ -23,7 +23,7 @@ import {
 
 export default function SellerListStep4Page() {
   const router = useRouter();
-  const { draft, grade, update, toggleDelivery } = useListing();
+  const { draft, grade, update, toggleDelivery, resetDraft } = useListing();
   const { publishListing, shop } = useSeller();
 
   const isSet = draft.mode === 'SET';
@@ -51,9 +51,9 @@ export default function SellerListStep4Page() {
     setError(null);
     setPublishing(true);
     try {
-      update({ price });
       const created = await publishListing({ ...draft, price });
-      router.push(`/seller/list/success?id=${encodeURIComponent(created.id)}`);
+      resetDraft('SINGLE');
+      router.replace(`/seller/list/success?id=${encodeURIComponent(created.id)}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'ลงประกาศขายไม่สำเร็จ');
     } finally {

@@ -1,10 +1,14 @@
 'use client';
 
-import React, { Suspense, useState } from 'react';
+import React, { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Button, Toast, GradeBadge } from '@/components/ui';
 import { useListing } from '@/hooks/useListing';
 import { useLiff } from '@/hooks/useLiff';
+import { useSeller } from '@/hooks/useSeller';
+import { api } from '@/lib/api';
+import { BackendBookDetail, mapBackendBookDetailToBook } from '@/lib/mappers';
+import { BookGrade } from '@/types';
 import {
   CheckCircle2,
   Share2,
@@ -14,13 +18,65 @@ import {
   MessageCircle,
 } from 'lucide-react';
 
+interface PublishedBookSummary {
+  title: string;
+  author: string;
+  cover: string;
+  grade: BookGrade;
+  price: number;
+}
+
 function SellerListSuccessContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const createdId = searchParams.get('id');
   const { draft, grade, resetDraft } = useListing();
+  const { listings } = useSeller();
   const { shareTargetPicker } = useLiff();
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [fetchedSummary, setFetchedSummary] = useState<PublishedBookSummary | null>(null);
+
+  const matchedListing = createdId
+    ? listings.find((item) => item.id === createdId)
+    : undefined;
+
+  useEffect(() => {
+    if (!createdId || matchedListing) return;
+    let active = true;
+    api
+      .get<BackendBookDetail>(`/api/books/${encodeURIComponent(createdId)}`)
+      .then((detail) => {
+        if (!active) return;
+        const mapped = mapBackendBookDetailToBook(detail);
+        setFetchedSummary({
+          title: mapped.title,
+          author: mapped.author,
+          cover: mapped.photos.cover,
+          grade: mapped.grade,
+          price: mapped.price,
+        });
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [createdId, matchedListing]);
+
+  const summary: PublishedBookSummary = matchedListing
+    ? {
+        title: matchedListing.title,
+        author: matchedListing.author,
+        cover: matchedListing.photos.cover,
+        grade: matchedListing.grade,
+        price: matchedListing.price,
+      }
+    : fetchedSummary ?? {
+        title: draft.title || 'หนังสือที่ลงขาย',
+        author: draft.author,
+        cover: draft.photos.cover,
+        grade,
+        price: draft.price,
+      };
 
   const liffId = process.env.NEXT_PUBLIC_LIFF_ID;
   const bookPath = createdId ? `/book/${createdId}` : '/search';
@@ -35,7 +91,7 @@ function SellerListSuccessContent() {
     const shared = await shareTargetPicker([
       {
         type: 'text',
-        text: `หนังสือสภาพดีจากกองดอง: ${draft.title} ราคา ฿${draft.price.toLocaleString()}\n${shareUrl}`,
+        text: `หนังสือสภาพดีจากกองดอง: ${summary.title} ราคา ฿${summary.price.toLocaleString()}\n${shareUrl}`,
       },
     ]);
     if (!shared) {
@@ -67,10 +123,10 @@ function SellerListSuccessContent() {
         <div className="bg-white rounded-2xl border border-slate-200 p-4 space-y-3">
           <div className="flex gap-3">
             <div className="w-16 h-22 rounded-xl bg-slate-100 overflow-hidden shrink-0">
-              {draft.photos.cover ? (
+              {summary.cover ? (
                 <img
-                  src={draft.photos.cover}
-                  alt={draft.title}
+                  src={summary.cover}
+                  alt={summary.title}
                   className="w-full h-full object-cover"
                 />
               ) : (
@@ -81,14 +137,14 @@ function SellerListSuccessContent() {
             </div>
             <div className="min-w-0 flex-1">
               <h2 className="text-sm font-bold text-slate-900 leading-snug line-clamp-2">
-                {draft.title}
+                {summary.title}
               </h2>
-              <p className="text-[11px] text-slate-500 mt-0.5">{draft.author}</p>
+              <p className="text-[11px] text-slate-500 mt-0.5">{summary.author}</p>
               <div className="mt-1.5">
-                <GradeBadge grade={grade} size="sm" />
+                <GradeBadge grade={summary.grade} size="sm" />
               </div>
               <p className="text-lg font-black text-[#8B5E3C] mt-1">
-                ฿{draft.price.toLocaleString()}
+                ฿{summary.price.toLocaleString()}
               </p>
             </div>
           </div>

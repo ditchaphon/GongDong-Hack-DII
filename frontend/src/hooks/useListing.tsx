@@ -2,6 +2,7 @@
 
 import React, {
   createContext,
+  useCallback,
   useContext,
   useMemo,
   useState,
@@ -69,10 +70,30 @@ export interface ListingContextValue {
 
 const ListingContext = createContext<ListingContextValue | null>(null);
 
+function createEmptyDraft(mode: 'SINGLE' | 'SET' = 'SINGLE'): ListingDraft {
+  return {
+    ...EMPTY_DRAFT,
+    mode,
+    totalVolumes: mode === 'SET' ? 2 : 1,
+    categories: [],
+    missingVolumes: [],
+    photos: {
+      cover: '',
+      back: '',
+      spine: '',
+      nameTag: '',
+      defects: [],
+    },
+    checklist: { ...EMPTY_CHECKLIST },
+    defects: [],
+    deliveryMethods: ['MEETUP'],
+  };
+}
+
 export const ListingProvider: React.FC<{ children: ReactNode }> = ({
   children,
 }) => {
-  const [draft, setDraft] = useState<ListingDraft>(EMPTY_DRAFT);
+  const [draft, setDraft] = useState<ListingDraft>(() => createEmptyDraft('SINGLE'));
 
   const grade = useMemo(() => calculateGrade(draft.checklist), [draft.checklist]);
 
@@ -140,8 +161,10 @@ export const ListingProvider: React.FC<{ children: ReactNode }> = ({
         : [...prev.missingVolumes, volume].sort((a, b) => a - b),
     }));
 
-  const resetDraft = (mode: 'SINGLE' | 'SET' = 'SINGLE') =>
-    setDraft({ ...EMPTY_DRAFT, mode, totalVolumes: mode === 'SET' ? 2 : 1 });
+  const resetDraft = useCallback(
+    (mode: 'SINGLE' | 'SET' = 'SINGLE') => setDraft(createEmptyDraft(mode)),
+    []
+  );
 
   return (
     <ListingContext.Provider
