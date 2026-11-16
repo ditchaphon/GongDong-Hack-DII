@@ -41,6 +41,11 @@ const envSchema = z.object({
 
   // Google Books API (optional: reduces HTTP 429 rate-limit hits)
   GOOGLE_BOOKS_API_KEY: z.string().optional(),
+
+  // Admin & Scheduled Cron Secrets
+  ADMIN_API_KEY: z.string().optional(),
+  ADMIN_LINE_USER_IDS: z.string().optional(),
+  CRON_SECRET: z.string().optional(),
 });
 
 export const env = envSchema.parse(process.env);

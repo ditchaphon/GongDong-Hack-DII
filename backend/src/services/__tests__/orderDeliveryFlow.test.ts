@@ -792,6 +792,7 @@ describe('OrderService - Delivery Flow & PDPA Protection', () => {
         sellerId: 'usr_seller_1',
         shippingMethod: 'PICKUP',
         status: 'SCHEDULED',
+        scheduleConfirmedByBuyer: true,
         scheduledAt,
       });
 
@@ -800,7 +801,27 @@ describe('OrderService - Delivery Flow & PDPA Protection', () => {
       ).rejects.toThrow('ยังไม่ถึงเวลานัดหมาย + 15 นาที');
     });
 
-    it('กรณีเลยเวลานัดหมายเกิน 15 นาที: บันทึกรายงานสำเร็จ', async () => {
+    it('ต้องปฏิเสธหากผู้ซื้อยังไม่ได้ยืนยันเวลานัดหมาย (SCHEDULE_NOT_CONFIRMED_BY_BUYER)', async () => {
+      const scheduledAt = new Date(Date.now() - 60 * 60 * 1000);
+
+      mockDb.order.findUnique.mockResolvedValue({
+        id: 'ord_pickup_1',
+        sellerId: 'usr_seller_1',
+        shippingMethod: 'PICKUP',
+        status: 'SCHEDULED',
+        scheduleConfirmedByBuyer: false,
+        scheduledAt,
+      });
+
+      await expect(
+        reportMissedMeeting('ord_pickup_1', 'usr_seller_1', mockDb)
+      ).rejects.toMatchObject({
+        statusCode: 400,
+        code: 'SCHEDULE_NOT_CONFIRMED_BY_BUYER',
+      });
+    });
+
+    it('กรณีเลยเวลานัดหมายเกิน 15 นาที และผู้ซื้อยืนยันนัดแล้ว: บันทึกรายงานสำเร็จ', async () => {
       // นัดหมายตอน 16:00 (เลยมาแล้ว 60 นาที)
       const scheduledAt = new Date(Date.now() - 60 * 60 * 1000);
 
@@ -809,6 +830,7 @@ describe('OrderService - Delivery Flow & PDPA Protection', () => {
         sellerId: 'usr_seller_1',
         shippingMethod: 'PICKUP',
         status: 'SCHEDULED',
+        scheduleConfirmedByBuyer: true,
         scheduledAt,
       });
       mockDb.order.update.mockResolvedValue({});

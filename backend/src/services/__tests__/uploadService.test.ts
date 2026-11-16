@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  deleteUploadedImage,
   extractStoragePathFromUrl,
   MAX_UPLOAD_BYTES,
+  parseStorageRefFromUrl,
+  removeUnreferencedStorageUrls,
   resolveSignedStorageUrl,
   uploadImage,
   validateUploadInput,
@@ -147,5 +150,153 @@ describe('uploadService', () => {
         size: pngBytes.length,
       })
     ).toBe('book-listings');
+  });
+
+  describe('deleteUploadedImage & removeUnreferencedStorageUrls', () => {
+    it('ลบไฟล์ที่ผู้ใช้เป็นเจ้าของและยังไม่ถูกอ้างอิงใน DB ออกจาก Supabase Storage ได้', async () => {
+      const removeMock = vi.fn().mockResolvedValue({ error: null });
+      const fakeSupabase: any = {
+        storage: {
+          from: vi.fn().mockReturnValue({ remove: removeMock }),
+        },
+      };
+      const fakeDb: any = {
+        bookListingImage: { findFirst: vi.fn().mockResolvedValue(null) },
+        bookCatalog: { findFirst: vi.fn().mockResolvedValue(null) },
+      };
+
+      const url =
+        'https://proj.supabase.co/storage/v1/object/public/book-listings/usr-1/cover-old.webp';
+      expect(parseStorageRefFromUrl(url)).toEqual({
+        bucket: 'book-listings',
+        path: 'usr-1/cover-old.webp',
+        rawUrl: url,
+      });
+
+      const res = await deleteUploadedImage(
+        'usr-1',
+        { url },
+        { prismaClient: fakeDb, supabaseClientOverride: fakeSupabase }
+      );
+
+      expect(fakeSupabase.storage.from).toHaveBeenCalledWith('book-listings');
+      expect(removeMock).toHaveBeenCalledWith(['usr-1/cover-old.webp']);
+      expect(res).toMatchObject({
+        deleted: true,
+        skipped: false,
+        bucket: 'book-listings',
+        path: 'usr-1/cover-old.webp',
+      });
+    });
+
+    it('ปฏิเสธด้วย 403 FORBIDDEN เมื่อพยายามลบไฟล์ของ user อื่น หรือมี path traversal', async () => {
+      const removeMock = vi.fn();
+      const fakeSupabase: any = {
+        storage: { from: vi.fn().mockReturnValue({ remove: removeMock }) },
+      };
+
+      await expect(
+        deleteUploadedImage(
+          'usr-1',
+          {
+            url: 'https://proj.supabase.co/storage/v1/object/public/book-listings/usr-other/secret.webp',
+          },
+          { prismaClient: {}, supabaseClientOverride: fakeSupabase }
+        )
+      ).rejects.toMatchObject({
+        statusCode: 403,
+        code: 'FORBIDDEN',
+      });
+
+      await expect(
+        deleteUploadedImage(
+          'usr-1',
+          { bucket: 'book-listings', path: 'usr-1/../usr-other/secret.webp' },
+          { prismaClient: {}, supabaseClientOverride: fakeSupabase }
+        )
+      ).rejects.toMatchObject({
+        statusCode: 403,
+        code: 'FORBIDDEN',
+      });
+
+      expect(removeMock).not.toHaveBeenCalled();
+    });
+
+    it('ข้ามการลบ (REFERENCED_IN_DB) หากไฟล์ยังถูกอ้างอิงโดย BookListingImage หรือ BookCatalog', async () => {
+      const removeMock = vi.fn();
+      const fakeSupabase: any = {
+        storage: { from: vi.fn().mockReturnValue({ remove: removeMock }) },
+      };
+      const fakeDb: any = {
+        bookListingImage: { findFirst: vi.fn().mockResolvedValue(null) },
+        bookCatalog: { findFirst: vi.fn().mockResolvedValue({ isbn: '9786160000001' }) },
+      };
+
+      const res = await deleteUploadedImage(
+        'usr-1',
+        {
+          url: 'https://proj.supabase.co/storage/v1/object/public/book-listings/usr-1/cover.webp',
+        },
+        { prismaClient: fakeDb, supabaseClientOverride: fakeSupabase }
+      );
+
+      expect(res).toMatchObject({
+        deleted: false,
+        skipped: true,
+        reason: 'REFERENCED_IN_DB',
+      });
+      expect(removeMock).not.toHaveBeenCalled();
+    });
+
+    it('ข้าม URL ภายนอก (เช่น demo Unsplash) อย่างปลอดภัยโดยไม่เรียก storage.remove', async () => {
+      const removeMock = vi.fn();
+      const fakeSupabase: any = {
+        storage: { from: vi.fn().mockReturnValue({ remove: removeMock }) },
+      };
+
+      const res = await deleteUploadedImage(
+        'usr-1',
+        { url: 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=600' },
+        { prismaClient: {}, supabaseClientOverride: fakeSupabase }
+      );
+
+      expect(res).toEqual({
+        deleted: false,
+        skipped: true,
+        reason: 'EXTERNAL_URL',
+      });
+      expect(removeMock).not.toHaveBeenCalled();
+    });
+
+    it('removeUnreferencedStorageUrls ลบเฉพาะ URL ที่ไม่มี record อ้างอิงแล้วแบบ batch', async () => {
+      const removeMock = vi.fn().mockResolvedValue({ error: null });
+      const fakeSupabase: any = {
+        storage: { from: vi.fn().mockReturnValue({ remove: removeMock }) },
+      };
+      const coverUrl =
+        'https://proj.supabase.co/storage/v1/object/public/book-listings/usr-1/cover.webp';
+      const backUrl =
+        'https://proj.supabase.co/storage/v1/object/public/book-listings/usr-1/back.webp';
+
+      const fakeDb: any = {
+        bookListingImage: { findFirst: vi.fn().mockResolvedValue(null) },
+        bookCatalog: {
+          findFirst: vi.fn().mockImplementation(async ({ where }: any) => {
+            const matchesCover = JSON.stringify(where).includes('usr-1/cover.webp');
+            return matchesCover ? { isbn: '9781234567890' } : null;
+          }),
+        },
+      };
+
+      const res = await removeUnreferencedStorageUrls([coverUrl, backUrl, backUrl], {
+        expectedBucket: 'book-listings',
+        ownerUserId: 'usr-1',
+        prismaClient: fakeDb,
+        supabaseClientOverride: fakeSupabase,
+      });
+
+      expect(res.removedPaths).toEqual(['usr-1/back.webp']);
+      expect(removeMock).toHaveBeenCalledWith(['usr-1/back.webp']);
+    });
   });
 });

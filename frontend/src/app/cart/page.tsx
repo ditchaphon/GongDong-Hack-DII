@@ -7,6 +7,7 @@ import clsx from 'clsx';
 import { TopBar } from '@/components/layout/TopBar';
 import { Button, BottomSheet, EmptyState } from '@/components/ui';
 import { CartShopGroup, useCart } from '@/hooks/useCart';
+import { useLiff } from '@/hooks/useLiff';
 import { CreateOrderInput, useV4Orders } from '@/hooks/useV4Orders';
 import { api, ApiError } from '@/lib/api';
 import { toV4Grade } from '@/lib/catalog';
@@ -79,7 +80,8 @@ function evaluateShopGroup(
   isShopLoading: boolean,
   config: ShopCheckoutConfig | undefined,
   missingBookIds: Set<string>,
-  pendingOrderIdBySeller: Map<string, string>
+  pendingOrderIdBySeller: Map<string, string>,
+  currentUserId?: string
 ): ShopValidationResult {
   const points = shop?.meetupPoints ?? [];
   const availableDays = shop?.availableDays?.length ? shop.availableDays : ['จ', 'อ', 'พ', 'พฤ', 'ศ'];
@@ -124,9 +126,13 @@ function evaluateShopGroup(
     delivery = 'PARCEL';
   }
 
+  const isOwnShop = Boolean(currentUserId && group.sellerId === currentUserId);
   const existingPendingOrderId = pendingOrderIdBySeller.get(group.sellerId) ?? null;
   const issueMessages: string[] = [];
 
+  if (isOwnShop) {
+    issueMessages.push('ไม่สามารถสั่งซื้อหนังสือจากร้านของตนเองได้ กรุณานำรายการนี้ออก');
+  }
   if (existingPendingOrderId) {
     issueMessages.push('คุณมีคำขอซื้อที่รอร้านค้านี้อนุมัติอยู่แล้ว (จำกัด 1 คำขอค้างต่อร้าน)');
   }
@@ -147,6 +153,7 @@ function evaluateShopGroup(
   }
 
   const isBlockingIssue =
+    isOwnShop ||
     isShopLoading ||
     Boolean(existingPendingOrderId) ||
     unavailableBookIds.size > 0 ||
@@ -172,6 +179,7 @@ function evaluateShopGroup(
 
 export default function CartPage() {
   const router = useRouter();
+  const { user } = useLiff();
   const {
     items,
     shopGroups,
@@ -432,11 +440,12 @@ export default function CartPage() {
         isLoading,
         configsBySeller[group.sellerId],
         missingBookIds,
-        pendingOrderIdBySeller
+        pendingOrderIdBySeller,
+        user?.id
       );
     }
     return out;
-  }, [displayGroups, shopsBySeller, loadingShops, configsBySeller, missingBookIds, pendingOrderIdBySeller]);
+  }, [displayGroups, shopsBySeller, loadingShops, configsBySeller, missingBookIds, pendingOrderIdBySeller, user?.id]);
 
   const selectedGroups = useMemo(
     () =>
@@ -618,6 +627,25 @@ export default function CartPage() {
               description={buyNowError || 'ไม่พบข้อมูลหนังสือในระบบ'}
               actionText="กลับหน้าหลัก"
               onAction={() => router.push('/')}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (buyNowId && buyNowBook && user?.id && buyNowBook.sellerId === user.id) {
+    return (
+      <div className="flex flex-col min-h-screen bg-slate-50 select-none">
+        <TopBar title="สั่งซื้อทันที" />
+        <div className="flex-1 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 border border-slate-200 w-full text-center">
+            <EmptyState
+              icon={<Store className="w-10 h-10 text-amber-500" />}
+              title="ไม่สามารถสั่งซื้อหนังสือของตัวเองได้"
+              description="รายการนี้เป็นหนังสือจากร้านของคุณเอง ระบบไม่อนุญาตให้ส่งคำขอซื้อสินค้าของตนเอง"
+              actionText="กลับไปหน้าหนังสือ"
+              onAction={() => router.push(`/book/${buyNowBook.id}`)}
             />
           </div>
         </div>

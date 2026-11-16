@@ -1,5 +1,7 @@
 import { compressImageToWebp, dataUrlToFile } from './imageCompression';
 
+const STORAGE_URL_MARKERS = ['/storage/v1/object/', 'mock-storage.gongdong.local/'];
+
 export type UploadBucket =
   | 'book-listings'
   | 'avatars'
@@ -154,4 +156,46 @@ export async function uploadImageFile(
   formData.append('file', compressedFile);
 
   return api.post<UploadImageResult>('/api/upload', formData);
+}
+
+/**
+ * True when the image string is a local deferred image (data URL or blob URL)
+ * that has not been uploaded to Supabase Storage yet.
+ */
+export function isLocalPendingImageUrl(value?: string | null): boolean {
+  if (!value) return false;
+  return value.startsWith('data:image/') || value.startsWith('blob:');
+}
+
+/**
+ * Upload a deferred local image only when needed; returns existing URLs untouched.
+ */
+export async function uploadDeferredImageIfNeeded(
+  value: string,
+  bucket: UploadBucket,
+  filename?: string
+): Promise<{ url: string; uploadedNow: boolean }> {
+  if (!isLocalPendingImageUrl(value)) {
+    return { url: value, uploadedNow: false };
+  }
+  const uploaded = await uploadImageFile(value, bucket, filename);
+  return { url: uploaded.url, uploadedNow: true };
+}
+
+export function isManagedStorageUrl(value?: string | null): boolean {
+  if (!value) return false;
+  return STORAGE_URL_MARKERS.some((marker) => value.includes(marker));
+}
+
+/**
+ * Best-effort deletion of an uploaded storage object when replaced or removed on the client.
+ * Skips local data/blob URLs and external URLs (e.g. demo Unsplash or catalog images).
+ */
+export async function safeDeleteUploadedImage(url?: string | null): Promise<void> {
+  if (!url || !isManagedStorageUrl(url)) return;
+  try {
+    await api.delete('/api/upload', { body: { url } });
+  } catch (err) {
+    console.warn('[api] Failed to cleanup replaced upload:', err);
+  }
 }

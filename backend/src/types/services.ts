@@ -521,6 +521,7 @@ export interface UserProfileResponse {
   verified_name: string | null;
   promptpay_id: string | null;
   is_verified_seller: boolean;
+  is_admin?: boolean;
   pdpa_consent_at?: Date | null;
   no_show_count: number;
   credits: number;

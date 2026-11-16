@@ -16,7 +16,7 @@ import { isTerminal } from '@/lib/orderStateMachine';
 
 export default function HomePage() {
   const router = useRouter();
-  const { isReady, isLoggedIn, idToken } = useLiff();
+  const { isReady, isLoggedIn, idToken, user } = useLiff();
   const { items: cartItems } = useCart();
   const { orders, isMineAsBuyer } = useV4Orders();
   const [books, setBooks] = useState<Book[]>([]);
@@ -261,6 +261,7 @@ export default function HomePage() {
                 <BookCard
                   key={book.id}
                   book={book}
+                  isOwnBook={Boolean(user?.id && book.sellerId === user.id)}
                   onClick={() => router.push(`/book/${book.id}`)}
                 />
               ))}

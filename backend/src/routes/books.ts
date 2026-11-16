@@ -3,6 +3,7 @@ import { authMiddleware } from '../middlewares/auth';
 import {
   createBookListing,
   deleteBookListing,
+  getBookIsbnComparison,
   getBookListingDetail,
   getBookListings,
   getPreviousListingsByIsbn,
@@ -173,6 +174,27 @@ bookRouter.get(
       const limit = parsePaginationInt(req.query.limit, 'limit') ?? 8;
       const result = await getRecommendedBooks(limit);
       res.status(200).json({ success: true, data: result });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * GET /api/books/:id/compare
+ * เปรียบเทียบหนังสือ ISBN เดียวกันจากร้านอื่นที่ยังพร้อมขาย (ISBN Smart Compare)
+ */
+bookRouter.get(
+  '/:id/compare',
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const id = String(req.params.id);
+      const result = await getBookIsbnComparison(id);
+
+      res.status(200).json({
+        success: true,
+        data: result,
+      });
     } catch (error) {
       next(error);
     }

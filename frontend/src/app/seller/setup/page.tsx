@@ -8,7 +8,7 @@ import { Button, Input, Toast } from '@/components/ui';
 import { MapPinPicker } from '@/components/v4';
 import { useSeller } from '@/hooks/useSeller';
 import { useAppMode } from '@/hooks/useAppMode';
-import { uploadImageFile } from '@/lib/api';
+import { safeDeleteUploadedImage, uploadImageFile } from '@/lib/api';
 import { MeetupPoint, ShipMode, THAI_PROVINCES, provinceCentre } from '@/lib/delivery';
 import { findContactLeaks } from '@/lib/masking';
 import {
@@ -361,7 +361,11 @@ export default function ShopSetupWizardPage() {
                           if (!file) return;
                           setIsUploadingAvatar(true);
                           try {
+                            const previousAvatar = shopAvatar;
                             const uploaded = await uploadImageFile(file, 'avatars');
+                            if (previousAvatar && previousAvatar !== uploaded.url) {
+                              void safeDeleteUploadedImage(previousAvatar);
+                            }
                             setShopAvatar(uploaded.url);
                             setToastMessage('อัปโหลดรูปร้านแล้ว');
                           } catch (err) {
@@ -380,7 +384,12 @@ export default function ShopSetupWizardPage() {
                     <button
                       key={url}
                       type="button"
-                      onClick={() => setShopAvatar(url)}
+                      onClick={() => {
+                        if (shopAvatar && shopAvatar !== url) {
+                          void safeDeleteUploadedImage(shopAvatar);
+                        }
+                        setShopAvatar(url);
+                      }}
                       aria-pressed={shopAvatar === url}
                       aria-label="เลือกรูปร้าน"
                       className={clsx(

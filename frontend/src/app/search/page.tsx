@@ -7,11 +7,13 @@ import { TopBar } from '@/components/layout/TopBar';
 import { api } from '@/lib/api';
 import { toV4Grade } from '@/lib/catalog';
 import { BackendBookFeedItem, mapBackendBookToBook } from '@/lib/mappers';
+import { useLiff } from '@/hooks/useLiff';
 import { Book } from '@/types';
 import { Filter, SlidersHorizontal, MapPin } from 'lucide-react';
 
 export default function SearchPage() {
   const router = useRouter();
+  const { user } = useLiff();
   const [books, setBooks] = useState<Book[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -253,6 +255,7 @@ export default function SearchPage() {
               <BookCard
                 key={book.id}
                 book={book}
+                isOwnBook={Boolean(user?.id && book.sellerId === user.id)}
                 onClick={() => router.push(`/book/${book.id}`)}
               />
             ))}

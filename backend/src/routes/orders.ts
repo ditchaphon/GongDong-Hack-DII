@@ -395,12 +395,18 @@ orderRouter.patch(
         throw new AppError('กรุณาระบุพิกัดละติจูดและลองจิจูดจุดนัดรับ', 400, 'MISSING_REQUIRED_FIELDS');
       }
 
+      const latNum = Number(pickup_lat);
+      const lngNum = Number(pickup_lng);
+      if (!Number.isFinite(latNum) || !Number.isFinite(lngNum)) {
+        throw new AppError('พิกัดจุดนัดรับต้องเป็นตัวเลขที่ถูกต้อง', 400, 'INVALID_COORDINATES');
+      }
+
       const result = await schedulePickupOrder(orderId, userId, {
         scheduledAt: scheduled_at,
         scheduleDateIso: schedule_date_iso || req.body.scheduleDateIso,
         scheduleTimeLabel: schedule_time_label || req.body.scheduleTimeLabel,
-        pickupLat: Number(pickup_lat),
-        pickupLng: Number(pickup_lng),
+        pickupLat: latNum,
+        pickupLng: lngNum,
         pickupLocationName: pickup_location_name,
       });
 

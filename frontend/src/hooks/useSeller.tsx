@@ -11,7 +11,12 @@ import React, {
 import { ListingDraft, ListingStatus, SellerListing } from '@/types';
 import { CreditEntry } from '@/types/v4';
 import { useLiff } from '@/hooks/useLiff';
-import { api } from '@/lib/api';
+import {
+  api,
+  isLocalPendingImageUrl,
+  safeDeleteUploadedImage,
+  uploadDeferredImageIfNeeded,
+} from '@/lib/api';
 import { checklistToConditionAnswers, toUiBookGrade } from '@/lib/catalog';
 import {
   BackendCreditLedgerRow,
@@ -235,115 +240,172 @@ export const SellerProvider: React.FC<{ children: ReactNode }> = ({
     const finalDelivery = allowedDelivery.length ? allowedDelivery : ['MEETUP'];
 
     const primaryCategory = draft.categories[0] || 'อื่น ๆ';
-    const coverUrl = draft.photos.cover || FALLBACK_COVER;
-    const backUrl = draft.photos.back || coverUrl;
-    const spineUrl = draft.photos.spine || coverUrl;
-    const innerUrl = draft.photos.inner || draft.photos.nameTag || coverUrl;
+    const rawCoverUrl = draft.photos.cover || FALLBACK_COVER;
+    const rawBackUrl = draft.photos.back || rawCoverUrl;
+    const rawSpineUrl = draft.photos.spine || rawCoverUrl;
+    const rawInnerUrl = draft.photos.inner || draft.photos.nameTag || rawCoverUrl;
 
-    const images: Array<{
-      imageUrl: string;
-      imageType: 'FRONT_COVER' | 'BACK_COVER' | 'SPINE' | 'INNER' | 'DEFECT';
-      displayOrder: number;
-      isCover?: boolean;
-    }> = [
-      { imageUrl: coverUrl, imageType: 'FRONT_COVER', displayOrder: 1, isCover: true },
-      { imageUrl: backUrl, imageType: 'BACK_COVER', displayOrder: 2 },
-      { imageUrl: spineUrl, imageType: 'SPINE', displayOrder: 3 },
-      { imageUrl: innerUrl, imageType: 'INNER', displayOrder: 4 },
-    ];
-
-    (draft.photos.defects ?? []).forEach((url, index) => {
-      if (url) {
-        images.push({
-          imageUrl: url,
-          imageType: 'DEFECT',
-          displayOrder: 5 + index,
+    const newlyUploadedUrls: string[] = [];
+    const uploadedCache = new Map<string, Promise<string>>();
+    const resolveImageUrl = async (rawUrl: string): Promise<string> => {
+      if (!rawUrl || !isLocalPendingImageUrl(rawUrl)) return rawUrl;
+      let pending = uploadedCache.get(rawUrl);
+      if (!pending) {
+        pending = uploadDeferredImageIfNeeded(rawUrl, 'book-listings').then((res) => {
+          if (res.uploadedNow) newlyUploadedUrls.push(res.url);
+          return res.url;
         });
+        uploadedCache.set(rawUrl, pending);
       }
-    });
-
-    const cleanIsbn = draft.isbn.replace(/[-\s]/g, '').trim();
-    const safeIsbn = /^(?:\d{9}[\dX]|\d{13})$/i.test(cleanIsbn)
-      ? cleanIsbn
-      : `299${String(Date.now()).slice(-10)}`;
-
-    const firstMeetup = shop?.meetupPoints[0];
-
-    const created = await api.post<{
-      id: string;
-      title: string;
-      categories?: string[];
-      price: number;
-      grade: string;
-    }>(
-      '/api/books',
-      {
-        isbn: safeIsbn,
-        title: draft.title.trim(),
-        author: draft.author.trim() || null,
-        publisher: draft.publisher.trim() || null,
-        category: primaryCategory,
-        categories: draft.categories.length ? draft.categories : [primaryCategory],
-        description: draft.description.trim() || null,
-        isSet: draft.mode === 'SET',
-        totalVolumes: draft.mode === 'SET' ? draft.totalVolumes : null,
-        missingVolumes: draft.mode === 'SET' ? draft.missingVolumes : [],
-        defects: draft.defects,
-        photoChecks: draft.photoChecks ?? {},
-        coverUrl,
-        originalPrice: draft.originalPrice > 0 ? draft.originalPrice : null,
-        price: draft.price,
-        conditionAnswers: checklistToConditionAnswers(draft.checklist),
-        allowPickup: finalDelivery.includes('MEETUP'),
-        pickupLat: firstMeetup?.lat ?? null,
-        pickupLng: firstMeetup?.lng ?? null,
-        pickupLocationName: firstMeetup?.name ?? null,
-        allowDelivery: finalDelivery.includes('PARCEL'),
-        codEnabled: true,
-        images,
-      },
-      { token: idToken }
-    );
-
-    await refreshSellerData();
-
-    return {
-      id: created.id,
-      title: created.title || draft.title,
-      author: draft.author,
-      publisher: draft.publisher || undefined,
-      description: draft.description || undefined,
-      categories: created.categories?.length ? created.categories : draft.categories,
-      isbn: safeIsbn,
-      isSet: draft.mode === 'SET',
-      totalVolumes: draft.mode === 'SET' ? draft.totalVolumes : undefined,
-      price: Number(created.price ?? draft.price),
-      originalPrice: draft.originalPrice || undefined,
-      grade: toUiBookGrade(created.grade),
-      checklist: draft.checklist,
-      photos: {
-        cover: coverUrl,
-        back: backUrl,
-        spine: spineUrl,
-        nameTag: innerUrl,
-        defects: draft.photos.defects,
-      },
-      sellerId: user.id,
-      sellerName: shop?.shopName || 'ร้านค้ากองดอง',
-      sellerRating: 0,
-      sellerAvatar: shop?.avatar,
-      isPromptPayVerified: shop?.payeeVerified ?? false,
-      deliveryMethods: finalDelivery as ListingDraft['deliveryMethods'],
-      meetupZones: shop?.meetupPoints.map((p) => p.name) ?? [],
-      createdAt: 'เมื่อสักครู่',
-      status: 'ACTIVE',
-      views: 0,
-      savedCount: 0,
-      defects: draft.defects.map((d) => ({
-        label: d.note,
-        photo: d.photo || FALLBACK_COVER,
-      })),
+      return pending;
     };
+
+    try {
+      const [coverUrl, backUrl, spineUrl, innerUrl] = await Promise.all([
+        resolveImageUrl(rawCoverUrl),
+        resolveImageUrl(rawBackUrl),
+        resolveImageUrl(rawSpineUrl),
+        resolveImageUrl(rawInnerUrl),
+      ]);
+
+      const resolvedDefects = await Promise.all(
+        draft.defects.map(async (defect) => ({
+          ...defect,
+          photo: defect.photo ? await resolveImageUrl(defect.photo) : undefined,
+        }))
+      );
+
+      const resolvedDefectPhotos = (
+        await Promise.all(
+          (draft.photos.defects ?? []).filter(Boolean).map((url) => resolveImageUrl(url))
+        )
+      ).filter(Boolean);
+
+      const resolvedPhotoChecks: typeof draft.photoChecks = draft.photoChecks
+        ? Object.fromEntries(
+            await Promise.all(
+              Object.entries(draft.photoChecks).map(async ([slot, check]) => [
+                slot,
+                check?.defectPhoto
+                  ? { ...check, defectPhoto: await resolveImageUrl(check.defectPhoto) }
+                  : check,
+              ])
+            )
+          )
+        : {};
+
+      const images: Array<{
+        imageUrl: string;
+        imageType: 'FRONT_COVER' | 'BACK_COVER' | 'SPINE' | 'INNER' | 'DEFECT';
+        displayOrder: number;
+        isCover?: boolean;
+      }> = [
+        { imageUrl: coverUrl, imageType: 'FRONT_COVER', displayOrder: 1, isCover: true },
+        { imageUrl: backUrl, imageType: 'BACK_COVER', displayOrder: 2 },
+        { imageUrl: spineUrl, imageType: 'SPINE', displayOrder: 3 },
+        { imageUrl: innerUrl, imageType: 'INNER', displayOrder: 4 },
+      ];
+
+      resolvedDefectPhotos.forEach((url, index) => {
+        if (url) {
+          images.push({
+            imageUrl: url,
+            imageType: 'DEFECT',
+            displayOrder: 5 + index,
+          });
+        }
+      });
+
+      const cleanIsbn = draft.isbn.replace(/[-\s]/g, '').trim();
+      const safeIsbn = /^(?:\d{9}[\dX]|\d{13})$/i.test(cleanIsbn)
+        ? cleanIsbn
+        : `299${String(Date.now()).slice(-10)}`;
+
+      const firstMeetup = shop?.meetupPoints[0];
+
+      const created = await api.post<{
+        id: string;
+        title: string;
+        categories?: string[];
+        price: number;
+        grade: string;
+      }>(
+        '/api/books',
+        {
+          isbn: safeIsbn,
+          title: draft.title.trim(),
+          author: draft.author.trim() || null,
+          publisher: draft.publisher.trim() || null,
+          category: primaryCategory,
+          categories: draft.categories.length ? draft.categories : [primaryCategory],
+          description: draft.description.trim() || null,
+          isSet: draft.mode === 'SET',
+          totalVolumes: draft.mode === 'SET' ? draft.totalVolumes : null,
+          missingVolumes: draft.mode === 'SET' ? draft.missingVolumes : [],
+          defects: resolvedDefects,
+          photoChecks: resolvedPhotoChecks,
+          coverUrl,
+          originalPrice: draft.originalPrice > 0 ? draft.originalPrice : null,
+          price: draft.price,
+          conditionAnswers: checklistToConditionAnswers(draft.checklist),
+          allowPickup: finalDelivery.includes('MEETUP'),
+          pickupLat: firstMeetup?.lat ?? null,
+          pickupLng: firstMeetup?.lng ?? null,
+          pickupLocationName: firstMeetup?.name ?? null,
+          allowDelivery: finalDelivery.includes('PARCEL'),
+          codEnabled: true,
+          images,
+        },
+        { token: idToken }
+      );
+
+      await refreshSellerData();
+
+      return {
+        id: created.id,
+        title: created.title || draft.title,
+        author: draft.author,
+        publisher: draft.publisher || undefined,
+        description: draft.description || undefined,
+        categories: created.categories?.length ? created.categories : draft.categories,
+        isbn: safeIsbn,
+        isSet: draft.mode === 'SET',
+        totalVolumes: draft.mode === 'SET' ? draft.totalVolumes : undefined,
+        price: Number(created.price ?? draft.price),
+        originalPrice: draft.originalPrice || undefined,
+        grade: toUiBookGrade(created.grade),
+        checklist: draft.checklist,
+        photos: {
+          cover: coverUrl,
+          back: backUrl,
+          spine: spineUrl,
+          nameTag: innerUrl,
+          defects: resolvedDefectPhotos,
+        },
+        sellerId: user.id,
+        sellerName: shop?.shopName || 'ร้านค้ากองดอง',
+        sellerRating: 0,
+        sellerAvatar: shop?.avatar,
+        isPromptPayVerified: shop?.payeeVerified ?? false,
+        deliveryMethods: finalDelivery as ListingDraft['deliveryMethods'],
+        meetupZones: shop?.meetupPoints.map((p) => p.name) ?? [],
+        createdAt: 'เมื่อสักครู่',
+        status: 'ACTIVE',
+        views: 0,
+        savedCount: 0,
+        defects: resolvedDefects.map((d) => ({
+          label: d.note,
+          photo: d.photo || FALLBACK_COVER,
+        })),
+      };
+    } catch (err) {
+      if (newlyUploadedUrls.length > 0) {
+        await Promise.allSettled(
+          newlyUploadedUrls.map((url) => safeDeleteUploadedImage(url))
+        );
+      }
+      throw err;
+    }
   };
 
   const updateListing = async (id: string, patch: Partial<SellerListing>) => {

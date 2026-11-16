@@ -119,6 +119,7 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
   const [acceptOpen, setAcceptOpen] = useState(false);
   const [rejectOpen, setRejectOpen] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
+  const [cancelReason, setCancelReason] = useState('');
   const [disputeOpen, setDisputeOpen] = useState(false);
   const [handoverCodeInput, setHandoverCodeInput] = useState('');
   const [verifyingHandover, setVerifyingHandover] = useState(false);
@@ -542,6 +543,19 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
           }}
         />
 
+        {['ACCEPTED', 'SCHEDULED'].includes(order.status) && (
+          <button
+            type="button"
+            onClick={() => {
+              setCancelReason('');
+              setCancelOpen(true);
+            }}
+            className="w-full flex items-center justify-center gap-1.5 p-3 rounded-2xl bg-white border border-slate-200 text-[11px] font-semibold text-slate-600 hover:bg-slate-50"
+          >
+            ยกเลิกออเดอร์นี้
+          </button>
+        )}
+
         {['SCHEDULED', 'ACCEPTED', 'PAID', 'SHIPPED'].includes(order.status) && (
           <button
             type="button"
@@ -578,16 +592,69 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
       <ConfirmSheet
         isOpen={cancelOpen}
         onClose={() => setCancelOpen(false)}
-        title="ยกเลิกคำขอซื้อ?"
-        description="คำขอจะถูกยกเลิก · หนังสือยังวางขายให้คนอื่นขอได้"
-        confirmLabel="ยกเลิกคำขอ"
+        title={order.status === 'REQUESTED' ? 'ยกเลิกคำขอซื้อ?' : 'ยกเลิกออเดอร์นี้?'}
+        description={
+          order.status === 'REQUESTED'
+            ? 'คำขอจะถูกยกเลิก · หนังสือยังวางขายให้คนอื่นขอได้'
+            : isBuyer
+              ? 'หนังสือจะกลับไปวางขายต่อ และระบบจะคืน 1 เครดิตให้ผู้ขาย'
+              : 'หนังสือจะกลับไปวางขายต่อ · ผู้ขายยกเลิกหลังรับออเดอร์จะไม่ได้รับเครดิตคืน'
+        }
+        confirmLabel="ยืนยันยกเลิก"
         tone="danger"
         onConfirm={async () => {
-          const res = await cancelOrder(order.id);
+          const reasonToSend =
+            cancelReason.trim() ||
+            (order.status === 'REQUESTED' ? 'ผู้ซื้อยกเลิกคำขอ' : '');
+          if (!reasonToSend) {
+            setToast('กรุณาระบุเหตุผลการยกเลิกก่อน');
+            return;
+          }
+          const res = await cancelOrder(order.id, reasonToSend);
           setCancelOpen(false);
-          setToast(res.ok ? 'ยกเลิกคำขอแล้ว' : res.error || 'ยกเลิกไม่สำเร็จ');
+          setCancelReason('');
+          setToast(res.ok ? 'ยกเลิกออเดอร์เรียบร้อยแล้ว' : res.error || 'ยกเลิกไม่สำเร็จ');
         }}
-      />
+      >
+        <div className="space-y-2.5">
+          <div className="flex flex-wrap gap-1.5">
+            {(order.status === 'REQUESTED'
+              ? ['เปลี่ยนใจ / เลือกเล่มอื่นแล้ว', 'ส่งคำขอผิดรายการ']
+              : isBuyer
+                ? ['ตกลงวันเวลาไม่ตรงกัน', 'เปลี่ยนใจ / ไม่สะดวกนัดรับ']
+                : ['ตกลงวันเวลาไม่ตรงกัน', 'หนังสือชำรุด / ไม่พร้อมส่ง']
+            ).map((preset) => (
+              <button
+                key={preset}
+                type="button"
+                onClick={() => setCancelReason(preset)}
+                className={clsx(
+                  'px-2.5 py-1 rounded-full text-[11px] font-medium border transition',
+                  cancelReason === preset
+                    ? 'bg-rose-50 border-rose-400 text-rose-700'
+                    : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                )}
+              >
+                {preset}
+              </button>
+            ))}
+          </div>
+          <input
+            type="text"
+            maxLength={150}
+            value={cancelReason}
+            onChange={(e) => setCancelReason(e.target.value)}
+            placeholder="ระบุเหตุผลการยกเลิก..."
+            className="w-full text-xs px-3 py-2.5 rounded-xl border border-slate-200 bg-white focus:outline-none focus:border-rose-400"
+          />
+          {order.status !== 'REQUESTED' && !isBuyer && (
+            <p className="flex items-start gap-1.5 text-[10px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-2">
+              <AlertTriangle className="w-3 h-3 shrink-0 mt-0.5" />
+              คำเตือน: หากผู้ขายเป็นฝ่ายยกเลิกหลังรับออเดอร์ ระบบจะไม่คืน 1 เครดิตที่ถูกหักไปแล้ว
+            </p>
+          )}
+        </div>
+      </ConfirmSheet>
       <ConfirmSheet
         isOpen={disputeOpen}
         onClose={() => setDisputeOpen(false)}

@@ -4,7 +4,10 @@ import React, { useEffect, useRef, useState } from 'react';
 import clsx from 'clsx';
 import { Camera, X, RefreshCcw, ScanLine, Loader2, CameraOff, ImageIcon } from 'lucide-react';
 import { uploadImageFile, UploadBucket } from '@/lib/api';
-import { prepareImageForPreviewAndUpload } from '@/lib/imageCompression';
+import {
+  compressImageToDataUrl,
+  prepareImageForPreviewAndUpload,
+} from '@/lib/imageCompression';
 
 export interface CameraCaptureProps {
   isOpen: boolean;
@@ -19,6 +22,8 @@ export interface CameraCaptureProps {
   demoImage?: string;
   /** Supabase Storage bucket for uploaded photos (defaults to 'book-listings'). */
   bucket?: UploadBucket;
+  /** Keep compressed image locally in draft state and upload only on final form submit. */
+  deferUpload?: boolean;
 }
 
 /** Camera sheet: capture with the device camera or choose an existing photo. */
@@ -32,6 +37,7 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({
   onScan,
   demoImage,
   bucket = 'book-listings',
+  deferUpload = false,
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -138,10 +144,21 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({
     setUploading(true);
     setUploadError(null);
     try {
-      const result = await uploadImageFile(selectedFileRef.current ?? shot, bucket);
-      onCapture?.(result.url);
+      if (deferUpload) {
+        const localDataUrl = await compressImageToDataUrl(selectedFileRef.current ?? shot);
+        onCapture?.(localDataUrl);
+      } else {
+        const result = await uploadImageFile(selectedFileRef.current ?? shot, bucket);
+        onCapture?.(result.url);
+      }
     } catch (err) {
-      setUploadError(err instanceof Error ? err.message : 'อัปโหลดรูปไม่สำเร็จ กรุณาลองใหม่');
+      setUploadError(
+        err instanceof Error
+          ? err.message
+          : deferUpload
+            ? 'เตรียมรูปภาพไม่สำเร็จ กรุณาลองใหม่'
+            : 'อัปโหลดรูปไม่สำเร็จ กรุณาลองใหม่'
+      );
     } finally {
       setUploading(false);
     }
@@ -242,7 +259,7 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({
                   {uploading ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      กำลังอัปโหลด…
+                      {deferUpload ? 'กำลังเตรียมรูป…' : 'กำลังอัปโหลด…'}
                     </>
                   ) : (
                     'ใช้รูปนี้'

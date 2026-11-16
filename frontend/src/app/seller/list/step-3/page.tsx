@@ -7,6 +7,7 @@ import { TopBar } from '@/components/layout/TopBar';
 import { Button, BottomSheet, GradeBadge, Stepper } from '@/components/ui';
 import { CameraCapture, PhotoGallery } from '@/components/v4';
 import { useListing } from '@/hooks/useListing';
+import { safeDeleteUploadedImage } from '@/lib/api';
 import { GRADE_CRITERIA } from '@/lib/catalog';
 import { ConditionChecklist, ListingDefect } from '@/types';
 import {
@@ -139,6 +140,10 @@ export default function SellerListStep3Page() {
 
     if (isIntact) {
       // Remove defect record for this criterion when switched back to สมบูรณ์
+      const existing = getDefectForItem(item.key);
+      if (existing?.photo) {
+        void safeDeleteUploadedImage(existing.photo);
+      }
       const remaining = draft.defects.filter((d) => d.id !== item.key);
       syncDefectsToDraft(remaining);
     } else {
@@ -160,6 +165,9 @@ export default function SellerListStep3Page() {
 
   const handleDefectPhotoCaptured = (item: ConditionItemSpec, photoUrl: string) => {
     const existing = getDefectForItem(item.key);
+    if (existing?.photo && existing.photo !== photoUrl) {
+      void safeDeleteUploadedImage(existing.photo);
+    }
     const customNote = extractCustomNote(existing, item);
     const updatedDefect: ListingDefect = {
       id: item.key,
@@ -456,6 +464,7 @@ export default function SellerListStep3Page() {
         hint="ถ่ายใกล้ๆ ให้เห็นบริเวณที่มีตำหนิชัดเจน"
         demoImage={activeCameraItem?.demoPhoto}
         bucket="book-listings"
+        deferUpload
         onClose={() => setActiveCameraItem(null)}
         onCapture={(url) => {
           if (!activeCameraItem) return;

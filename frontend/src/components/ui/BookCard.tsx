@@ -10,6 +10,7 @@ export interface BookCardProps {
   book: Book;
   onClick?: () => void;
   onAddToCart?: (e: React.MouseEvent) => void;
+  isOwnBook?: boolean;
   layout?: 'vertical' | 'horizontal';
   className?: string;
 }
@@ -18,6 +19,7 @@ export const BookCard: React.FC<BookCardProps> = ({
   book,
   onClick,
   onAddToCart,
+  isOwnBook = false,
   layout = 'vertical',
   className,
 }) => {
@@ -52,6 +54,11 @@ export const BookCard: React.FC<BookCardProps> = ({
           <div>
             <div className="flex items-center gap-1.5 text-[11px] text-slate-500 mb-0.5">
               <span className="truncate">{book.sellerName}</span>
+              {isOwnBook && (
+                <span className="shrink-0 text-[10px] font-bold px-1.5 py-0.2 bg-amber-100 text-amber-800 rounded">
+                  ร้านของคุณ
+                </span>
+              )}
               <span className="flex items-center text-amber-500 font-semibold">
                 <Star className="w-3 h-3 fill-amber-400 stroke-amber-400 mr-0.5" />
                 {book.sellerRating}
@@ -123,6 +130,11 @@ export const BookCard: React.FC<BookCardProps> = ({
             </span>
           )}
         </div>
+        {isOwnBook && (
+          <div className="absolute top-2 right-2 bg-amber-400/95 text-slate-950 text-[10px] px-2 py-0.5 rounded-full font-bold shadow-xs">
+            ร้านของคุณ
+          </div>
+        )}
         {book.isPromptPayVerified && (
           <div className="absolute bottom-2 right-2 bg-black/60 backdrop-blur-xs text-white text-[10px] px-2 py-0.5 rounded-full font-medium">
             ยืนยันบัญชีรับเงิน

@@ -6,6 +6,7 @@ import { TopBar } from '@/components/layout/TopBar';
 import { Button, Stepper } from '@/components/ui';
 import { CameraCapture } from '@/components/v4';
 import { useListing } from '@/hooks/useListing';
+import { safeDeleteUploadedImage } from '@/lib/api';
 import { Camera, Check, RefreshCcw, ChevronRight, ShieldCheck } from 'lucide-react';
 
 type SlotKey = 'cover' | 'back' | 'spine' | 'inner';
@@ -131,9 +132,14 @@ export default function SellerListStep2Page() {
         hint="ถือกล้องให้นิ่ง เห็นหนังสือเต็มกรอบ"
         demoImage={camera ? DEMO[camera.key] : undefined}
         bucket="book-listings"
+        deferUpload
         onClose={() => setCamera(null)}
         onCapture={(url) => {
           if (!camera) return;
+          const prevUrl = photoOf(camera.key);
+          if (prevUrl && prevUrl !== url) {
+            void safeDeleteUploadedImage(prevUrl);
+          }
           setPhoto(camera.key, url);
           setCamera(null);
           setError(null);

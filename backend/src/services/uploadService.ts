@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { env } from '../config/env';
+import { prisma as defaultPrisma } from '../config/prisma';
 import { AppError, UploadBucket } from '../types';
 
 export const ALLOWED_UPLOAD_BUCKETS = new Set<UploadBucket>([
@@ -311,4 +312,285 @@ export async function resolveSignedStorageUrl(
   }
 
   return data.signedUrl;
+}
+
+export interface StorageObjectRef {
+  bucket: UploadBucket;
+  path: string;
+  rawUrl: string;
+}
+
+export interface DeleteUploadedImageResult {
+  deleted: boolean;
+  skipped: boolean;
+  reason?: 'EXTERNAL_URL' | 'REFERENCED_IN_DB';
+  bucket?: UploadBucket;
+  path?: string;
+  isMocked?: boolean;
+}
+
+/**
+ * แปลง Public/Signed/Mock Storage URL เป็น { bucket, path }
+ */
+export function parseStorageRefFromUrl(rawUrl?: string | null): StorageObjectRef | null {
+  if (!rawUrl || typeof rawUrl !== 'string') return null;
+  const trimmed = rawUrl.trim();
+  if (!trimmed) return null;
+
+  for (const bucket of ALLOWED_UPLOAD_BUCKETS) {
+    const path = extractStoragePathFromUrl(bucket, trimmed);
+    if (path) {
+      return { bucket, path, rawUrl: trimmed };
+    }
+  }
+  return null;
+}
+
+function isSafeOwnedStoragePath(userId: string, storagePath: string): boolean {
+  if (!storagePath || storagePath.startsWith('/')) return false;
+  if (storagePath.split('/').includes('..')) return false;
+  return storagePath.startsWith(`${userId}/`);
+}
+
+function buildUrlMatchFilter(field: string, rawUrl: string, storagePath: string) {
+  const suffix = `/${storagePath}`;
+  return {
+    OR: [{ [field]: rawUrl }, { [field]: { endsWith: suffix } }],
+  };
+}
+
+/**
+ * ตรวจสอบว่า URL หรือ path ของไฟล์ยังถูกอ้างอิงอยู่ในฐานข้อมูลหรือไม่
+ */
+export async function isStorageUrlReferencedInDb(
+  db: any,
+  bucket: UploadBucket,
+  rawUrl: string,
+  storagePath: string
+): Promise<boolean> {
+  if (!db) return false;
+
+  if (bucket === 'book-listings') {
+    const [imgRef, catalogRef] = await Promise.all([
+      db.bookListingImage?.findFirst
+        ? db.bookListingImage.findFirst({
+            where: buildUrlMatchFilter('imageUrl', rawUrl, storagePath),
+            select: { id: true },
+          })
+        : null,
+      db.bookCatalog?.findFirst
+        ? db.bookCatalog.findFirst({
+            where: buildUrlMatchFilter('coverUrl', rawUrl, storagePath),
+            select: { isbn: true },
+          })
+        : null,
+    ]);
+    return Boolean(imgRef || catalogRef);
+  }
+
+  if (bucket === 'avatars') {
+    const [userRef, shopRef] = await Promise.all([
+      db.user?.findFirst
+        ? db.user.findFirst({
+            where: buildUrlMatchFilter('avatarUrl', rawUrl, storagePath),
+            select: { id: true },
+          })
+        : null,
+      db.shopProfile?.findFirst
+        ? db.shopProfile.findFirst({
+            where: buildUrlMatchFilter('avatarUrl', rawUrl, storagePath),
+            select: { id: true },
+          })
+        : null,
+    ]);
+    return Boolean(userRef || shopRef);
+  }
+
+  if (bucket === 'order-receives') {
+    const [orderRef, deliveryRef] = await Promise.all([
+      db.order?.findFirst
+        ? db.order.findFirst({
+            where: buildUrlMatchFilter('receivedPhotoUrl', rawUrl, storagePath),
+            select: { id: true },
+          })
+        : null,
+      db.orderDeliveryDetail?.findFirst
+        ? db.orderDeliveryDetail.findFirst({
+            where: buildUrlMatchFilter('parcelImageUrl', rawUrl, storagePath),
+            select: { id: true },
+          })
+        : null,
+    ]);
+    return Boolean(orderRef || deliveryRef);
+  }
+
+  if (bucket === 'slips') {
+    if (!db.paymentSlip?.findFirst) return false;
+    const slipRef = await db.paymentSlip.findFirst({
+      where: {
+        OR: [
+          { slipImageUrl: rawUrl },
+          { slipImageUrl: { endsWith: `/${storagePath}` } },
+          { storagePath },
+        ],
+      },
+      select: { id: true },
+    });
+    return Boolean(slipRef);
+  }
+
+  return false;
+}
+
+async function removeStoragePaths(
+  bucket: UploadBucket,
+  paths: string[],
+  supabaseClientOverride?: SupabaseClient | null
+): Promise<{ isMocked: boolean }> {
+  const uniquePaths = Array.from(new Set(paths.map((p) => p.trim()).filter(Boolean)));
+  if (uniquePaths.length === 0) {
+    return { isMocked: false };
+  }
+
+  const supabase =
+    supabaseClientOverride !== undefined
+      ? supabaseClientOverride
+      : getSupabaseAdminClient();
+
+  if (!supabase) {
+    return { isMocked: true };
+  }
+
+  const { error } = await supabase.storage.from(bucket).remove(uniquePaths);
+  if (error) {
+    throw new AppError(
+      `ลบไฟล์ออกจาก Storage ไม่สำเร็จ: ${error.message}`,
+      502,
+      'STORAGE_DELETE_FAILED'
+    );
+  }
+
+  return { isMocked: false };
+}
+
+/**
+ * ลบไฟล์รูปภาพที่ผู้ใช้อัปโหลดไว้ (ตรวจสิทธิ์เจ้าของ path และตรวจว่าไม่ถูกอ้างอิงใน DB)
+ */
+export async function deleteUploadedImage(
+  userId: string,
+  input: { url?: string; bucket?: string; path?: string },
+  options?: {
+    prismaClient?: any;
+    supabaseClientOverride?: SupabaseClient | null;
+  }
+): Promise<DeleteUploadedImageResult> {
+  const db = options?.prismaClient || defaultPrisma;
+
+  let bucket: UploadBucket | null = null;
+  let storagePath = '';
+  let rawUrl = '';
+
+  if (input.url && input.url.trim()) {
+    const parsed = parseStorageRefFromUrl(input.url);
+    if (!parsed) {
+      return { deleted: false, skipped: true, reason: 'EXTERNAL_URL' };
+    }
+    bucket = parsed.bucket;
+    storagePath = parsed.path;
+    rawUrl = parsed.rawUrl;
+  } else if (input.bucket && input.path) {
+    if (!ALLOWED_UPLOAD_BUCKETS.has(input.bucket as UploadBucket)) {
+      throw new AppError('Bucket ไม่ถูกต้อง', 400, 'INVALID_UPLOAD_BUCKET');
+    }
+    bucket = input.bucket as UploadBucket;
+    storagePath = input.path.trim();
+  } else {
+    throw new AppError('กรุณาระบุ URL หรือ path ของไฟล์ที่ต้องการลบ', 400, 'MISSING_FILE_REF');
+  }
+
+  if (!isSafeOwnedStoragePath(userId, storagePath)) {
+    throw new AppError('คุณไม่มีสิทธิ์ลบไฟล์นี้', 403, 'FORBIDDEN');
+  }
+
+  const isReferenced = await isStorageUrlReferencedInDb(db, bucket, rawUrl, storagePath);
+  if (isReferenced) {
+    return {
+      deleted: false,
+      skipped: true,
+      reason: 'REFERENCED_IN_DB',
+      bucket,
+      path: storagePath,
+    };
+  }
+
+  const { isMocked } = await removeStoragePaths(
+    bucket,
+    [storagePath],
+    options?.supabaseClientOverride
+  );
+
+  return {
+    deleted: true,
+    skipped: false,
+    bucket,
+    path: storagePath,
+    isMocked,
+  };
+}
+
+/**
+ * Best-effort cleanup สำหรับชุด URL ของประกาศ/รายการที่ถูกลบ (ลบเฉพาะไฟล์ที่ไม่มี record อ้างอิงแล้ว)
+ */
+export async function removeUnreferencedStorageUrls(
+  urls: Array<string | null | undefined>,
+  options?: {
+    expectedBucket?: UploadBucket;
+    ownerUserId?: string;
+    prismaClient?: any;
+    supabaseClientOverride?: SupabaseClient | null;
+  }
+): Promise<{ removedPaths: string[] }> {
+  const db = options?.prismaClient || defaultPrisma;
+  const refsByKey = new Map<string, StorageObjectRef>();
+
+  for (const raw of urls) {
+    const parsed = parseStorageRefFromUrl(raw);
+    if (!parsed) continue;
+    if (options?.expectedBucket && parsed.bucket !== options.expectedBucket) continue;
+    if (options?.ownerUserId && !isSafeOwnedStoragePath(options.ownerUserId, parsed.path)) {
+      continue;
+    }
+    refsByKey.set(`${parsed.bucket}:${parsed.path}`, parsed);
+  }
+
+  if (refsByKey.size === 0) {
+    return { removedPaths: [] };
+  }
+
+  const pathsByBucket = new Map<UploadBucket, string[]>();
+  for (const ref of refsByKey.values()) {
+    const stillReferenced = await isStorageUrlReferencedInDb(
+      db,
+      ref.bucket,
+      ref.rawUrl,
+      ref.path
+    ).catch(() => true);
+    if (stillReferenced) continue;
+
+    const list = pathsByBucket.get(ref.bucket) ?? [];
+    list.push(ref.path);
+    pathsByBucket.set(ref.bucket, list);
+  }
+
+  const removedPaths: string[] = [];
+  for (const [bucket, paths] of pathsByBucket.entries()) {
+    try {
+      await removeStoragePaths(bucket, paths, options?.supabaseClientOverride);
+      removedPaths.push(...paths);
+    } catch (err) {
+      console.warn(`[uploadService] Failed to cleanup storage (${bucket}):`, err);
+    }
+  }
+
+  return { removedPaths };
 }

@@ -26,8 +26,205 @@ import {
 } from '../types';
 
 const MAX_PENDING_REQUESTS = 10;
+const REQUEST_EXPIRE_MS = 24 * 60 * 60 * 1000;
+const SHIPPED_AUTO_COMPLETE_MS = 7 * 24 * 60 * 60 * 1000;
+const SCHEDULE_PAST_GRACE_MS = 5 * 60 * 1000;
+const HANDOVER_MAX_ATTEMPTS = 5;
+const HANDOVER_LOCKOUT_MS = 15 * 60 * 1000;
 const IDEMPOTENCY_TTL_MS = 5 * 60 * 1000;
 const idempotencyStore = new Map<string, { expiresAt: number; promise: Promise<any> }>();
+const handoverAttemptsStore = new Map<
+  string,
+  { failedCount: number; windowExpiresAt: number; lockedUntil: number }
+>();
+
+export function clearHandoverAttemptsForTest(): void {
+  handoverAttemptsStore.clear();
+}
+
+function validatePickupCoordinates(lat: number, lng: number): void {
+  if (
+    !Number.isFinite(lat) ||
+    !Number.isFinite(lng) ||
+    lat < -90 ||
+    lat > 90 ||
+    lng < -180 ||
+    lng > 180
+  ) {
+    throw new AppError(
+      'พิกัดจุดนัดรับไม่ถูกต้อง (ละติจูดต้องอยู่ระหว่าง -90 ถึง 90 และลองจิจูด -180 ถึง 180)',
+      400,
+      'INVALID_COORDINATES'
+    );
+  }
+}
+
+function validateScheduledAtFuture(scheduledAt: Date): void {
+  if (isNaN(scheduledAt.getTime())) {
+    throw new AppError('วันเวลานัดหมาย (scheduledAt) ไม่ถูกต้อง', 400, 'INVALID_DATE');
+  }
+  if (scheduledAt.getTime() < Date.now() - SCHEDULE_PAST_GRACE_MS) {
+    throw new AppError(
+      'ไม่สามารถกำหนดวันเวลานัดหมายย้อนหลังได้ กรุณาเลือกเวลาในอนาคต',
+      400,
+      'SCHEDULE_IN_THE_PAST'
+    );
+  }
+}
+
+function isRequestedOrderExpired(
+  order: { status?: string; createdAt?: Date | string | null },
+  nowMs = Date.now()
+): boolean {
+  if (order?.status !== 'REQUESTED' || !order.createdAt) return false;
+  const createdMs = new Date(order.createdAt).getTime();
+  return Number.isFinite(createdMs) && nowMs - createdMs >= REQUEST_EXPIRE_MS;
+}
+
+function isShippedOrderAutoCompletable(
+  order: { status?: string; shippingMethod?: string; updatedAt?: Date | string | null },
+  nowMs = Date.now()
+): boolean {
+  if (
+    order?.status !== 'SHIPPED' ||
+    (order.shippingMethod && order.shippingMethod !== 'DELIVERY') ||
+    !order.updatedAt
+  ) {
+    return false;
+  }
+  const updatedMs = new Date(order.updatedAt).getTime();
+  return Number.isFinite(updatedMs) && nowMs - updatedMs >= SHIPPED_AUTO_COMPLETE_MS;
+}
+
+async function expireOverdueRequestedOrders(
+  db: any,
+  whereFilter: Record<string, unknown> = {},
+  options?: { notify?: boolean }
+): Promise<number> {
+  if (
+    typeof db?.order?.findMany !== 'function' ||
+    typeof db?.order?.updateMany !== 'function'
+  ) {
+    return 0;
+  }
+
+  const cutoff = new Date(Date.now() - REQUEST_EXPIRE_MS);
+  const overdue = await db.order.findMany({
+    where: {
+      ...whereFilter,
+      status: 'REQUESTED',
+      createdAt: { lte: cutoff },
+    },
+    select: { id: true, buyerId: true, sellerId: true },
+  });
+
+  if (!Array.isArray(overdue) || overdue.length === 0) {
+    return 0;
+  }
+
+  const ids = overdue.map((o: any) => o.id).filter(Boolean);
+  if (ids.length === 0) return 0;
+
+  const updateRes = await db.order.updateMany({
+    where: { id: { in: ids }, status: 'REQUESTED' },
+    data: { status: 'EXPIRED' },
+  });
+
+  if (options?.notify) {
+    for (const o of overdue) {
+      if (!o?.buyerId) continue;
+      await safeNotifyOrder(
+        {
+          recipientUserId: o.buyerId,
+          role: 'BUYER',
+          orderId: o.id,
+          title: 'คำขอซื้อหมดอายุแล้ว',
+          message: 'ผู้ขายไม่ได้ตอบรับภายใน 24 ชั่วโมง คุณสามารถเลือกสั่งซื้อจากร้านอื่นได้',
+          badgeText: 'ORDER EXPIRED',
+        },
+        db
+      );
+    }
+  }
+
+  return typeof updateRes?.count === 'number' ? updateRes.count : ids.length;
+}
+
+async function autoCompleteOverdueShippedOrders(
+  db: any,
+  whereFilter: Record<string, unknown> = {},
+  options?: { notify?: boolean }
+): Promise<number> {
+  if (typeof db?.order?.findMany !== 'function') {
+    return 0;
+  }
+
+  const cutoff = new Date(Date.now() - SHIPPED_AUTO_COMPLETE_MS);
+  const overdue = await db.order.findMany({
+    where: {
+      ...whereFilter,
+      status: 'SHIPPED',
+      shippingMethod: 'DELIVERY',
+      updatedAt: { lte: cutoff },
+    },
+    include: { orderItems: true },
+  });
+
+  if (!Array.isArray(overdue) || overdue.length === 0) {
+    return 0;
+  }
+
+  let completedCount = 0;
+  for (const order of overdue) {
+    try {
+      await withTransaction(db, async (tx: any) => {
+        const writeTx = tx?.order?.updateMany ? tx : db;
+        await markOrderCompleted(writeTx, order);
+        if (writeTx?.orderMessage?.create) {
+          await createSystemOrderMessage(
+            order.id,
+            'ระบบปิดคำสั่งซื้ออัตโนมัติเนื่องจากครบกำหนด 7 วันหลังจัดส่งพัสดุ',
+            'SYSTEM',
+            writeTx
+          );
+        }
+      });
+      completedCount += 1;
+
+      if (options?.notify) {
+        await safeNotifyOrder(
+          {
+            recipientUserId: order.sellerId,
+            role: 'SELLER',
+            orderId: order.id,
+            title: 'ปิดการขายอัตโนมัติ (ครบ 7 วัน)',
+            message: 'คำสั่งซื้อครบกำหนด 7 วันหลังจัดส่งและปิดการขายเรียบร้อยแล้ว',
+            badgeText: 'AUTO COMPLETED',
+          },
+          db
+        );
+        await safeNotifyOrder(
+          {
+            recipientUserId: order.buyerId,
+            role: 'BUYER',
+            orderId: order.id,
+            title: 'คำสั่งซื้อปิดอัตโนมัติ (ครบ 7 วัน)',
+            message: 'หากมีปัญหาเพิ่มเติมสามารถติดต่อทีมงานได้',
+            badgeText: 'AUTO COMPLETED',
+          },
+          db
+        );
+      }
+    } catch (err) {
+      // Skip concurrent status conflicts cleanly
+      if ((err as any)?.code !== 'ORDER_STATUS_CONFLICT') {
+        console.warn('[orderService] Failed auto-completing shipped order:', order.id, err);
+      }
+    }
+  }
+
+  return completedCount;
+}
 
 function runWithIdempotency<T>(
   scopeKey: string | undefined,
@@ -399,10 +596,15 @@ async function createOrderInTx(
     );
   }
 
+  if (input.pickupLat !== undefined || input.pickupLng !== undefined) {
+    validatePickupCoordinates(Number(input.pickupLat), Number(input.pickupLng));
+  }
+
   let parsedScheduledAt: Date | null = null;
   if (input.scheduledAt) {
     const d = new Date(input.scheduledAt);
-    if (!isNaN(d.getTime())) parsedScheduledAt = d;
+    validateScheduledAtFuture(d);
+    parsedScheduledAt = d;
   }
 
   const order = await tx.order.create({
@@ -563,6 +765,8 @@ async function executeBatchOrders(
         throw new AppError('ไม่พบบัญชีผู้ซื้อในระบบ', 404, 'USER_NOT_FOUND');
       }
 
+      await expireOverdueRequestedOrders(tx, { buyerId });
+
       const pendingCount = await orderRepo.count({
         where: { buyerId, status: 'REQUESTED' },
       });
@@ -663,7 +867,7 @@ export async function getOrderDetail(
 ): Promise<OrderDetail> {
   const db = prismaClient || defaultPrisma;
 
-  const order = await loadAndAuthorizeOrder(db, orderId, userId, {
+  let order = await loadAndAuthorizeOrder(db, orderId, userId, {
     role: 'PARTICIPANT',
     forbiddenMessage: 'คุณไม่มีสิทธิ์ดูคำสั่งซื้อนี้',
     include: {
@@ -694,6 +898,18 @@ export async function getOrderDetail(
       },
     },
   });
+
+  if (isRequestedOrderExpired(order)) {
+    const updatedCount = await expireOverdueRequestedOrders(db, { id: orderId });
+    if (updatedCount > 0) {
+      order = { ...order, status: 'EXPIRED' };
+    }
+  } else if (isShippedOrderAutoCompletable(order)) {
+    const completedCount = await autoCompleteOverdueShippedOrders(db, { id: orderId });
+    if (completedCount > 0) {
+      order = { ...order, status: 'COMPLETED' };
+    }
+  }
 
   const isSeller = userId === order.sellerId;
   const isBuyer = userId === order.buyerId;
@@ -822,6 +1038,13 @@ export async function getUserOrders(
   const db = prismaClient || defaultPrisma;
   const result: { buying?: OrderSummaryItem[]; selling?: OrderSummaryItem[] } = {};
 
+  await expireOverdueRequestedOrders(db, {
+    OR: [{ buyerId: userId }, { sellerId: userId }],
+  });
+  await autoCompleteOverdueShippedOrders(db, {
+    OR: [{ buyerId: userId }, { sellerId: userId }],
+  });
+
   if (!role || role === 'buying') {
     const buyingOrders = await db.order.findMany({
       where: { buyerId: userId },
@@ -895,6 +1118,14 @@ export async function acceptOrder(
         orderItems: { include: { bookListing: true } },
       },
     });
+
+    if (isRequestedOrderExpired(order)) {
+      await updateOrderStatusAtomic(tx, orderId, 'REQUESTED', { status: 'EXPIRED' });
+      return {
+        expired: true as const,
+        buyerId: order.buyerId,
+      };
+    }
 
     // Selective KYC: บังคับยืนยันตัวตนเฉพาะออเดอร์ส่งพัสดุ (DELIVERY)
     if (order.shippingMethod === 'DELIVERY' && !order.seller.isVerifiedSeller) {
@@ -1033,6 +1264,7 @@ export async function acceptOrder(
     );
 
     return {
+      expired: false as const,
       buyerId: order.buyerId,
       orderId,
       status: 'ACCEPTED' as const,
@@ -1045,6 +1277,25 @@ export async function acceptOrder(
       })),
     };
   });
+
+  if (result.expired) {
+    await safeNotifyOrder(
+      {
+        recipientUserId: result.buyerId,
+        role: 'BUYER',
+        orderId,
+        title: 'คำขอซื้อหมดอายุแล้ว',
+        message: 'คำขอซื้อเกินกำหนด 24 ชั่วโมงแล้ว กรุณาส่งคำขอใหม่อีกครั้งหากยังต้องการสั่งซื้อ',
+        badgeText: 'ORDER EXPIRED',
+      },
+      db
+    );
+    throw new AppError(
+      'คำขอซื้อหมดอายุแล้ว (เกิน 24 ชั่วโมงโดยไม่มีการตอบรับ)',
+      400,
+      'ORDER_EXPIRED'
+    );
+  }
 
   await safeNotifyOrder(
     {
@@ -1726,6 +1977,14 @@ export async function reportMissedMeeting(
       throw new AppError('ยังไม่ได้ระบุวันเวลานัดหมาย', 400, 'NOT_SCHEDULED');
     }
 
+    if (!order.scheduleConfirmedByBuyer) {
+      throw new AppError(
+        'ผู้ซื้อยังไม่ได้ยืนยันเวลานัดหมายนี้ จึงยังไม่สามารถรายงานไม่มาตามนัดได้',
+        400,
+        'SCHEDULE_NOT_CONFIRMED_BY_BUYER'
+      );
+    }
+
     const eligibleTime = new Date(order.scheduledAt).getTime() + 15 * 60 * 1000;
     if (Date.now() < eligibleTime) {
       throw new AppError(
@@ -1930,12 +2189,11 @@ export async function schedulePickupOrder(
       statusErrorBuilder: (s) => `ไม่สามารถบันทึกนัดหมายได้เนื่องจากสถานะปัจจุบันคือ ${s}`,
     });
 
+    validatePickupCoordinates(input.pickupLat, input.pickupLng);
+
     const handoverCode = order.handoverCode || generateHandoverCode();
     const scheduledAt = new Date(input.scheduledAt);
-
-    if (isNaN(scheduledAt.getTime())) {
-      throw new AppError('วันเวลานัดหมาย (scheduledAt) ไม่ถูกต้อง', 400, 'INVALID_DATE');
-    }
+    validateScheduledAtFuture(scheduledAt);
 
     const actorRole = order.buyerId === userId ? 'BUYER' : 'SELLER';
     const writeClient = tx?.order?.findUnique ? tx : db;
@@ -2028,14 +2286,45 @@ export async function verifyHandoverCode(
       include: { orderItems: true },
     });
 
+    const attemptKey = `${orderId}:${sellerId}`;
+    const now = Date.now();
+    const attemptEntry = handoverAttemptsStore.get(attemptKey);
+    if (attemptEntry && attemptEntry.lockedUntil > now) {
+      throw new AppError(
+        'กรอกรหัสส่งมอบผิดเกินจำนวนครั้งที่กำหนด กรุณารอ 15 นาทีแล้วลองใหม่อีกครั้ง',
+        429,
+        'HANDOVER_RATE_LIMITED'
+      );
+    }
+
     const cleanInputCode = (handoverCode || '').trim();
     if (!cleanInputCode || cleanInputCode !== order.handoverCode) {
+      const prevCount =
+        attemptEntry && attemptEntry.windowExpiresAt > now ? attemptEntry.failedCount : 0;
+      const nextCount = prevCount + 1;
+      const isNowLocked = nextCount >= HANDOVER_MAX_ATTEMPTS;
+      handoverAttemptsStore.set(attemptKey, {
+        failedCount: nextCount,
+        windowExpiresAt: now + HANDOVER_LOCKOUT_MS,
+        lockedUntil: isNowLocked ? now + HANDOVER_LOCKOUT_MS : 0,
+      });
+
+      if (isNowLocked) {
+        throw new AppError(
+          'กรอกรหัสส่งมอบผิดเกิน 5 ครั้ง ระบบล็อกชั่วคราว 15 นาที',
+          429,
+          'HANDOVER_RATE_LIMITED'
+        );
+      }
+
       throw new AppError(
         'รหัสส่งมอบ 6 หลักไม่ถูกต้อง ให้ผู้ขายตรวจดูรหัสบนหน้าจอลูกค้าอีกครั้ง',
         400,
         'INVALID_HANDOVER_CODE'
       );
     }
+
+    handoverAttemptsStore.delete(attemptKey);
 
     const soldBookIds = await markOrderCompleted(tx, order);
 
@@ -2071,4 +2360,419 @@ export async function verifyHandoverCode(
     status: 'COMPLETED',
     soldBookIds: outcome.soldBookIds,
   };
+}
+
+export interface ResolveDisputedOrderInput {
+  resolution: 'COMPLETED' | 'CANCELLED';
+  adminNote: string;
+  refundCredit?: boolean;
+  incrementBuyerNoShow?: boolean;
+}
+
+export interface ResolveDisputedOrderResult {
+  orderId: string;
+  status: 'COMPLETED' | 'CANCELLED';
+  refundedCredit: boolean;
+  incrementedBuyerNoShow: boolean;
+  releasedBookIds: string[];
+  soldBookIds: string[];
+}
+
+/**
+ * แอดมินสรุปและปิดเคสข้อพิพาท (POST /api/admin/orders/:id/resolve)
+ */
+export async function resolveDisputedOrder(
+  orderId: string,
+  input: ResolveDisputedOrderInput,
+  prismaClient?: any
+): Promise<ResolveDisputedOrderResult> {
+  const db = prismaClient || defaultPrisma;
+  const trimmedNote = (input.adminNote || '').trim();
+
+  if (!trimmedNote) {
+    throw new AppError('กรุณาระบุหมายเหตุการตัดสินของแอดมิน', 400, 'ADMIN_NOTE_REQUIRED');
+  }
+
+  if (input.resolution !== 'COMPLETED' && input.resolution !== 'CANCELLED') {
+    throw new AppError(
+      'ค่า resolution ต้องเป็น COMPLETED หรือ CANCELLED เท่านั้น',
+      400,
+      'INVALID_RESOLUTION'
+    );
+  }
+
+  const outcome = await withTransaction(db, async (tx: any) => {
+    const readClient = tx?.order?.findUnique ? tx : db;
+    const order = await readClient.order.findUnique({
+      where: { id: orderId },
+      include: { orderItems: true },
+    });
+
+    if (!order) {
+      throw new AppError('ไม่พบคำสั่งซื้อที่ระบุ', 404, 'ORDER_NOT_FOUND');
+    }
+
+    if (order.status !== 'DISPUTED') {
+      throw new AppError(
+        `คำสั่งซื้อต้องอยู่ในสถานะ DISPUTED เท่านั้นจึงจะปิดข้อพิพาทได้ (สถานะปัจจุบัน: ${order.status})`,
+        400,
+        'INVALID_ORDER_STATUS'
+      );
+    }
+
+    const writeClient = tx?.order?.updateMany || tx?.order?.update ? tx : db;
+    const bookIds = (order.orderItems || []).map((i: any) => i.bookListingId).filter(Boolean);
+
+    if (input.resolution === 'COMPLETED') {
+      const soldBookIds = await markOrderCompleted(writeClient, order);
+      if (writeClient?.orderMessage?.create) {
+        await createSystemOrderMessage(
+          orderId,
+          `แอดมินสรุปข้อพิพาท: ปิดการขายสำเร็จ (${trimmedNote})`,
+          'SYSTEM',
+          writeClient
+        );
+      }
+
+      return {
+        buyerId: order.buyerId,
+        sellerId: order.sellerId,
+        status: 'COMPLETED' as const,
+        refundedCredit: false,
+        incrementedBuyerNoShow: false,
+        releasedBookIds: [] as string[],
+        soldBookIds,
+      };
+    }
+
+    await updateOrderStatusAtomic(writeClient, orderId, 'DISPUTED', {
+      status: 'CANCELLED',
+      cancelReason: `[แอดมิน] ${trimmedNote}`,
+      cancelledBy: 'ADMIN',
+    });
+
+    if (bookIds.length > 0 && writeClient?.bookListing?.updateMany) {
+      await writeClient.bookListing.updateMany({
+        where: { id: { in: bookIds } },
+        data: { status: 'AVAILABLE' },
+      });
+    }
+
+    let refundedCredit = false;
+    if (input.refundCredit && writeClient?.user?.update) {
+      const updatedSeller = await writeClient.user.update({
+        where: { id: order.sellerId },
+        data: { credits: { increment: 1 } },
+        select: { credits: true },
+      });
+      if (writeClient?.creditTransaction?.create) {
+        await writeClient.creditTransaction.create({
+          data: {
+            userId: order.sellerId,
+            amount: 1,
+            balanceAfter: updatedSeller?.credits,
+            type: 'REFUND_DISPUTE',
+            orderId,
+            note: `คืน 1 เครดิตจากการตัดสินข้อพิพาทโดยแอดมิน: ${trimmedNote}`,
+          },
+        });
+      }
+      refundedCredit = true;
+    }
+
+    let incrementedBuyerNoShow = false;
+    if (input.incrementBuyerNoShow && writeClient?.user?.update) {
+      await writeClient.user.update({
+        where: { id: order.buyerId },
+        data: { noShowCount: { increment: 1 } },
+      });
+      incrementedBuyerNoShow = true;
+    }
+
+    if (writeClient?.orderMessage?.create) {
+      await createSystemOrderMessage(
+        orderId,
+        `แอดมินสรุปข้อพิพาท: ยกเลิกคำสั่งซื้อ (${trimmedNote})`,
+        'SYSTEM',
+        writeClient
+      );
+    }
+
+    return {
+      buyerId: order.buyerId,
+      sellerId: order.sellerId,
+      status: 'CANCELLED' as const,
+      refundedCredit,
+      incrementedBuyerNoShow,
+      releasedBookIds: bookIds,
+      soldBookIds: [] as string[],
+    };
+  });
+
+  const summaryMsg =
+    outcome.status === 'COMPLETED'
+      ? `แอดมินสรุปข้อพิพาท: ปิดการขายสำเร็จ (${trimmedNote})`
+      : `แอดมินสรุปข้อพิพาท: ยกเลิกคำสั่งซื้อ (${trimmedNote})`;
+
+  await safeNotifyOrder(
+    {
+      recipientUserId: outcome.buyerId,
+      role: 'BUYER',
+      orderId,
+      title: 'ข้อพิพาทได้รับการตัดสินแล้ว',
+      message: summaryMsg,
+      badgeText: 'DISPUTE RESOLVED',
+    },
+    db
+  );
+  await safeNotifyOrder(
+    {
+      recipientUserId: outcome.sellerId,
+      role: 'SELLER',
+      orderId,
+      title: 'ข้อพิพาทได้รับการตัดสินแล้ว',
+      message: summaryMsg,
+      badgeText: 'DISPUTE RESOLVED',
+    },
+    db
+  );
+
+  return {
+    orderId,
+    status: outcome.status,
+    refundedCredit: outcome.refundedCredit,
+    incrementedBuyerNoShow: outcome.incrementedBuyerNoShow,
+    releasedBookIds: outcome.releasedBookIds,
+    soldBookIds: outcome.soldBookIds,
+  };
+}
+
+/**
+ * งานกวาดออเดอร์หมดอายุอัตโนมัติ (เรียกผ่าน Cron Endpoint และ Lazy Expiration):
+ * - REQUESTED เกิน 24 ชม. -> EXPIRED
+ * - SHIPPED (DELIVERY) เกิน 7 วัน -> COMPLETED
+ */
+export async function expireStaleOrders(
+  prismaClient?: any
+): Promise<{ expiredRequestedCount: number; autoCompletedShippedCount: number }> {
+  const db = prismaClient || defaultPrisma;
+  const expiredRequestedCount = await expireOverdueRequestedOrders(db, {}, { notify: true });
+  const autoCompletedShippedCount = await autoCompleteOverdueShippedOrders(db, {}, { notify: true });
+  return {
+    expiredRequestedCount,
+    autoCompletedShippedCount,
+  };
+}
+
+export type AdminOrderStatusFilter = 'DISPUTED' | 'RESOLVED' | 'ALL';
+
+export interface AdminOrderListItem {
+  id: string;
+  status: string;
+  shippingMethod: string;
+  paymentMethod: PaymentMethod;
+  totalPrice: number;
+  shippingFee: number;
+  cancelReason: string | null;
+  receivedPhotoUrl: string | null;
+  paymentSlipUrl: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  dispute: {
+    reason: string | null;
+    openedBy: string | null;
+    openedAt: Date | null;
+    missedMeetingReportedAt: Date | null;
+  };
+  schedule: {
+    locationName: string | null;
+    dateIso: string | null;
+    timeLabel: string | null;
+    scheduledAt: Date | null;
+    confirmedByBuyer: boolean;
+  } | null;
+  buyer: {
+    id: string;
+    nickname: string | null;
+    displayName: string;
+    avatarUrl: string | null;
+    noShowCount: number;
+  };
+  seller: {
+    id: string;
+    nickname: string | null;
+    displayName: string;
+    shopName: string | null;
+    credits: number;
+  };
+  items: Array<{
+    bookId: string;
+    title: string;
+    price: number;
+    grade: string;
+    coverImageUrl: string;
+  }>;
+  recentMessages: Array<{
+    id: string;
+    senderRole: string;
+    senderName: string | null;
+    kind: string;
+    text: string;
+    createdAt: Date;
+  }>;
+}
+
+/**
+ * ดึงรายการคำสั่งซื้อที่มีข้อพิพาทสำหรับ Admin UI (GET /api/admin/orders?status=DISPUTED)
+ */
+export async function getAdminOrders(
+  options: { status?: AdminOrderStatusFilter } = {},
+  prismaClient?: any
+): Promise<AdminOrderListItem[]> {
+  const db = prismaClient || defaultPrisma;
+  const filter = options.status || 'DISPUTED';
+
+  const where =
+    filter === 'RESOLVED'
+      ? {
+          status: { in: ['COMPLETED', 'CANCELLED'] },
+          OR: [
+            { disputeOpenedBy: { not: null } },
+            { disputedAt: { not: null } },
+            { cancelledBy: 'ADMIN' },
+          ],
+        }
+      : filter === 'ALL'
+      ? {
+          OR: [
+            { status: 'DISPUTED' },
+            { disputeOpenedBy: { not: null } },
+            { disputedAt: { not: null } },
+          ],
+        }
+      : { status: 'DISPUTED' };
+
+  const orders = await db.order.findMany({
+    where,
+    orderBy: [{ disputedAt: 'desc' }, { updatedAt: 'desc' }],
+    take: 50,
+    include: {
+      buyer: {
+        select: {
+          id: true,
+          nickname: true,
+          displayName: true,
+          avatarUrl: true,
+          noShowCount: true,
+        },
+      },
+      seller: {
+        select: {
+          id: true,
+          nickname: true,
+          displayName: true,
+          credits: true,
+          shopProfile: { select: { shopName: true } },
+        },
+      },
+      orderItems: {
+        include: {
+          bookListing: {
+            include: {
+              bookCatalog: { select: { title: true, coverUrl: true } },
+              images: {
+                orderBy: [{ isCover: 'desc' }, { displayOrder: 'asc' }],
+                take: 1,
+              },
+            },
+          },
+        },
+      },
+      messages: {
+        orderBy: { createdAt: 'desc' },
+        take: 10,
+        include: {
+          sender: { select: { id: true, nickname: true, displayName: true } },
+        },
+      },
+      paymentSlips: {
+        orderBy: { createdAt: 'desc' },
+        take: 1,
+      },
+    },
+  });
+
+  return await Promise.all(
+    (orders || []).map(async (order: any): Promise<AdminOrderListItem> => {
+      const latestSlip = Array.isArray(order.paymentSlips) ? order.paymentSlips[0] : null;
+      const paymentSlipUrl = latestSlip?.slipImageUrl
+        ? await resolveSignedStorageUrl('slips', latestSlip.slipImageUrl, latestSlip.storagePath)
+        : null;
+
+      const rawMessages = Array.isArray(order.messages) ? [...order.messages].reverse() : [];
+
+      return {
+        id: order.id,
+        status: order.status,
+        shippingMethod: order.shippingMethod,
+        paymentMethod: (order.paymentMethod || 'COD') as PaymentMethod,
+        totalPrice: Number(order.totalPrice),
+        shippingFee: Number(order.shippingFee),
+        cancelReason: order.cancelReason ?? null,
+        receivedPhotoUrl: order.receivedPhotoUrl ?? null,
+        paymentSlipUrl,
+        createdAt: order.createdAt,
+        updatedAt: order.updatedAt,
+        dispute: {
+          reason: order.disputeReason ?? null,
+          openedBy: order.disputeOpenedBy ?? null,
+          openedAt: order.disputedAt ?? null,
+          missedMeetingReportedAt: order.missedMeetingReportedAt ?? null,
+        },
+        schedule:
+          order.shippingMethod === 'PICKUP' &&
+          (order.scheduledAt || order.pickupLocationName || order.scheduleDateIso)
+            ? {
+                locationName: order.pickupLocationName ?? null,
+                dateIso: order.scheduleDateIso ?? null,
+                timeLabel: order.scheduleTimeLabel ?? null,
+                scheduledAt: order.scheduledAt ?? null,
+                confirmedByBuyer: Boolean(order.scheduleConfirmedByBuyer),
+              }
+            : null,
+        buyer: {
+          id: order.buyer?.id || order.buyerId,
+          nickname: order.buyer?.nickname ?? null,
+          displayName: order.buyer?.displayName || 'ผู้ซื้อ',
+          avatarUrl: order.buyer?.avatarUrl ?? null,
+          noShowCount: order.buyer?.noShowCount ?? 0,
+        },
+        seller: {
+          id: order.seller?.id || order.sellerId,
+          nickname: order.seller?.nickname ?? null,
+          displayName: order.seller?.displayName || 'ผู้ขาย',
+          shopName: order.seller?.shopProfile?.shopName ?? null,
+          credits: order.seller?.credits ?? 0,
+        },
+        items: (order.orderItems || []).map((item: any) => ({
+          bookId: item.bookListingId,
+          title: item.bookListing?.bookCatalog?.title || 'หนังสือ',
+          price: Number(item.price),
+          grade: item.bookListing?.grade || '',
+          coverImageUrl:
+            item.bookListing?.images?.[0]?.imageUrl ||
+            item.bookListing?.bookCatalog?.coverUrl ||
+            '',
+        })),
+        recentMessages: rawMessages.map((msg: any) => ({
+          id: msg.id,
+          senderRole: msg.senderRole,
+          senderName: msg.sender?.nickname || msg.sender?.displayName || null,
+          kind: msg.kind,
+          text: msg.text,
+          createdAt: msg.createdAt,
+        })),
+      };
+    })
+  );
 }

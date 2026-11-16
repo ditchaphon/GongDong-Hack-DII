@@ -168,6 +168,20 @@ export default function ProfilePage() {
           })}
         </div>
 
+        {/* Admin Panel (visible only when Backend returns is_admin: true) */}
+        {user.isAdmin && (
+          <div className="bg-white rounded-2xl border border-amber-200 overflow-hidden">
+            <Link
+              href="/admin"
+              className="flex items-center gap-3 w-full px-4 py-3.5 text-sm font-bold text-amber-900 bg-amber-50/70 hover:bg-amber-50 transition"
+            >
+              <ShieldAlert className="w-4 h-4 text-amber-700" />
+              <span className="flex-1">จัดการข้อพิพาท (Admin)</span>
+              <ChevronRight className="w-4 h-4 text-amber-500" />
+            </Link>
+          </div>
+        )}
+
         {/* Help + account */}
         <div className="bg-white rounded-2xl border border-slate-200 divide-y divide-slate-100 overflow-hidden">
           <Link href="/help" className={rowClass}>

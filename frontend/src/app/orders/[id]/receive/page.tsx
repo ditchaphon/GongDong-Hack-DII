@@ -7,6 +7,7 @@ import { TopBar } from '@/components/layout/TopBar';
 import { Button, Toast } from '@/components/ui';
 import { CameraCapture } from '@/components/v4';
 import { useV4Orders } from '@/hooks/useV4Orders';
+import { safeDeleteUploadedImage, uploadDeferredImageIfNeeded } from '@/lib/api';
 import { Camera, Star, RefreshCcw, ShieldCheck } from 'lucide-react';
 
 const TAGS = ['ตรงปก', 'แพ็กดี', 'ส่งไว', 'สภาพดีกว่าที่คิด', 'ผู้ขายตอบไว'];
@@ -62,20 +63,33 @@ export default function ReceiveParcelPage({ params }: { params: Promise<{ id: st
     if (gradeMatched === null) return setError('บอกเราว่าสภาพหนังสือตรงเกรดไหม');
     setError(null);
     setSubmitting(true);
-    const res = await confirmReceived(order.id, photo, {
-      rating,
-      isGradeMatched: gradeMatched,
-      tags,
-      comment: comment.trim(),
-    });
-    setSubmitting(false);
-    if (!res.ok) {
-      setError(res.error || 'ยืนยันรับของไม่สำเร็จ');
-      return;
+    let uploadedUrl = photo;
+    let uploadedNow = false;
+    try {
+      const uploaded = await uploadDeferredImageIfNeeded(photo, 'order-receives');
+      uploadedUrl = uploaded.url;
+      uploadedNow = uploaded.uploadedNow;
+
+      const res = await confirmReceived(order.id, uploadedUrl, {
+        rating,
+        isGradeMatched: gradeMatched,
+        tags,
+        comment: comment.trim(),
+      });
+      if (!res.ok) {
+        if (uploadedNow) void safeDeleteUploadedImage(uploadedUrl);
+        setError(res.error || 'ยืนยันรับของไม่สำเร็จ');
+        return;
+      }
+      setDone(true);
+      setToast('ยืนยันรับของแล้ว · ชำระเงินปลายทางเรียบร้อย');
+      setTimeout(() => router.push(`/orders/${order.id}`), 900);
+    } catch (err) {
+      if (uploadedNow) void safeDeleteUploadedImage(uploadedUrl);
+      setError(err instanceof Error ? err.message : 'อัปโหลดรูปหรือยืนยันรับของไม่สำเร็จ');
+    } finally {
+      setSubmitting(false);
     }
-    setDone(true);
-    setToast('ยืนยันรับของแล้ว · ชำระเงินปลายทางเรียบร้อย');
-    setTimeout(() => router.push(`/orders/${order.id}`), 900);
   };
 
   return (
@@ -187,8 +201,12 @@ export default function ReceiveParcelPage({ params }: { params: Promise<{ id: st
         hint="ถ่ายให้เห็นปกและสภาพหนังสือชัดเจน"
         demoImage={DEMO_PHOTO}
         bucket="order-receives"
+        deferUpload
         onClose={() => setCameraOpen(false)}
         onCapture={(url) => {
+          if (photo && photo !== url) {
+            void safeDeleteUploadedImage(photo);
+          }
           setPhoto(url);
           setCameraOpen(false);
           setError(null);

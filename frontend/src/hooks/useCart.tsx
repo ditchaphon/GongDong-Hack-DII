@@ -38,7 +38,7 @@ export interface CartContextValue {
   addToCart: (book: Book) => {
     success: boolean;
     message?: string;
-    reason?: 'DUPLICATE';
+    reason?: 'DUPLICATE' | 'OWN_BOOK';
   };
   removeFromCart: (bookId: string) => void;
   removeSellerItems: (sellerId: string) => void;
@@ -68,7 +68,8 @@ export const CartProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       const raw = window.localStorage.getItem(storageKey);
       if (raw) {
         const parsed = JSON.parse(raw) as Partial<PersistedCart>;
-        setItems(Array.isArray(parsed.items) ? parsed.items : []);
+        const rawItems = Array.isArray(parsed.items) ? parsed.items : [];
+        setItems(user?.id ? rawItems.filter((item) => item.sellerId !== user.id) : rawItems);
       } else {
         setItems([]);
       }
@@ -77,7 +78,16 @@ export const CartProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     } finally {
       loadedKeyRef.current = storageKey;
     }
-  }, [storageKey]);
+  }, [storageKey, user?.id]);
+
+  // Remove any stale own-shop items if user logs in after items were added
+  useEffect(() => {
+    if (!user?.id) return;
+    setItems((prev) => {
+      const filtered = prev.filter((item) => item.sellerId !== user.id);
+      return filtered.length === prev.length ? prev : filtered;
+    });
+  }, [user?.id]);
 
   useEffect(() => {
     if (loadedKeyRef.current !== storageKey) return;
@@ -142,6 +152,13 @@ export const CartProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const addToCart = useCallback(
     (book: Book) => {
+      if (user?.id && book.sellerId === user.id) {
+        return {
+          success: false,
+          reason: 'OWN_BOOK' as const,
+          message: 'ไม่สามารถเพิ่มหนังสือของตัวเองลงตะกร้าได้',
+        };
+      }
       if (items.some((i) => i.id === book.id)) {
         return {
           success: false,
@@ -152,7 +169,7 @@ export const CartProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       setItems((prev) => (prev.some((i) => i.id === book.id) ? prev : [...prev, book]));
       return { success: true };
     },
-    [items]
+    [items, user?.id]
   );
 
   const removeFromCart = useCallback((bookId: string) => {
@@ -168,14 +185,19 @@ export const CartProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setItems((prev) => prev.filter((i) => !removeSet.has(i.id)));
   }, []);
 
-  const syncCartBooks = useCallback((freshById: Record<string, Book>) => {
-    setItems((prev) =>
-      prev.map((item) => {
-        const fresh = freshById[item.id];
-        return fresh ? { ...item, ...fresh } : item;
-      })
-    );
-  }, []);
+  const syncCartBooks = useCallback(
+    (freshById: Record<string, Book>) => {
+      setItems((prev) =>
+        prev
+          .map((item) => {
+            const fresh = freshById[item.id];
+            return fresh ? { ...item, ...fresh } : item;
+          })
+          .filter((item) => !user?.id || item.sellerId !== user.id)
+      );
+    },
+    [user?.id]
+  );
 
   const clearCart = useCallback(() => {
     setItems([]);

@@ -1,7 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   acceptOrder,
+  clearHandoverAttemptsForTest,
+  createBatchOrders,
+  createOrder,
+  expireStaleOrders,
   generateHandoverCode,
+  getAdminOrders,
+  resolveDisputedOrder,
   schedulePickupOrder,
   verifyHandoverCode,
 } from '../orderService';
@@ -265,8 +271,9 @@ describe('OrderService - State Machine & Core Transactions', () => {
         },
       };
 
+      const futureIso = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
       const input = {
-        scheduledAt: '2026-11-13T17:30:00.000Z',
+        scheduledAt: futureIso,
         pickupLat: 18.7953214,
         pickupLng: 98.9527312,
         pickupLocationName: 'หน้าหอสมุดกลาง มช.',
@@ -297,11 +304,12 @@ describe('OrderService - State Machine & Core Transactions', () => {
         },
       };
 
+      const futureIso = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
       await expect(
         schedulePickupOrder(
           mockOrderId,
           'usr_stranger',
-          { scheduledAt: '2026-11-13T17:30:00.000Z', pickupLat: 18.0, pickupLng: 98.0 },
+          { scheduledAt: futureIso, pickupLat: 18.0, pickupLng: 98.0 },
           mockDb
         )
       ).rejects.toThrow('คุณไม่มีสิทธิ์จัดการคำสั่งซื้อนี้');
@@ -317,11 +325,12 @@ describe('OrderService - State Machine & Core Transactions', () => {
         },
       };
 
+      const futureIso = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
       await expect(
         schedulePickupOrder(
           mockOrderId,
           mockBuyerId,
-          { scheduledAt: '2026-11-13T17:30:00.000Z', pickupLat: 18.0, pickupLng: 98.0 },
+          { scheduledAt: futureIso, pickupLat: 18.0, pickupLng: 98.0 },
           mockDb
         )
       ).rejects.toThrow('คำสั่งซื้อนี้ไม่ได้ใช้วิธีนัดรับสินค้า (PICKUP)');
@@ -342,6 +351,48 @@ describe('OrderService - State Machine & Core Transactions', () => {
           mockDb
         )
       ).rejects.toThrow('วันเวลานัดหมาย (scheduledAt) ไม่ถูกต้อง');
+    });
+
+    it('ต้องปฏิเสธหากตั้งเวลานัดหมายย้อนหลังในอดีต (SCHEDULE_IN_THE_PAST)', async () => {
+      const mockDb = {
+        order: {
+          findUnique: vi.fn().mockResolvedValue(basePickupOrder),
+        },
+      };
+
+      const pastIso = new Date(Date.now() - 20 * 60 * 1000).toISOString();
+      await expect(
+        schedulePickupOrder(
+          mockOrderId,
+          mockSellerId,
+          { scheduledAt: pastIso, pickupLat: 18.0, pickupLng: 98.0 },
+          mockDb
+        )
+      ).rejects.toMatchObject({
+        statusCode: 400,
+        code: 'SCHEDULE_IN_THE_PAST',
+      });
+    });
+
+    it('ต้องปฏิเสธหากพิกัดนัดรับอยู่นอกขอบเขต lat/lng ที่ถูกต้อง (INVALID_COORDINATES)', async () => {
+      const mockDb = {
+        order: {
+          findUnique: vi.fn().mockResolvedValue(basePickupOrder),
+        },
+      };
+
+      const futureIso = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+      await expect(
+        schedulePickupOrder(
+          mockOrderId,
+          mockSellerId,
+          { scheduledAt: futureIso, pickupLat: 120.5, pickupLng: 98.0 },
+          mockDb
+        )
+      ).rejects.toMatchObject({
+        statusCode: 400,
+        code: 'INVALID_COORDINATES',
+      });
     });
   });
 
@@ -507,6 +558,403 @@ describe('OrderService - State Machine & Core Transactions', () => {
         statusCode: 400,
         code: 'INSUFFICIENT_CREDITS',
       });
+    });
+  });
+
+  describe('Self-Purchase Guard (CANNOT_BUY_OWN_BOOK)', () => {
+    it('createOrder ต้องปฏิเสธด้วย 400 CANNOT_BUY_OWN_BOOK เมื่อ buyerId === sellerId โดยไม่เปิด transaction', async () => {
+      const mockPrisma = {
+        $transaction: vi.fn(),
+      };
+
+      await expect(
+        createOrder(
+          'usr_same_001',
+          {
+            sellerId: 'usr_same_001',
+            bookIds: ['bok_own_001'],
+            shippingMethod: 'PICKUP',
+          },
+          mockPrisma
+        )
+      ).rejects.toMatchObject({
+        statusCode: 400,
+        code: 'CANNOT_BUY_OWN_BOOK',
+      });
+      expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('createBatchOrders ต้องปฏิเสธทั้ง batch ด้วย 400 CANNOT_BUY_OWN_BOOK หากมีร้านของตัวเองปนอยู่', async () => {
+      const mockPrisma = {
+        $transaction: vi.fn(),
+      };
+
+      await expect(
+        createBatchOrders(
+          'usr_same_001',
+          {
+            orders: [
+              {
+                sellerId: 'usr_other_seller',
+                bookIds: ['bok_other_001'],
+                shippingMethod: 'PICKUP',
+              },
+              {
+                sellerId: 'usr_same_001',
+                bookIds: ['bok_own_001'],
+                shippingMethod: 'PICKUP',
+              },
+            ],
+          },
+          mockPrisma
+        )
+      ).rejects.toMatchObject({
+        statusCode: 400,
+        code: 'CANNOT_BUY_OWN_BOOK',
+      });
+      expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('createOrder ต้องปฏิเสธด้วย 400 MULTIPLE_SELLERS_IN_CART หากปลอม sellerId เป็นคนอื่นแต่ส่ง bookId ของตัวเองมา', async () => {
+      const mockTx = {
+        user: { findUnique: vi.fn().mockResolvedValue({ id: 'usr_same_001', phoneNumber: null }) },
+        order: { count: vi.fn().mockResolvedValue(0), findFirst: vi.fn().mockResolvedValue(null) },
+        bookListing: {
+          findMany: vi.fn().mockResolvedValue([
+            {
+              id: 'bok_own_001',
+              sellerId: 'usr_same_001',
+              status: 'AVAILABLE',
+              allowPickup: true,
+              allowDelivery: true,
+            },
+          ]),
+        },
+      };
+      const mockPrisma = {
+        $transaction: vi.fn(async (cb: any) => cb(mockTx)),
+      };
+
+      await expect(
+        createOrder(
+          'usr_same_001',
+          {
+            sellerId: 'usr_other_seller',
+            bookIds: ['bok_own_001'],
+            shippingMethod: 'PICKUP',
+          },
+          mockPrisma
+        )
+      ).rejects.toMatchObject({
+        statusCode: 400,
+        code: 'MULTIPLE_SELLERS_IN_CART',
+      });
+    });
+  });
+
+  describe('P0/P1 Security & Lifecycle Hardening', () => {
+    it('verifyHandoverCode ต้องล็อกชั่วคราว (429 HANDOVER_RATE_LIMITED) เมื่อกรอกรหัสผิดครบ 5 ครั้ง', async () => {
+      clearHandoverAttemptsForTest();
+      const mockDb = {
+        order: {
+          findUnique: vi.fn().mockResolvedValue({
+            id: 'ord_rate_1',
+            sellerId: 'usr_seller_rate',
+            buyerId: 'usr_buyer_rate',
+            shippingMethod: 'PICKUP',
+            status: 'SCHEDULED',
+            handoverCode: '991122',
+            orderItems: [{ bookListingId: 'bok_1' }],
+          }),
+        },
+      };
+
+      for (let i = 0; i < 4; i += 1) {
+        await expect(
+          verifyHandoverCode('ord_rate_1', 'usr_seller_rate', '000000', mockDb)
+        ).rejects.toMatchObject({
+          statusCode: 400,
+          code: 'INVALID_HANDOVER_CODE',
+        });
+      }
+
+      // ครั้งที่ 5 ต้องถูกล็อก 429 ทันที
+      await expect(
+        verifyHandoverCode('ord_rate_1', 'usr_seller_rate', '000000', mockDb)
+      ).rejects.toMatchObject({
+        statusCode: 429,
+        code: 'HANDOVER_RATE_LIMITED',
+      });
+
+      // แม้ส่งรหัสถูกขณะถูกล็อก ก็ยังต้องโดนบล็อก 429
+      await expect(
+        verifyHandoverCode('ord_rate_1', 'usr_seller_rate', '991122', mockDb)
+      ).rejects.toMatchObject({
+        statusCode: 429,
+        code: 'HANDOVER_RATE_LIMITED',
+      });
+    });
+
+    it('resolveDisputedOrder: ปิดเป็น COMPLETED ต้องอัปเดตหนังสือเป็น SOLD และปฏิเสธสถานะอื่นที่ไม่ใช่ DISPUTED', async () => {
+      const mockTx = {
+        order: {
+          findUnique: vi.fn().mockResolvedValue({
+            id: 'ord_disp_1',
+            buyerId: 'usr_b1',
+            sellerId: 'usr_s1',
+            status: 'DISPUTED',
+            orderItems: [{ bookListingId: 'bok_d1' }],
+          }),
+          updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+        },
+        bookListing: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+        orderMessage: { create: vi.fn().mockResolvedValue({}) },
+      };
+      const mockPrisma = { $transaction: vi.fn(async (cb: any) => cb(mockTx)) };
+
+      const res = await resolveDisputedOrder(
+        'ord_disp_1',
+        { resolution: 'COMPLETED', adminNote: 'ผู้ซื้อได้รับหนังสือครบถ้วนแล้ว' },
+        mockPrisma
+      );
+
+      expect(res.status).toBe('COMPLETED');
+      expect(res.soldBookIds).toEqual(['bok_d1']);
+      expect(mockTx.bookListing.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: ['bok_d1'] } },
+        data: { status: 'SOLD' },
+      });
+
+      mockTx.order.findUnique.mockResolvedValue({
+        id: 'ord_not_disp',
+        status: 'REQUESTED',
+        orderItems: [],
+      });
+      await expect(
+        resolveDisputedOrder(
+          'ord_not_disp',
+          { resolution: 'CANCELLED', adminNote: 'test' },
+          mockPrisma
+        )
+      ).rejects.toMatchObject({
+        statusCode: 400,
+        code: 'INVALID_ORDER_STATUS',
+      });
+    });
+
+    it('resolveDisputedOrder: ปิดเป็น CANCELLED พร้อม refundCredit + incrementBuyerNoShow ต้องคืนหนังสือ/เครดิตและบวก noShowCount', async () => {
+      const mockTx = {
+        order: {
+          findUnique: vi.fn().mockResolvedValue({
+            id: 'ord_disp_2',
+            buyerId: 'usr_b2',
+            sellerId: 'usr_s2',
+            status: 'DISPUTED',
+            orderItems: [{ bookListingId: 'bok_d2' }],
+          }),
+          updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+        },
+        bookListing: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+        user: {
+          update: vi.fn().mockResolvedValue({ credits: 4 }),
+        },
+        creditTransaction: { create: vi.fn().mockResolvedValue({}) },
+        orderMessage: { create: vi.fn().mockResolvedValue({}) },
+      };
+      const mockPrisma = { $transaction: vi.fn(async (cb: any) => cb(mockTx)) };
+
+      const res = await resolveDisputedOrder(
+        'ord_disp_2',
+        {
+          resolution: 'CANCELLED',
+          adminNote: 'ผู้ซื้อไม่มาตามนัดจริงตามหลักฐาน',
+          refundCredit: true,
+          incrementBuyerNoShow: true,
+        },
+        mockPrisma
+      );
+
+      expect(res.status).toBe('CANCELLED');
+      expect(res.refundedCredit).toBe(true);
+      expect(res.incrementedBuyerNoShow).toBe(true);
+      expect(res.releasedBookIds).toEqual(['bok_d2']);
+      expect(mockTx.bookListing.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: ['bok_d2'] } },
+        data: { status: 'AVAILABLE' },
+      });
+      expect(mockTx.creditTransaction.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          userId: 'usr_s2',
+          amount: 1,
+          type: 'REFUND_DISPUTE',
+          orderId: 'ord_disp_2',
+        }),
+      });
+      expect(mockTx.user.update).toHaveBeenCalledWith({
+        where: { id: 'usr_b2' },
+        data: { noShowCount: { increment: 1 } },
+      });
+    });
+
+    it('acceptOrder ต้องปฏิเสธด้วย 400 ORDER_EXPIRED และเปลี่ยนสถานะเป็น EXPIRED หาก REQUESTED เกิน 24 ชม.', async () => {
+      const expiredCreatedAt = new Date(Date.now() - 25 * 60 * 60 * 1000);
+      const mockTx = {
+        order: {
+          findUnique: vi.fn().mockResolvedValue({
+            id: 'ord_exp_1',
+            sellerId: 'usr_seller_123',
+            buyerId: 'usr_buyer_999',
+            status: 'REQUESTED',
+            shippingMethod: 'PICKUP',
+            createdAt: expiredCreatedAt,
+            seller: { id: 'usr_seller_123', credits: 3, isVerifiedSeller: true },
+            orderItems: [{ bookListingId: 'bok_1', bookListing: { status: 'AVAILABLE' } }],
+          }),
+          updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+        },
+        user: { updateMany: vi.fn() },
+      };
+
+      await expect(
+        acceptOrder('ord_exp_1', 'usr_seller_123', {
+          $transaction: vi.fn(async (cb: any) => cb(mockTx)),
+        })
+      ).rejects.toMatchObject({
+        statusCode: 400,
+        code: 'ORDER_EXPIRED',
+      });
+
+      expect(mockTx.order.updateMany).toHaveBeenCalledWith({
+        where: { id: 'ord_exp_1', status: 'REQUESTED' },
+        data: { status: 'EXPIRED' },
+      });
+      expect(mockTx.user.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('expireStaleOrders ต้องปรับ REQUESTED เกิน 24 ชม. เป็น EXPIRED และ SHIPPED เกิน 7 วันเป็น COMPLETED', async () => {
+      const findManyMock = vi
+        .fn()
+        .mockResolvedValueOnce([{ id: 'ord_req_old', buyerId: 'b1', sellerId: 's1' }])
+        .mockResolvedValueOnce([
+          {
+            id: 'ord_ship_old',
+            buyerId: 'b2',
+            sellerId: 's2',
+            status: 'SHIPPED',
+            shippingMethod: 'DELIVERY',
+            orderItems: [{ bookListingId: 'bok_ship_1' }],
+          },
+        ]);
+      const updateManyMock = vi.fn().mockResolvedValue({ count: 1 });
+      const bookUpdateManyMock = vi.fn().mockResolvedValue({ count: 1 });
+
+      const mockDb: any = {
+        order: {
+          findMany: findManyMock,
+          updateMany: updateManyMock,
+        },
+        bookListing: {
+          updateMany: bookUpdateManyMock,
+        },
+        orderMessage: { create: vi.fn().mockResolvedValue({}) },
+        $transaction: vi.fn(async (cb: any) => cb(mockDb)),
+      };
+
+      const summary = await expireStaleOrders(mockDb);
+
+      expect(summary).toEqual({
+        expiredRequestedCount: 1,
+        autoCompletedShippedCount: 1,
+      });
+      expect(updateManyMock).toHaveBeenNthCalledWith(1, {
+        where: { id: { in: ['ord_req_old'] }, status: 'REQUESTED' },
+        data: { status: 'EXPIRED' },
+      });
+      expect(bookUpdateManyMock).toHaveBeenCalledWith({
+        where: { id: { in: ['bok_ship_1'] } },
+        data: { status: 'SOLD' },
+      });
+    });
+
+    it('getAdminOrders ต้องคืนรายการข้อพิพาทพร้อมผู้ซื้อ-ผู้ขาย-หนังสือ-ประวัติแชทเรียงตามเวลา', async () => {
+      const mockDb: any = {
+        order: {
+          findMany: vi.fn().mockResolvedValue([
+            {
+              id: 'ord_admin_1',
+              status: 'DISPUTED',
+              shippingMethod: 'PICKUP',
+              paymentMethod: 'COD',
+              totalPrice: 180,
+              shippingFee: 0,
+              cancelReason: null,
+              receivedPhotoUrl: null,
+              disputeReason: 'ผู้ซื้อไม่มาตามนัด',
+              disputeOpenedBy: 'SELLER',
+              disputedAt: new Date('2026-11-16T03:00:00Z'),
+              missedMeetingReportedAt: new Date('2026-11-16T03:00:00Z'),
+              pickupLocationName: 'หน้าหอสมุดกลาง มช.',
+              scheduleDateIso: '2026-11-16',
+              scheduleTimeLabel: '10:00',
+              scheduledAt: new Date('2026-11-16T02:00:00Z'),
+              scheduleConfirmedByBuyer: true,
+              createdAt: new Date('2026-11-15T10:00:00Z'),
+              updatedAt: new Date('2026-11-16T03:00:00Z'),
+              buyer: {
+                id: 'b1',
+                nickname: 'ผู้ซื้อเอ',
+                displayName: 'Buyer A',
+                avatarUrl: null,
+                noShowCount: 1,
+              },
+              seller: {
+                id: 's1',
+                nickname: 'ผู้ขายบี',
+                displayName: 'Seller B',
+                credits: 2,
+                shopProfile: { shopName: 'ร้านหนังสือบี' },
+              },
+              orderItems: [
+                {
+                  bookListingId: 'bok_1',
+                  price: 180,
+                  bookListing: {
+                    grade: 'LIKE_NEW',
+                    bookCatalog: { title: 'Clean Code', coverUrl: 'https://img/cover.webp' },
+                    images: [{ imageUrl: 'https://img/front.webp' }],
+                  },
+                },
+              ],
+              messages: [
+                {
+                  id: 'm2',
+                  senderRole: 'SELLER',
+                  kind: 'TEXT',
+                  text: 'รอมา 20 นาทีแล้วครับ',
+                  createdAt: new Date('2026-11-16T02:50:00Z'),
+                  sender: { nickname: 'ผู้ขายบี', displayName: 'Seller B' },
+                },
+                {
+                  id: 'm1',
+                  senderRole: 'BUYER',
+                  kind: 'TEXT',
+                  text: 'กำลังเดินไปครับ',
+                  createdAt: new Date('2026-11-16T02:30:00Z'),
+                  sender: { nickname: 'ผู้ซื้อเอ', displayName: 'Buyer A' },
+                },
+              ],
+              paymentSlips: [],
+            },
+          ]),
+        },
+      };
+
+      const orders = await getAdminOrders({ status: 'DISPUTED' }, mockDb);
+
+      expect(orders).toHaveLength(1);
+      expect(orders[0].seller.shopName).toBe('ร้านหนังสือบี');
+      expect(orders[0].buyer.noShowCount).toBe(1);
+      expect(orders[0].recentMessages.map((m) => m.id)).toEqual(['m1', 'm2']);
     });
   });
 });

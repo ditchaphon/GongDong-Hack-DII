@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { TopBar } from '@/components/layout/TopBar';
 import { BookCard, Button, EmptyState, Toast } from '@/components/ui';
 import { ConfirmSheet } from '@/components/v4';
+import { useLiff } from '@/hooks/useLiff';
 import { api } from '@/lib/api';
 import {
   BackendPublicShopResponse,
@@ -31,6 +32,7 @@ export default function SellerShopPage({
 }) {
   const resolvedParams = use(params);
   const router = useRouter();
+  const { user } = useLiff();
 
   const [shop, setShop] = useState<ShopProfile | null>(null);
   const [sellerBooks, setSellerBooks] = useState<Book[]>([]);
@@ -209,6 +211,7 @@ export default function SellerShopPage({
             <BookCard
               key={book.id}
               book={book}
+              isOwnBook={Boolean(user?.id && book.sellerId === user.id)}
               onClick={() => router.push(`/book/${book.id}`)}
             />
           ))}

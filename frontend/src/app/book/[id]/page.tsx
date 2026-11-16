@@ -14,6 +14,7 @@ import {
 } from '@/components/ui';
 import { PhotoGallery, ConfirmSheet, CartAddedSheet, CartAddedState } from '@/components/v4';
 import { calcParcelFee } from '@/lib/delivery';
+import { toUiBookGrade } from '@/lib/catalog';
 import { api } from '@/lib/api';
 import {
   BackendBookDetail,
@@ -24,6 +25,7 @@ import {
 } from '@/lib/mappers';
 import { Book, ShopProfile } from '@/types';
 import { useCart } from '@/hooks/useCart';
+import { useLiff } from '@/hooks/useLiff';
 import {
   Share2,
   MapPin,
@@ -39,7 +41,62 @@ import {
   CalendarDays,
   ZoomIn,
   AlertTriangle,
+  ArrowUpDown,
+  Sparkles,
 } from 'lucide-react';
+
+type CompareSortKey = 'PRICE' | 'GRADE' | 'PICKUP';
+
+interface IsbnCompareOffer {
+  id: string;
+  title: string;
+  coverImageUrl: string;
+  price: number;
+  originalPrice: number | null;
+  priceDiff: number;
+  grade: 'LIKE_NEW' | 'GENTLY_READ' | 'WELL_LOVED' | 'WORN_BUT_READABLE';
+  defectCount: number;
+  isSet: boolean;
+  totalVolumes: number | null;
+  allowPickup: boolean;
+  pickupLocationName: string | null;
+  allowDelivery: boolean;
+  codEnabled: boolean;
+  isCheapest: boolean;
+  isBestGrade: boolean;
+  isSameSeller: boolean;
+  seller: {
+    id: string;
+    nickname: string;
+    shopName: string | null;
+    province: string | null;
+    avatarUrl: string | null;
+    isVerifiedSeller: boolean;
+    rating: number;
+    reviewCount: number;
+    conditionAccuratePercent: number | null;
+  };
+}
+
+interface BookIsbnCompareResult {
+  currentBookId: string;
+  isbn: string;
+  isSyntheticIsbn: boolean;
+  currentPrice: number;
+  currentGrade: 'LIKE_NEW' | 'GENTLY_READ' | 'WELL_LOVED' | 'WORN_BUT_READABLE';
+  isCurrentCheapest: boolean;
+  isCurrentBestGrade: boolean;
+  cheapestOfferPrice: number | null;
+  totalOffers: number;
+  offers: IsbnCompareOffer[];
+}
+
+const COMPARE_GRADE_RANK: Record<IsbnCompareOffer['grade'], number> = {
+  LIKE_NEW: 4,
+  GENTLY_READ: 3,
+  WELL_LOVED: 2,
+  WORN_BUT_READABLE: 1,
+};
 
 export default function BookDetailPage({
   params,
@@ -48,10 +105,13 @@ export default function BookDetailPage({
 }) {
   const resolvedParams = use(params);
   const router = useRouter();
+  const { user } = useLiff();
   const { addToCart, items: cartItems, shopGroups } = useCart();
 
   const [book, setBook] = useState<Book | null>(null);
   const [shop, setShop] = useState<ShopProfile | null>(null);
+  const [compareData, setCompareData] = useState<BookIsbnCompareResult | null>(null);
+  const [compareSort, setCompareSort] = useState<CompareSortKey>('PRICE');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -74,16 +134,22 @@ export default function BookDetailPage({
         setBook(mappedBook);
 
         const sellerId = mappedBook.sellerId;
-        if (sellerId) {
-          const [shopRes, reviewsRes] = await Promise.all([
-            api.get<BackendPublicShopResponse>(`/api/shops/${sellerId}`).catch(() => null),
-            api.get<BackendReviewsResponse>(`/api/users/${sellerId}/reviews`).catch(() => null),
-          ]);
-          if (!active) return;
-          if (shopRes) {
-            setShop(mapPublicShopToShopProfile(shopRes, reviewsRes));
-          }
+        const [shopRes, reviewsRes, compareRes] = await Promise.all([
+          sellerId
+            ? api.get<BackendPublicShopResponse>(`/api/shops/${sellerId}`).catch(() => null)
+            : Promise.resolve(null),
+          sellerId
+            ? api.get<BackendReviewsResponse>(`/api/users/${sellerId}/reviews`).catch(() => null)
+            : Promise.resolve(null),
+          api
+            .get<BookIsbnCompareResult>(`/api/books/${resolvedParams.id}/compare`)
+            .catch(() => null),
+        ]);
+        if (!active) return;
+        if (shopRes) {
+          setShop(mapPublicShopToShopProfile(shopRes, reviewsRes));
         }
+        setCompareData(compareRes);
       } catch (err) {
         if (!active) return;
         setError(err instanceof Error ? err.message : 'ไม่พบหนังสือเล่มนี้');
@@ -152,8 +218,13 @@ export default function BookDetailPage({
 
   const sameShopCount = cartItems.filter((item) => item.sellerId === book.sellerId).length;
   const isBookAvailable = !book.status || book.status === 'AVAILABLE';
+  const isOwnBook = Boolean(user?.id && book.sellerId === user.id);
 
   const handleAddToCart = () => {
+    if (isOwnBook) {
+      setToastMessage('ไม่สามารถเพิ่มหนังสือของตัวเองลงตะกร้าได้');
+      return;
+    }
     if (!isBookAvailable) {
       setToastMessage('หนังสือเล่มนี้ถูกจองหรือขายไปแล้ว');
       return;
@@ -170,6 +241,8 @@ export default function BookDetailPage({
         totalCount: cartItems.length + 1,
         shopCount: nextShopCount,
       });
+    } else if (res.reason === 'OWN_BOOK') {
+      setToastMessage(res.message || 'ไม่สามารถเพิ่มหนังสือของตัวเองลงตะกร้าได้');
     } else {
       setCartSheet({
         kind: 'DUPLICATE',
@@ -182,6 +255,10 @@ export default function BookDetailPage({
   };
 
   const handleBuyNow = () => {
+    if (isOwnBook) {
+      setToastMessage('ไม่สามารถสั่งซื้อหนังสือของตัวเองได้');
+      return;
+    }
     if (!isBookAvailable) {
       setToastMessage('หนังสือเล่มนี้ถูกจองหรือขายไปแล้ว');
       return;
@@ -351,8 +428,14 @@ export default function BookDetailPage({
           )}
         </div>
         <p className="text-[10px] text-slate-400">
-          ราคามือหนึ่ง {book.originalPrice ? `฿${book.originalPrice.toLocaleString()}` : 'ไม่ระบุ'} ·
-          เทียบกับร้านอื่นได้จากหน้าแรก
+          ราคามือหนึ่ง {book.originalPrice ? `฿${book.originalPrice.toLocaleString()}` : 'ไม่ระบุ'} ·{' '}
+          {compareData && !compareData.isSyntheticIsbn && compareData.totalOffers > 0 ? (
+            <a href="#isbn-compare" className="text-sky-600 font-semibold hover:underline">
+              เทียบกับอีก {compareData.totalOffers} ร้านที่ขายเล่มนี้ ↓
+            </a>
+          ) : (
+            'เทียบราคาและสภาพกับร้านอื่นด้านล่าง'
+          )}
         </p>
         {book.description && (
           <p className="text-xs text-slate-600 leading-relaxed pt-2 border-t border-slate-50 whitespace-pre-line">
@@ -490,6 +573,203 @@ export default function BookDetailPage({
               </button>
             );
           })}
+        </div>
+      )}
+
+      {/* ISBN Smart Compare */}
+      {compareData && !compareData.isSyntheticIsbn && (
+        <div id="isbn-compare" className="mt-2 p-4 bg-white border-y border-slate-100 space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <div>
+              <h2 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
+                <ArrowUpDown className="w-4 h-4 text-[var(--color-primary)]" />
+                เทียบกับร้านอื่น (ISBN เดียวกัน)
+              </h2>
+              <p className="text-[11px] text-slate-400 mt-0.5">
+                ISBN {compareData.isbn}
+              </p>
+            </div>
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200 shrink-0">
+              {compareData.totalOffers > 0
+                ? `อีก ${compareData.totalOffers} ตัวเลือก`
+                : 'มีเฉพาะเล่มนี้'}
+            </span>
+          </div>
+
+          {compareData.offers.length > 0 ? (
+            <>
+              {/* Current book competitiveness banner */}
+              <div
+                className={`p-2.5 rounded-xl border text-[11px] font-semibold flex items-center gap-2 ${
+                  compareData.cheapestOfferPrice !== null &&
+                  compareData.cheapestOfferPrice < book.price
+                    ? 'bg-amber-50 border-amber-200 text-amber-900'
+                    : 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                }`}
+              >
+                <Sparkles className="w-3.5 h-3.5 shrink-0" />
+                <span>
+                  {compareData.cheapestOfferPrice !== null &&
+                  compareData.cheapestOfferPrice < book.price
+                    ? `มีร้านอื่นขายเล่มนี้ถูกกว่า ฿${(book.price - compareData.cheapestOfferPrice).toLocaleString()} (เริ่ม ฿${compareData.cheapestOfferPrice.toLocaleString()})`
+                    : 'เล่มนี้ราคาต่ำที่สุดสำหรับ ISBN นี้ในขณะนี้'}
+                  {compareData.isCurrentBestGrade ? ' · สภาพเกรดสูงสุดที่มีอยู่' : ''}
+                </span>
+              </div>
+
+              {/* Sort Pills */}
+              <div className="flex gap-1.5 overflow-x-auto pb-0.5">
+                {(
+                  [
+                    { key: 'PRICE', label: 'ราคาต่ำสุด' },
+                    { key: 'GRADE', label: 'สภาพดีสุด' },
+                    { key: 'PICKUP', label: 'นัดรับ ฿0 ก่อน' },
+                  ] as const
+                ).map((opt) => (
+                  <button
+                    key={opt.key}
+                    type="button"
+                    onClick={() => setCompareSort(opt.key)}
+                    className={`px-3 py-1.5 rounded-full text-[11px] font-bold border transition shrink-0 ${
+                      compareSort === opt.key
+                        ? 'bg-[var(--color-primary)] border-[var(--color-primary)] text-white'
+                        : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Sorted Offers */}
+              <div className="space-y-2">
+                {[...compareData.offers]
+                  .sort((a, b) => {
+                    if (compareSort === 'GRADE') {
+                      const rankDiff =
+                        (COMPARE_GRADE_RANK[b.grade] ?? 0) -
+                        (COMPARE_GRADE_RANK[a.grade] ?? 0);
+                      return rankDiff !== 0 ? rankDiff : a.price - b.price;
+                    }
+                    if (compareSort === 'PICKUP') {
+                      if (a.allowPickup !== b.allowPickup) {
+                        return a.allowPickup ? -1 : 1;
+                      }
+                      return a.price - b.price;
+                    }
+                    return a.price - b.price;
+                  })
+                  .map((offer) => {
+                    const uiGrade = toUiBookGrade(offer.grade);
+                    const shopLabel =
+                      offer.seller.shopName || offer.seller.nickname || 'ร้านค้ากองดอง';
+
+                    return (
+                      <Link
+                        key={offer.id}
+                        href={`/book/${offer.id}`}
+                        className="flex items-center gap-3 p-3 rounded-2xl border border-slate-200 bg-slate-50/60 hover:bg-slate-100/70 transition"
+                      >
+                        {offer.coverImageUrl ? (
+                          <img
+                            src={offer.coverImageUrl}
+                            alt={offer.title}
+                            className="w-12 h-16 rounded-xl object-cover bg-slate-200 shrink-0"
+                          />
+                        ) : (
+                          <div className="w-12 h-16 rounded-xl bg-slate-200 shrink-0" />
+                        )}
+
+                        <div className="flex-1 min-w-0 space-y-1">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-xs font-bold text-slate-900 truncate max-w-[150px]">
+                              {shopLabel}
+                            </span>
+                            {offer.isSameSeller && (
+                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-200 text-slate-700">
+                                ร้านเดียวกัน
+                              </span>
+                            )}
+                            {offer.seller.isVerifiedSeller && (
+                              <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
+                            )}
+                            {offer.isCheapest && (
+                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800">
+                                ถูกที่สุด
+                              </span>
+                            )}
+                            {offer.isBestGrade && (
+                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-sky-100 text-sky-800">
+                                สภาพดีสุด
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-1.5 flex-wrap text-[10px]">
+                            <GradeBadge grade={uiGrade} size="sm" showDescription={false} />
+                            <span className="text-slate-500">
+                              {offer.defectCount === 0
+                                ? 'ไม่มีตำหนิ'
+                                : `ตำหนิ ${offer.defectCount} จุด`}
+                            </span>
+                            {offer.seller.rating > 0 && (
+                              <span className="inline-flex items-center text-amber-600 font-semibold">
+                                <Star className="w-2.5 h-2.5 fill-amber-400 stroke-amber-400 mr-0.5" />
+                                {offer.seller.rating}
+                              </span>
+                            )}
+                            {offer.seller.conditionAccuratePercent !== null && (
+                              <span className="text-emerald-700 font-semibold">
+                                · ตรงปก {offer.seller.conditionAccuratePercent}%
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-1.5 flex-wrap text-[10px] text-slate-500">
+                            {offer.allowPickup && (
+                              <span className="inline-flex items-center gap-0.5 text-teal-700 bg-teal-50 border border-teal-200 px-1.5 py-0.5 rounded">
+                                <MapPin className="w-2.5 h-2.5" />
+                                นัดรับ ฿0
+                                {offer.pickupLocationName ? ` · ${offer.pickupLocationName}` : ''}
+                              </span>
+                            )}
+                            {offer.allowDelivery && (
+                              <span className="inline-flex items-center gap-0.5 text-slate-600 bg-white border border-slate-200 px-1.5 py-0.5 rounded">
+                                <Truck className="w-2.5 h-2.5" />
+                                ส่งพัสดุ
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="text-right shrink-0 space-y-1">
+                          <div className="text-sm font-black text-[var(--color-primary)]">
+                            ฿{offer.price.toLocaleString()}
+                          </div>
+                          {offer.priceDiff < 0 ? (
+                            <span className="inline-block text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800">
+                              ถูกกว่า ฿{Math.abs(offer.priceDiff).toLocaleString()}
+                            </span>
+                          ) : offer.priceDiff > 0 ? (
+                            <span className="inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded bg-slate-200 text-slate-600">
+                              +฿{offer.priceDiff.toLocaleString()}
+                            </span>
+                          ) : (
+                            <span className="inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded bg-slate-100 text-slate-500">
+                              ราคาเท่ากัน
+                            </span>
+                          )}
+                        </div>
+                      </Link>
+                    );
+                  })}
+              </div>
+            </>
+          ) : (
+            <p className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-[11px] text-slate-500">
+              ยังไม่มีร้านอื่นลงขายหนังสือ ISBN นี้ในขณะนี้ — เล่มนี้เป็นตัวเลือกเดียวที่พร้อมขาย
+            </p>
+          )}
         </div>
       )}
 
@@ -634,24 +914,46 @@ export default function BookDetailPage({
 
       {/* Bottom actions */}
       <div className="fixed bottom-0 left-0 right-0 z-30 flex justify-center pointer-events-none">
-        <div className="w-full max-w-[430px] bg-white border-t border-slate-200 p-3 flex gap-2.5 pointer-events-auto safe-area-bottom shadow-lg">
-          <Button
-            variant="outline"
-            fullWidth
-            disabled={!isBookAvailable}
-            onClick={handleAddToCart}
-            className="flex-1"
-          >
-            {isBookAvailable ? 'ใส่ตะกร้า' : 'ไม่พร้อมขาย'}
-          </Button>
-          <Button
-            fullWidth
-            disabled={!isBookAvailable}
-            onClick={handleBuyNow}
-            className="flex-1"
-          >
-            {isBookAvailable ? 'ส่งคำขอซื้อ' : 'ถูกจอง/ขายแล้ว'}
-          </Button>
+        <div className="w-full max-w-[430px] bg-white border-t border-slate-200 p-3 flex items-center gap-2.5 pointer-events-auto safe-area-bottom shadow-lg">
+          {isOwnBook ? (
+            <>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-bold text-slate-800 flex items-center gap-1">
+                  <Store className="w-3.5 h-3.5 text-[var(--color-primary)] shrink-0" />
+                  นี่คือหนังสือของคุณ
+                </p>
+                <p className="text-[10px] text-slate-500 truncate">
+                  ไม่สามารถซื้อหรือใส่ตะกร้ารายการของตัวเองได้
+                </p>
+              </div>
+              <Button
+                onClick={() => router.push('/seller')}
+                className="shrink-0"
+              >
+                จัดการรายการขาย
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button
+                variant="outline"
+                fullWidth
+                disabled={!isBookAvailable}
+                onClick={handleAddToCart}
+                className="flex-1"
+              >
+                {isBookAvailable ? 'ใส่ตะกร้า' : 'ไม่พร้อมขาย'}
+              </Button>
+              <Button
+                fullWidth
+                disabled={!isBookAvailable}
+                onClick={handleBuyNow}
+                className="flex-1"
+              >
+                {isBookAvailable ? 'ส่งคำขอซื้อ' : 'ถูกจอง/ขายแล้ว'}
+              </Button>
+            </>
+          )}
         </div>
       </div>
 

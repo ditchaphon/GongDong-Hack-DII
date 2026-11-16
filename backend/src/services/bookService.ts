@@ -1,6 +1,8 @@
+import { SupabaseClient } from '@supabase/supabase-js';
 import { prisma as defaultPrisma } from '../config/prisma';
 import { calculateBookGrade } from './gradingService';
 import { sanitizeIsbn } from './googleBooksService';
+import { removeUnreferencedStorageUrls } from './uploadService';
 import {
   AppError,
   BookGrade,
@@ -683,12 +685,18 @@ export async function getUserBookListings(
 export async function deleteBookListing(
   id: string,
   sellerId: string,
-  prismaClient?: any
+  prismaClient?: any,
+  supabaseClientOverride?: SupabaseClient | null
 ): Promise<{ success: boolean; message: string }> {
   const db = prismaClient || defaultPrisma;
 
   const listing = await db.bookListing.findUnique({
     where: { id },
+    include: {
+      images: {
+        select: { imageUrl: true },
+      },
+    },
   });
 
   if (!listing) {
@@ -707,9 +715,25 @@ export async function deleteBookListing(
     );
   }
 
+  const candidateUrls: Array<string | null | undefined> = [
+    ...(Array.isArray(listing.images) ? listing.images.map((img: any) => img?.imageUrl) : []),
+    ...(Array.isArray(listing.defects)
+      ? listing.defects.map((defect: any) => defect?.photo)
+      : []),
+  ];
+
   await db.bookListing.delete({
     where: { id },
   });
+
+  if (candidateUrls.some(Boolean)) {
+    await removeUnreferencedStorageUrls(candidateUrls, {
+      expectedBucket: 'book-listings',
+      ownerUserId: sellerId,
+      prismaClient: db,
+      supabaseClientOverride,
+    });
+  }
 
   return {
     success: true,
@@ -837,4 +861,246 @@ export async function getPreviousListingsByIsbn(
   }
 
   return candidates;
+}
+
+const GRADE_RANK: Record<BookGrade, number> = {
+  LIKE_NEW: 4,
+  GENTLY_READ: 3,
+  WELL_LOVED: 2,
+  WORN_BUT_READABLE: 1,
+};
+
+export interface IsbnCompareOffer {
+  id: string;
+  title: string;
+  coverImageUrl: string;
+  price: number;
+  originalPrice: number | null;
+  priceDiff: number;
+  grade: BookGrade;
+  defectCount: number;
+  isSet: boolean;
+  totalVolumes: number | null;
+  allowPickup: boolean;
+  pickupLocationName: string | null;
+  allowDelivery: boolean;
+  codEnabled: boolean;
+  isCheapest: boolean;
+  isBestGrade: boolean;
+  isSameSeller: boolean;
+  seller: {
+    id: string;
+    nickname: string;
+    shopName: string | null;
+    province: string | null;
+    avatarUrl: string | null;
+    isVerifiedSeller: boolean;
+    rating: number;
+    reviewCount: number;
+    conditionAccuratePercent: number | null;
+  };
+}
+
+export interface BookIsbnCompareResult {
+  currentBookId: string;
+  isbn: string;
+  isSyntheticIsbn: boolean;
+  currentPrice: number;
+  currentGrade: BookGrade;
+  isCurrentCheapest: boolean;
+  isCurrentBestGrade: boolean;
+  cheapestOfferPrice: number | null;
+  totalOffers: number;
+  offers: IsbnCompareOffer[];
+}
+
+function countDefectsFromListing(item: any): number {
+  if (Array.isArray(item.defects) && item.defects.length > 0) {
+    return item.defects.length;
+  }
+  const ans = item.conditionAnswers;
+  if (ans && typeof ans === 'object' && !Array.isArray(ans)) {
+    return Object.values(ans).filter((v) => v === true).length;
+  }
+  return 0;
+}
+
+/**
+ * Service เปรียบเทียบหนังสือ ISBN เดียวกันจากร้านอื่น (GET /api/books/:id/compare)
+ * - Read-only query จาก BookListing ที่ status = AVAILABLE
+ * - ข้าม synthetic ISBN (ขึ้นต้นด้วย 299 ความยาว 13 หลัก)
+ */
+export async function getBookIsbnComparison(
+  bookId: string,
+  prismaClient?: any
+): Promise<BookIsbnCompareResult> {
+  const db = prismaClient || defaultPrisma;
+
+  const current = await db.bookListing.findUnique({
+    where: { id: bookId },
+    select: {
+      id: true,
+      isbn: true,
+      sellerId: true,
+      price: true,
+      grade: true,
+      status: true,
+    },
+  });
+
+  if (!current || current.status === 'HIDDEN') {
+    throw new AppError('ไม่พบหนังสือที่ระบุ', 404, 'BOOK_NOT_FOUND');
+  }
+
+  const currentPrice = Number(current.price);
+  const currentGrade = current.grade as BookGrade;
+  const isSyntheticIsbn = /^299\d{10}$/.test(String(current.isbn || '').trim());
+
+  if (isSyntheticIsbn || !current.isbn) {
+    return {
+      currentBookId: current.id,
+      isbn: current.isbn,
+      isSyntheticIsbn: true,
+      currentPrice,
+      currentGrade,
+      isCurrentCheapest: true,
+      isCurrentBestGrade: true,
+      cheapestOfferPrice: null,
+      totalOffers: 0,
+      offers: [],
+    };
+  }
+
+  const siblings = await db.bookListing.findMany({
+    where: {
+      isbn: current.isbn,
+      id: { not: current.id },
+      status: 'AVAILABLE',
+    },
+    orderBy: [{ price: 'asc' }, { createdAt: 'desc' }],
+    take: 15,
+    include: {
+      bookCatalog: true,
+      images: {
+        orderBy: [{ isCover: 'desc' }, { displayOrder: 'asc' }],
+        take: 1,
+      },
+      seller: {
+        select: {
+          id: true,
+          nickname: true,
+          avatarUrl: true,
+          isVerifiedSeller: true,
+          shopProfile: {
+            select: {
+              shopName: true,
+              province: true,
+            },
+          },
+          receivedReviews: {
+            select: {
+              rating: true,
+              isConditionAccurate: true,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  const rows = Array.isArray(siblings) ? siblings : [];
+  const allPrices = [currentPrice, ...rows.map((r: any) => Number(r.price))];
+  const minPrice = Math.min(...allPrices);
+  const allGradeRanks = [
+    GRADE_RANK[currentGrade] ?? 0,
+    ...rows.map((r: any) => GRADE_RANK[r.grade as BookGrade] ?? 0),
+  ];
+  const maxGradeRank = Math.max(...allGradeRanks);
+
+  const offers: IsbnCompareOffer[] = rows.map((item: any) => {
+    const { snapshot } = extractCatalogSnapshot(item.photoChecks);
+    const offerPrice = Number(item.price);
+    const offerGrade = item.grade as BookGrade;
+    const reviews = Array.isArray(item.seller?.receivedReviews)
+      ? item.seller.receivedReviews
+      : [];
+    const reviewCount = reviews.length;
+    const rating =
+      reviewCount > 0
+        ? Math.round(
+            (reviews.reduce((sum: number, r: any) => sum + Number(r.rating || 0), 0) /
+              reviewCount) *
+              10
+          ) / 10
+        : 0;
+    const accurateEntries = reviews.filter(
+      (r: any) => typeof r.isConditionAccurate === 'boolean'
+    );
+    const conditionAccuratePercent =
+      accurateEntries.length > 0
+        ? Math.round(
+            (accurateEntries.filter((r: any) => r.isConditionAccurate).length /
+              accurateEntries.length) *
+              100
+          )
+        : null;
+
+    const resolvedTitle = snapshot?.title?.trim() || item.bookCatalog?.title || 'หนังสือ';
+    const resolvedOriginalPrice =
+      snapshot?.originalPrice !== null &&
+      snapshot?.originalPrice !== undefined &&
+      Number(snapshot.originalPrice) > 0
+        ? Number(snapshot.originalPrice)
+        : item.bookCatalog?.originalPrice !== null &&
+          item.bookCatalog?.originalPrice !== undefined
+        ? Number(item.bookCatalog.originalPrice)
+        : null;
+
+    return {
+      id: item.id,
+      title: resolvedTitle,
+      coverImageUrl: item.images?.[0]?.imageUrl || item.bookCatalog?.coverUrl || '',
+      price: offerPrice,
+      originalPrice: resolvedOriginalPrice,
+      priceDiff: Math.round((offerPrice - currentPrice) * 100) / 100,
+      grade: offerGrade,
+      defectCount: countDefectsFromListing(item),
+      isSet: Boolean(item.isSet),
+      totalVolumes: item.totalVolumes ?? null,
+      allowPickup: Boolean(item.allowPickup),
+      pickupLocationName: item.pickupLocationName ?? null,
+      allowDelivery: Boolean(item.allowDelivery),
+      codEnabled: item.codEnabled ?? true,
+      isCheapest: offerPrice === minPrice,
+      isBestGrade: (GRADE_RANK[offerGrade] ?? 0) === maxGradeRank,
+      isSameSeller: item.sellerId === current.sellerId,
+      seller: {
+        id: item.seller?.id || item.sellerId,
+        nickname: item.seller?.nickname || 'ร้านค้ากองดอง',
+        shopName: item.seller?.shopProfile?.shopName ?? null,
+        province: item.seller?.shopProfile?.province ?? null,
+        avatarUrl: item.seller?.avatarUrl ?? null,
+        isVerifiedSeller: Boolean(item.seller?.isVerifiedSeller),
+        rating,
+        reviewCount,
+        conditionAccuratePercent,
+      },
+    };
+  });
+
+  const cheapestOfferPrice =
+    offers.length > 0 ? Math.min(...offers.map((o) => o.price)) : null;
+
+  return {
+    currentBookId: current.id,
+    isbn: current.isbn,
+    isSyntheticIsbn: false,
+    currentPrice,
+    currentGrade,
+    isCurrentCheapest: currentPrice === minPrice,
+    isCurrentBestGrade: (GRADE_RANK[currentGrade] ?? 0) === maxGradeRank,
+    cheapestOfferPrice,
+    totalOffers: offers.length,
+    offers,
+  };
 }

@@ -58,6 +58,17 @@ describe('userService', () => {
       expect(result.nickname).toBe('หนอนหนังสือ');
       expect(result.credits).toBe(5);
       expect(result.is_verified_seller).toBe(true);
+      expect(result.is_admin).toBe(false);
+
+      const prevAdminIds = process.env.ADMIN_LINE_USER_IDS;
+      process.env.ADMIN_LINE_USER_IDS = 'U_OTHER, line-1';
+      try {
+        const adminResult = await getUserProfile('usr-1', mockPrisma);
+        expect(adminResult.is_admin).toBe(true);
+      } finally {
+        if (prevAdminIds === undefined) delete process.env.ADMIN_LINE_USER_IDS;
+        else process.env.ADMIN_LINE_USER_IDS = prevAdminIds;
+      }
     });
 
     it('ควรโยน Error 404 USER_NOT_FOUND หากไม่พบผู้ใช้', async () => {

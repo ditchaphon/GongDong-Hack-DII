@@ -22,6 +22,7 @@ interface BackendUserProfile {
   verified_name: string | null;
   promptpay_id: string | null;
   is_verified_seller: boolean;
+  is_admin?: boolean;
   pdpa_consent_at?: string | null;
   no_show_count: number;
   credits: number;
@@ -109,6 +110,7 @@ export const LiffProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         isSeller: true,
         credits: profile.credits,
         isVerifiedSeller: profile.is_verified_seller,
+        isAdmin: Boolean(profile.is_admin),
         pdpaConsentAt: profile.pdpa_consent_at ?? null,
         promptPayName: profile.verified_name || undefined,
         phone: profile.phone_number || undefined,

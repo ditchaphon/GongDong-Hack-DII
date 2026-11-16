@@ -220,6 +220,7 @@ export interface UserProfile {
   isSeller: boolean;
   credits: number;
   isVerifiedSeller: boolean;
+  isAdmin?: boolean;
   pdpaConsentAt?: string | null;
   promptPayName?: string;
   phone?: string;

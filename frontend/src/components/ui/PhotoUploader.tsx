@@ -3,7 +3,7 @@
 import React, { useRef, useState } from 'react';
 import clsx from 'clsx';
 import { Camera, X, Check, Loader2 } from 'lucide-react';
-import { uploadImageFile, UploadBucket } from '@/lib/api';
+import { safeDeleteUploadedImage, uploadImageFile, UploadBucket } from '@/lib/api';
 
 export interface PhotoUploaderProps {
   label: string;
@@ -42,7 +42,11 @@ export const PhotoUploader: React.FC<PhotoUploaderProps> = ({
     setUploadError(null);
     setIsUploading(true);
     try {
+      const previousUrl = previewUrl;
       const uploaded = await uploadImageFile(file, bucket);
+      if (previousUrl && previousUrl !== uploaded.url) {
+        void safeDeleteUploadedImage(previousUrl);
+      }
       onChange?.(uploaded.url);
     } catch (err: any) {
       setUploadError(err?.message || 'อัปโหลดรูปไม่สำเร็จ กรุณาลองใหม่');
@@ -106,6 +110,9 @@ export const PhotoUploader: React.FC<PhotoUploaderProps> = ({
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
+                  if (previewUrl) {
+                    void safeDeleteUploadedImage(previewUrl);
+                  }
                   onRemove?.();
                 }}
                 className="p-2 bg-rose-600 text-white rounded-full hover:bg-rose-700 active:scale-95 transition shadow-md"

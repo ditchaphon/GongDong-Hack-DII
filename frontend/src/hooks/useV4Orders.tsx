@@ -345,8 +345,9 @@ export const V4OrdersProvider: React.FC<{ children: ReactNode }> = ({
   const cancelOrder = async (id: string, reason?: string) => {
     if (!idToken) return { ok: false, error: 'ยังไม่ได้เข้าสู่ระบบ' };
     try {
-      await api.post(`/api/orders/${id}/cancel`, { reason }, { token: idToken });
-      await fetchOrder(id);
+      const safeReason = reason?.trim() || 'ยกเลิกคำสั่งซื้อ';
+      await api.post(`/api/orders/${id}/cancel`, { reason: safeReason }, { token: idToken });
+      await Promise.all([fetchOrder(id), refreshUser()]);
       return { ok: true };
     } catch (err) {
       return { ok: false, error: extractErrorMessage(err, 'ยกเลิกออเดอร์ไม่สำเร็จ') };

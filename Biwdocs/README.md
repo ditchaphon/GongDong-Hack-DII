@@ -12,3 +12,4 @@
 - [LOCALHOST_FIXABLE_ISSUES_PLAN.md](file:///D:/Project/GongDong-Hack-DII/Biwdocs/LOCALHOST_FIXABLE_ISSUES_PLAN.md): แผนแก้ไขปัญหาและผลลัพธ์ที่แก้ได้ทันทีบนเครื่อง Localhost (ก่อนเชื่อม LINE Dev) แยกกลุ่ม Code-Only vs Prisma Schema vs โหมดจำลอง
 - [LINE_DEV_TESTING_PLAN.md](file:///D:/Project/GongDong-Hack-DII/Biwdocs/LINE_DEV_TESTING_PLAN.md): แผนทดสอบระบบบน LINE Developers ผ่าน Single HTTPS Tunnel (`cloudflared`)
 - [VERCEL_DEPLOYMENT_PLAN.md](file:///D:/Project/GongDong-Hack-DII/Biwdocs/VERCEL_DEPLOYMENT_PLAN.md): แผนขั้นตอนการ Deploy Backend + Frontend ลง Vercel (2 Projects + Single-Origin Proxy + Supabase + SlipOK + LINE)
+- [BUYER_SELLER_ORDER_FLOW.md](file:///D:/Project/GongDong-Hack-DII/Biwdocs/BUYER_SELLER_ORDER_FLOW.md): Flow การสั่งซื้อและโต้ตอบระหว่างผู้ซื้อ–ผู้ขาย (State Machine, Sequence Diagram นัดรับ/พัสดุ, PDPA, LINE Push) พร้อมวิเคราะห์ช่องโหว่ที่พบในโค้ดปัจจุบัน

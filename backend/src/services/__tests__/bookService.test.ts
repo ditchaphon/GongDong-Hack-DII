@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   createBookListing,
   deleteBookListing,
+  getBookIsbnComparison,
   getBookListingDetail,
   getBookListings,
   getPreviousListingsByIsbn,
@@ -671,6 +672,158 @@ describe('BookService - Marketplace & Listings Management', () => {
       expect(candidates[0].seller_name).toBe('ร้านหนังสือบิว');
       expect(candidates[1].title).toBe('จิตวิทยาวาทะด้วยเงิน');
       expect(candidates[1].seller_name).toBe('ร้านหนังสือเฟรม');
+    });
+
+    it('deleteBookListing ต้องลบไฟล์รูปใน book-listings ที่ไม่ได้ถูกอ้างอิงแล้ว และเก็บไฟล์ที่ BookCatalog ยังอ้างอิงไว้', async () => {
+      const coverUrl =
+        'https://proj.supabase.co/storage/v1/object/public/book-listings/usr_seller_1/cover.webp';
+      const defectUrl =
+        'https://proj.supabase.co/storage/v1/object/public/book-listings/usr_seller_1/defect.webp';
+      const removeMock = vi.fn().mockResolvedValue({ error: null });
+      const fakeSupabase: any = {
+        storage: { from: vi.fn().mockReturnValue({ remove: removeMock }) },
+      };
+
+      mockDb.bookListing.findUnique.mockResolvedValue({
+        id: 'bok_del_storage',
+        sellerId: 'usr_seller_1',
+        status: 'AVAILABLE',
+        images: [{ imageUrl: coverUrl }],
+        defects: [{ id: 'coverIntact', note: 'มุมพับ', photo: defectUrl }],
+      });
+      mockDb.bookListing.delete.mockResolvedValue({});
+      mockDb.bookListingImage = { findFirst: vi.fn().mockResolvedValue(null) };
+      mockDb.bookCatalog = {
+        findFirst: vi.fn().mockImplementation(async ({ where }: any) => {
+          return JSON.stringify(where).includes('usr_seller_1/cover.webp')
+            ? { isbn: '9786161845678' }
+            : null;
+        }),
+      };
+
+      const res = await deleteBookListing('bok_del_storage', 'usr_seller_1', mockDb, fakeSupabase);
+
+      expect(res.success).toBe(true);
+      expect(fakeSupabase.storage.from).toHaveBeenCalledWith('book-listings');
+      expect(removeMock).toHaveBeenCalledWith(['usr_seller_1/defect.webp']);
+    });
+  });
+
+  describe('getBookIsbnComparison (ISBN Smart Compare)', () => {
+    it('เปรียบเทียบหนังสือ ISBN เดียวกันจากร้านอื่น พร้อมคำนวณ priceDiff, isCheapest, isBestGrade และ % ตรงปก', async () => {
+      mockDb.bookListing.findUnique.mockResolvedValue({
+        id: 'bok_curr',
+        isbn: '9786161845678',
+        sellerId: 'usr_s1',
+        price: 200,
+        grade: 'GENTLY_READ',
+        status: 'AVAILABLE',
+      });
+      mockDb.bookListing.findMany.mockResolvedValue([
+        {
+          id: 'bok_cheaper',
+          isbn: '9786161845678',
+          sellerId: 'usr_s2',
+          price: 150,
+          grade: 'WELL_LOVED',
+          isSet: false,
+          totalVolumes: null,
+          allowPickup: true,
+          pickupLocationName: 'หน้าหอสมุดกลาง มช.',
+          allowDelivery: true,
+          codEnabled: true,
+          defects: [
+            { id: 'noHighlight', note: 'ไฮไลต์' },
+            { id: 'noYellowing', note: 'สันย่น' },
+          ],
+          photoChecks: {},
+          bookCatalog: { title: 'Atomic Habits', originalPrice: 295, coverUrl: 'https://img/c.webp' },
+          images: [{ imageUrl: 'https://img/s2.webp' }],
+          seller: {
+            id: 'usr_s2',
+            nickname: 'ร้านสอง',
+            avatarUrl: null,
+            isVerifiedSeller: true,
+            shopProfile: { shopName: 'ร้านหนังสือ มช.', province: 'เชียงใหม่' },
+            receivedReviews: [
+              { rating: 5, isConditionAccurate: true },
+              { rating: 4, isConditionAccurate: true },
+            ],
+          },
+        },
+        {
+          id: 'bok_mint',
+          isbn: '9786161845678',
+          sellerId: 'usr_s3',
+          price: 240,
+          grade: 'LIKE_NEW',
+          isSet: false,
+          totalVolumes: null,
+          allowPickup: false,
+          pickupLocationName: null,
+          allowDelivery: true,
+          codEnabled: true,
+          defects: [],
+          conditionAnswers: { spine: false, stains: false, markings: false, covers: false, pages: false },
+          photoChecks: {},
+          bookCatalog: { title: 'Atomic Habits', originalPrice: 295, coverUrl: 'https://img/c.webp' },
+          images: [],
+          seller: {
+            id: 'usr_s3',
+            nickname: 'ร้านสาม',
+            avatarUrl: null,
+            isVerifiedSeller: false,
+            shopProfile: { shopName: 'ร้านสามบุ๊คส์', province: 'กรุงเทพมหานคร' },
+            receivedReviews: [],
+          },
+        },
+      ]);
+
+      const res = await getBookIsbnComparison('bok_curr', mockDb);
+
+      expect(res.isSyntheticIsbn).toBe(false);
+      expect(res.totalOffers).toBe(2);
+      expect(res.isCurrentCheapest).toBe(false);
+      expect(res.cheapestOfferPrice).toBe(150);
+
+      expect(res.offers[0]).toMatchObject({
+        id: 'bok_cheaper',
+        price: 150,
+        priceDiff: -50,
+        defectCount: 2,
+        isCheapest: true,
+        isBestGrade: false,
+        seller: {
+          shopName: 'ร้านหนังสือ มช.',
+          rating: 4.5,
+          conditionAccuratePercent: 100,
+        },
+      });
+      expect(res.offers[1]).toMatchObject({
+        id: 'bok_mint',
+        price: 240,
+        priceDiff: 40,
+        defectCount: 0,
+        isCheapest: false,
+        isBestGrade: true,
+      });
+    });
+
+    it('ข้ามการเทียบสำหรับ synthetic ISBN (299xxxxxxxxxx)', async () => {
+      mockDb.bookListing.findUnique.mockResolvedValue({
+        id: 'bok_syn',
+        isbn: '2991234567890',
+        sellerId: 'usr_s1',
+        price: 120,
+        grade: 'LIKE_NEW',
+        status: 'AVAILABLE',
+      });
+
+      const res = await getBookIsbnComparison('bok_syn', mockDb);
+
+      expect(res.isSyntheticIsbn).toBe(true);
+      expect(res.offers).toEqual([]);
+      expect(mockDb.bookListing.findMany).not.toHaveBeenCalled();
     });
   });
 });

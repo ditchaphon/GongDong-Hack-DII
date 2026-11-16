@@ -4,6 +4,8 @@ import cors from 'cors';
 import helmet from 'helmet';
 import { env } from './config/env';
 import { healthRouter } from './routes/health';
+import { adminRouter } from './routes/admin';
+import { cronRouter } from './routes/cron';
 import { notificationRouter } from './routes/notifications';
 import { orderRouter } from './routes/orders';
 import { bookRouter } from './routes/books';
@@ -49,6 +51,8 @@ app.use('/api/seller', sellerRouter);
 app.use('/api/shops', shopRouter);
 app.use('/api/upload', uploadRouter);
 app.use('/api/notifications', notificationRouter);
+app.use('/api/admin', adminRouter);
+app.use('/api/cron', cronRouter);
 
 // Root Endpoint
 app.get('/', (_req: Request, res: Response) => {

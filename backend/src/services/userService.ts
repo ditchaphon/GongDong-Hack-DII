@@ -1,5 +1,6 @@
 import { env } from '../config/env';
 import { prisma as defaultPrisma } from '../config/prisma';
+import { isAdminLineUserId } from '../utils/secretAuth';
 import { maskSensitiveData } from './dataMaskingService';
 import { generatePromptPayQR } from './promptPayService';
 import { extractStoragePathFromUrl } from './uploadService';
@@ -142,6 +143,10 @@ export async function getUserProfile(
     verified_name: user.verifiedName,
     promptpay_id: user.promptpayId,
     is_verified_seller: user.isVerifiedSeller,
+    is_admin: isAdminLineUserId(
+      user.lineUserId,
+      process.env.ADMIN_LINE_USER_IDS ?? env.ADMIN_LINE_USER_IDS
+    ),
     pdpa_consent_at: user.pdpaConsentAt ?? null,
     no_show_count: user.noShowCount ?? 0,
     credits: user.credits,

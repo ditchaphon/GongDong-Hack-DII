@@ -208,3 +208,30 @@ export async function compressImageToWebp(file: File): Promise<File> {
     });
   }
 }
+
+/**
+ * Compress an image file or data URL into a lightweight WebP/JPEG data URL
+ * for local preview in draft state before deferred upload.
+ */
+export async function compressImageToDataUrl(input: File | string): Promise<string> {
+  const rawFile =
+    typeof input === 'string'
+      ? await dataUrlToFile(input, `capture-${Date.now()}.jpg`)
+      : input;
+  const compressed = await compressImageToWebp(rawFile);
+
+  return await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        resolve(reader.result);
+      } else {
+        reject(new Error('ไม่สามารถอ่านข้อมูลรูปภาพที่บีบอัดแล้วได้'));
+      }
+    };
+    reader.onerror = () => {
+      reject(new Error('ไม่สามารถอ่านไฟล์รูปภาพได้ กรุณาลองใหม่'));
+    };
+    reader.readAsDataURL(compressed);
+  });
+}

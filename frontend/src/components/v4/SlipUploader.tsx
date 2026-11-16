@@ -3,7 +3,7 @@
 import React, { useRef, useState } from 'react';
 import clsx from 'clsx';
 import { Camera, X, Check, Loader2, Lock, AlertCircle } from 'lucide-react';
-import { uploadImageFile } from '@/lib/api';
+import { safeDeleteUploadedImage, uploadImageFile } from '@/lib/api';
 
 export interface SlipUploaderProps {
   previewUrl?: string;
@@ -41,7 +41,11 @@ export const SlipUploader: React.FC<SlipUploaderProps> = ({
     setUploadError(null);
     setUploading(true);
     try {
+      const previousUrl = previewUrl;
       const uploaded = await uploadImageFile(file, 'slips');
+      if (previousUrl && previousUrl !== uploaded.url) {
+        void safeDeleteUploadedImage(previousUrl);
+      }
       onChange(uploaded.url);
     } catch (err: any) {
       setUploadError(err?.message || 'อัปโหลดสลิปไม่สำเร็จ กรุณาลองใหม่');
@@ -78,7 +82,12 @@ export const SlipUploader: React.FC<SlipUploaderProps> = ({
           <img src={previewUrl} alt="สลิปโอนเงิน" className="w-full max-h-64 object-contain bg-slate-100" />
           <button
             type="button"
-            onClick={onRemove}
+            onClick={() => {
+              if (previewUrl) {
+                void safeDeleteUploadedImage(previewUrl);
+              }
+              onRemove();
+            }}
             aria-label="ลบสลิป"
             className="absolute top-2 right-2 p-2 rounded-full bg-rose-600 text-white shadow"
           >
