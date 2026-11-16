@@ -7,7 +7,7 @@
 > **ผู้ตรวจสอบ:** Antigravity AI ร่วมกับ Biw (Backend) & Frame (Frontend)
 
 ---
-
+    
 ## 1. บทสรุปผู้บริหาร (Executive Summary)
 
 จากการตรวจสอบโครงสร้างหน้าจอ คอมโพเนนต์ และการจัดการสถานะ (State Machine) ฝั่ง Frontend ที่ถูกพัฒนาใน Branch `Frame-dev` และผสานรวมเข้ามา พบว่า:
