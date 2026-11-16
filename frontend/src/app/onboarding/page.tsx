@@ -47,7 +47,7 @@ export default function OnboardingPage() {
             <div>
               <h3 className="font-bold text-slate-900 text-sm">ลงขายฟรี</h3>
               <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
-                สแกน ISBN ลงขายได้ในไม่กี่นาที ตรวจสอบสภาพตามจริง
+                สแกน ISBN ลงขายได้ในไม่กี่นาที ตรวจสอบคุณภาพตามจริง
               </p>
             </div>
           </div>
@@ -60,7 +60,7 @@ export default function OnboardingPage() {
             <div>
               <h3 className="font-bold text-slate-900 text-sm">ซื้ออย่างมั่นใจ</h3>
               <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
-                ถ่ายรูปจริงจากกล้อง · เกรดสภาพจากเช็ก 5 จุด
+                ถ่ายรูปจริงจากกล้อง · เกรดคุณภาพจากเช็ก 5 จุด
               </p>
             </div>
           </div>

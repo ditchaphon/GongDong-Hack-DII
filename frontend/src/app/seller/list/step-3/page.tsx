@@ -252,10 +252,10 @@ export default function SellerListStep3Page() {
 
         <div className="px-1">
           <p className="text-xs font-bold text-slate-800">
-            ตรวจสอบสภาพหนังสือทั้ง 5 จุด
+            ตรวจสอบคุณภาพหนังสือทั้ง 5 จุด
           </p>
           <p className="text-[11px] text-slate-500 leading-relaxed mt-0.5">
-            หากจุดใดเลือก <strong className="text-amber-700">มีตำหนิ</strong> ระบบจะให้ถ่ายรูปจุดที่มีตำหนินั้นเพื่อให้ผู้ซื้อซูมดูสภาพจริงได้อย่างโปร่งใส
+            หากจุดใดเลือก <strong className="text-amber-700">มีตำหนิ</strong> ระบบจะให้ถ่ายรูปจุดที่มีตำหนินั้นเพื่อให้ผู้ซื้อซูมดูคุณภาพจริงได้อย่างโปร่งใส
           </p>
         </div>
 

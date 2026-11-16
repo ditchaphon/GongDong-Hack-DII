@@ -187,6 +187,8 @@ export interface ListingDraft {
   publisher: string;
   description: string;
   categories: string[];
+  /** Free-text label used when the seller picks "อื่น ๆ". */
+  customCategory: string;
   originalPrice: number;
   totalVolumes: number;
   missingVolumes: number[];

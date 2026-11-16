@@ -259,7 +259,7 @@ export default function SellerShopPage({
                 {review.gradeMatched && (
                   <span className="inline-flex items-center gap-1 text-emerald-700">
                     <ShieldCheck className="w-3 h-3" />
-                    สภาพตรงเกรด
+                    คุณภาพตรงเกรด
                   </span>
                 )}
               </div>

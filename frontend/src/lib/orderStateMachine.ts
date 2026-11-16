@@ -297,7 +297,7 @@ const buyerActions: Partial<Record<V4OrderStatus, OrderAction>> = {
   COMPLETED: {
     key: 'REVIEW',
     title: 'ให้คะแนนร้าน',
-    description: 'สภาพหนังสือตรงเกรดไหม · แพ็กดีไหม',
+    description: 'คุณภาพหนังสือตรงเกรดไหม · แพ็กดีไหม',
     whoActs: 'BOTH',
     primaryLabel: 'ให้คะแนน',
   },

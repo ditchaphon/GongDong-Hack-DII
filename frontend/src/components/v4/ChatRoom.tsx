@@ -74,8 +74,7 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
         </div>
         <h3 className="text-sm font-bold text-slate-800">แชทจะเปิดหลังผู้ขายตอบรับคำขอ</h3>
         <p className="text-[11px] text-slate-500 leading-relaxed max-w-xs mx-auto">
-          ระหว่างนี้ติดต่อกันไม่ได้ · ไม่มีเบอร์โทรหรือไลน์ให้เห็น
-          ระบบจะแจ้งเตือนเมื่อมีความคืบหน้า
+          ระหว่างนี้ติดต่อกันไม่ได้ · ระบบจะแจ้งเตือนเมื่อมีความคืบหน้า
         </p>
       </div>
     );
@@ -142,8 +141,8 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
                   isSchedule
                     ? 'bg-teal-50 border border-teal-200 text-teal-900'
                     : mine
-                    ? 'bg-[var(--color-primary)] text-white'
-                    : 'bg-white border border-slate-200 text-slate-700'
+                      ? 'bg-[var(--color-primary)] text-white'
+                      : 'bg-white border border-slate-200 text-slate-700'
                 )}
               >
                 {isSchedule && (

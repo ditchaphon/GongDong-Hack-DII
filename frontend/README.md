@@ -74,7 +74,6 @@ npm run dev
 | ส่งคำขอซื้อสำเร็จ | `/cart/success` |
 | ออเดอร์ผู้ซื้อ | `/orders`, `/orders/[id]` |
 | ให้คะแนนหลังรับของ | `/orders/[id]/review` |
-| ฝากตามหา (wishlist) | `/wishlist` |
 | ศูนย์แจ้งเตือน | `/notifications` |
 | ที่อยู่จัดส่ง (สูงสุด 5) | `/addresses`, `/addresses/edit` |
 

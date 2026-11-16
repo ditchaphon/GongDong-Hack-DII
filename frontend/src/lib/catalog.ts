@@ -109,7 +109,7 @@ export const GRADE_CRITERIA = [
   },
   {
     grade: 'B',
-    title: 'สภาพดีมาก',
+    title: 'คุณภาพดีมาก',
     percent: 60,
     detail: 'มีตำหนิ 1 จุด และเป็นเพียงรอยใช้งานเล็กน้อย',
   },

@@ -10,7 +10,7 @@ import { useV4Orders } from '@/hooks/useV4Orders';
 import { safeDeleteUploadedImage, uploadDeferredImageIfNeeded } from '@/lib/api';
 import { Camera, Star, RefreshCcw, ShieldCheck } from 'lucide-react';
 
-const TAGS = ['ตรงปก', 'แพ็กดี', 'ส่งไว', 'สภาพดีกว่าที่คิด', 'ผู้ขายตอบไว'];
+const TAGS = ['ตรงปก', 'แพ็กดี', 'ส่งไว', 'คุณภาพดีกว่าที่คิด', 'ผู้ขายตอบไว'];
 const DEMO_PHOTO = 'https://images.unsplash.com/photo-1544947950-fa07a98d237f?w=600';
 
 /** Parcel step 4: buyer photographs the book, confirms, and reviews. */
@@ -60,7 +60,7 @@ export default function ReceiveParcelPage({ params }: { params: Promise<{ id: st
   const submit = async () => {
     if (!photo) return setError('ถ่ายรูปหนังสือที่ได้รับก่อน');
     if (!rating) return setError('ให้คะแนนอย่างน้อย 1 ดาว');
-    if (gradeMatched === null) return setError('บอกเราว่าสภาพหนังสือตรงเกรดไหม');
+    if (gradeMatched === null) return setError('บอกเราว่าคุณภาพหนังสือตรงเกรดไหม');
     setError(null);
     setSubmitting(true);
     let uploadedUrl = photo;
@@ -99,7 +99,7 @@ export default function ReceiveParcelPage({ params }: { params: Promise<{ id: st
       <div className="p-4 space-y-4">
         <section className="bg-white rounded-2xl border border-slate-200 p-4 space-y-3">
           <h2 className="text-sm font-bold text-slate-900">1. ถ่ายรูปหนังสือที่ได้รับ</h2>
-          <p className="text-[11px] text-slate-500">ใช้เป็นหลักฐานว่าได้รับของในสภาพไหน · ถ่ายจากกล้องหรือเลือกจากแกลอรี่</p>
+          <p className="text-[11px] text-slate-500">ใช้เป็นหลักฐานว่าได้รับของในคุณภาพไหน · ถ่ายจากกล้องหรือเลือกจากแกลอรี่</p>
           {photo ? (
             <div className="relative">
               <img src={photo} alt="รูปหนังสือที่ได้รับ" className="w-full h-52 object-cover rounded-xl bg-slate-100" />
@@ -198,7 +198,7 @@ export default function ReceiveParcelPage({ params }: { params: Promise<{ id: st
         isOpen={cameraOpen}
         mode="PHOTO"
         title="ถ่ายรูปหนังสือที่ได้รับ"
-        hint="ถ่ายให้เห็นปกและสภาพหนังสือชัดเจน"
+        hint="ถ่ายให้เห็นปกและคุณภาพหนังสือชัดเจน"
         demoImage={DEMO_PHOTO}
         bucket="order-receives"
         deferUpload

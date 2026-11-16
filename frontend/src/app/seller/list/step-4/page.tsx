@@ -119,7 +119,7 @@ export default function SellerListStep4Page() {
           {draft.originalPrice === 0 && (
             <p className="text-[11px] text-slate-400 leading-relaxed">
               ไม่มีราคามือหนึ่งของเล่มนี้ ระบบจึงยังไม่แสดงราคาแนะนำ
-              ตั้งราคาตามสภาพที่คุณประเมินได้เลย
+              ตั้งราคาตามคุณภาพที่คุณประเมินได้เลย
             </p>
           )}
         </div>
