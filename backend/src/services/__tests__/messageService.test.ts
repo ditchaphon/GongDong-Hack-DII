@@ -110,7 +110,10 @@ describe('messageService (In-Order Chat & PDPA Masking)', () => {
         create: createNotif,
       },
       user: {
-        findUnique: vi.fn().mockResolvedValue({ lineUserId: 'mock_seller_1' }),
+        findUnique: vi.fn().mockResolvedValue({
+          lineUserId: 'U1234567890abcdef1234567890abcdef',
+          lastActiveAt: null,
+        }),
       },
     };
 
@@ -123,6 +126,8 @@ describe('messageService (In-Order Chat & PDPA Masking)', () => {
         title: 'ข้อความใหม่จากกานต์',
       }),
     });
+    // แชทออเดอร์ต้องไม่ query user เพื่อส่ง LINE Push
+    expect(mockPrisma.user.findUnique).not.toHaveBeenCalled();
 
     await sendOrderMessage('ord-chat-1', 'buyer-1', { text: 'ผมว่างช่วงบ่ายครับ' }, mockPrisma);
     expect(createNotif).toHaveBeenCalledTimes(1); // ไม่แจ้งเตือนซ้ำเพราะติด Cooldown

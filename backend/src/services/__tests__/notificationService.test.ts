@@ -99,7 +99,7 @@ describe('notificationService & lineNotifyService', () => {
     expect(result.pushed).toBe(true);
     expect(mockPrisma.user.findUnique).toHaveBeenCalledWith({
       where: { id: 'seller-uuid-1' },
-      select: { lineUserId: true },
+      select: { lineUserId: true, lastActiveAt: true },
     });
     expect(mockPushClient.pushMessage).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -155,5 +155,63 @@ describe('notificationService & lineNotifyService', () => {
     expect(res.processed).toBe(1);
     expect(res.skippedDuplicates).toBe(1);
     expect(replyClient.replyMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it('notifyOrderEvent ข้ามการยิง LINE Push เมื่อผู้รับใช้งานใน LIFF อยู่ (lastActiveAt ภายใน 2 นาที) แต่ยังบันทึก In-App Notification', async () => {
+    const mockPushClient = { pushMessage: vi.fn().mockResolvedValue({}) };
+    const createNotif = vi.fn().mockResolvedValue({ id: 'notif-active-1' });
+    const mockPrisma = {
+      notification: { create: createNotif },
+      user: {
+        findUnique: vi.fn().mockResolvedValue({
+          lineUserId: 'U1234567890abcdef1234567890abcdef',
+          lastActiveAt: new Date(Date.now() - 30_000),
+        }),
+      },
+    };
+
+    const result = await notifyOrderEvent(
+      {
+        recipientUserId: 'seller-uuid-active',
+        role: 'SELLER',
+        orderId: 'ord-active-1',
+        title: 'มีคำขอสั่งซื้อหนังสือใหม่',
+        message: 'ออเดอร์ใหม่',
+      },
+      mockPrisma,
+      mockPushClient
+    );
+
+    expect(createNotif).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ pushed: false, reason: 'USER_ACTIVE_IN_LIFF' });
+    expect(mockPushClient.pushMessage).not.toHaveBeenCalled();
+  });
+
+  it('notifyOrderEvent ข้ามการยิง LINE Push เมื่อกำหนด pushLine: false แต่ยังบันทึก In-App Notification', async () => {
+    const mockPushClient = { pushMessage: vi.fn().mockResolvedValue({}) };
+    const createNotif = vi.fn().mockResolvedValue({ id: 'notif-inapp-only' });
+    const findUser = vi.fn();
+    const mockPrisma = {
+      notification: { create: createNotif },
+      user: { findUnique: findUser },
+    };
+
+    const result = await notifyOrderEvent(
+      {
+        recipientUserId: 'buyer-uuid-1',
+        role: 'BUYER',
+        orderId: 'ord-inapp-1',
+        title: 'คำสั่งซื้อเสร็จสมบูรณ์',
+        message: 'ขอบคุณที่ใช้บริการ',
+        pushLine: false,
+      },
+      mockPrisma,
+      mockPushClient
+    );
+
+    expect(createNotif).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ pushed: false, reason: 'LINE_PUSH_DISABLED' });
+    expect(findUser).not.toHaveBeenCalled();
+    expect(mockPushClient.pushMessage).not.toHaveBeenCalled();
   });
 });

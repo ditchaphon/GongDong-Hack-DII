@@ -192,6 +192,7 @@ export async function sendOrderMessage(
             message: preview,
             badgeText: 'NEW CHAT MESSAGE',
             linkPath: `/orders/${orderId}`,
+            pushLine: false,
           },
           prismaClient
         );

@@ -1,4 +1,5 @@
 import { Router, Request, Response, NextFunction } from 'express';
+import { prisma } from '../config/prisma';
 import { authMiddleware } from '../middlewares/auth';
 import {
   createUserAddress,
@@ -38,6 +39,37 @@ userRouter.get(
       res.status(200).json({
         success: true,
         data: profile,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * POST /api/users/me/presence
+ * อัปเดตสถานะว่าผู้ใช้กำลังเปิดใช้งานใน LIFF อยู่ (ใช้ข้าม LINE Push ระหว่างใช้งานจริง)
+ */
+userRouter.post(
+  '/me/presence',
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const userId = getUserIdFromRequest(req);
+      const now = new Date();
+      const lastActiveMs = req.user?.lastActiveAt
+        ? new Date(req.user.lastActiveAt).getTime()
+        : 0;
+      // authMiddleware already updates with a 60s throttle; refresh here if > 40s stale.
+      if (!Number.isFinite(lastActiveMs) || now.getTime() - lastActiveMs >= 40_000) {
+        await prisma.user.update({
+          where: { id: userId },
+          data: { lastActiveAt: now },
+        });
+      }
+
+      res.status(200).json({
+        success: true,
+        data: { active: true },
       });
     } catch (error) {
       next(error);

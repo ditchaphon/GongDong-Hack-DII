@@ -141,6 +141,7 @@ export async function createOrderReview(
             : 'ผู้ขายส่งรีวิวคำสั่งซื้อให้คุณแล้ว ⭐',
         message: `ได้รับคะแนน ${outcome.rating}/5 ดาว${commentPreview}`,
         badgeText: 'NEW REVIEW',
+        pushLine: false,
       },
       db
     );

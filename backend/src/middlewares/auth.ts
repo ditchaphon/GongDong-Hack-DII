@@ -122,6 +122,28 @@ async function findOrCreateFirstLoginUser(data: {
   }
 }
 
+const PRESENCE_THROTTLE_MS = 60 * 1000;
+
+function touchUserLastActive(user: any): void {
+  if (!user?.id || typeof prisma?.user?.update !== 'function') {
+    return;
+  }
+  const lastActiveMs = user.lastActiveAt ? new Date(user.lastActiveAt).getTime() : 0;
+  if (Number.isFinite(lastActiveMs) && Date.now() - lastActiveMs < PRESENCE_THROTTLE_MS) {
+    return;
+  }
+  const now = new Date();
+  user.lastActiveAt = now;
+  Promise.resolve(
+    prisma.user.update({
+      where: { id: user.id },
+      data: { lastActiveAt: now },
+    })
+  ).catch(() => {
+    /* Presence tracking must never block API requests */
+  });
+}
+
 export interface AuthMiddlewareOptions {
   tokenVerifier?: (token: string) => Promise<LineTokenPayload>;
 }
@@ -145,6 +167,7 @@ export function createAuthMiddleware(options: AuthMiddlewareOptions = {}) {
       if (isTestOrDev && xUserId) {
         const user = await findUserByMockIdentifier(xUserId);
         if (user) {
+          touchUserLastActive(user);
           req.user = user;
           req.userId = user.id;
           return next();
@@ -165,6 +188,7 @@ export function createAuthMiddleware(options: AuthMiddlewareOptions = {}) {
         const mockTargetId = token.substring(5);
         const user = await findUserByMockIdentifier(mockTargetId);
         if (user) {
+          touchUserLastActive(user);
           req.user = user;
           req.userId = user.id;
           return next();
@@ -176,6 +200,7 @@ export function createAuthMiddleware(options: AuthMiddlewareOptions = {}) {
           displayName: `Mock User (${mockTargetId})`,
         });
 
+        touchUserLastActive(newUser);
         req.user = newUser;
         req.userId = newUser.id;
         return next();
@@ -205,6 +230,7 @@ export function createAuthMiddleware(options: AuthMiddlewareOptions = {}) {
         throw new AppError('ไม่สามารถสร้างหรือระบุตัวตนผู้ใช้ได้', 500, 'USER_CREATION_FAILED');
       }
 
+      touchUserLastActive(user);
       req.user = user;
       req.userId = user.id;
       next();

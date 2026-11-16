@@ -3,6 +3,8 @@ import { prisma } from '../config/prisma';
 import { env } from '../config/env';
 import { createNotification, NotificationRole } from './notificationService';
 
+export const LIFF_ACTIVE_WINDOW_MS = 2 * 60 * 1000;
+
 export interface LineOrderNotificationParams {
   recipientUserId: string;
   recipientLineUserId?: string | null;
@@ -12,6 +14,8 @@ export interface LineOrderNotificationParams {
   message: string;
   badgeText?: string;
   linkPath?: string;
+  /** Set false for in-app-only events (e.g. order chat, reviews, completion/expiry). */
+  pushLine?: boolean;
 }
 
 function getLineMessagingClient(): messagingApi.MessagingApiClient | null {
@@ -143,33 +147,39 @@ export function buildAppLink(linkPath: string): string {
 }
 
 /**
- * ดึง lineUserId ของผู้รับจากฐานข้อมูลหากผู้เรียกส่งมาเฉพาะ recipientUserId
+ * ดึง lineUserId และ lastActiveAt ของผู้รับจากฐานข้อมูลเพื่อตรวจสิทธิ์การส่ง LINE Push
  */
-async function resolveRecipientLineUserId(
+async function resolveRecipientPushTarget(
   recipientUserId: string,
   providedLineUserId: string | null | undefined,
   prismaClient: any
-): Promise<string | null | undefined> {
-  if (providedLineUserId !== undefined) {
-    return providedLineUserId;
-  }
+): Promise<{ lineUserId: string | null | undefined; isRecentlyActiveInLiff: boolean }> {
   if (!recipientUserId || typeof prismaClient?.user?.findUnique !== 'function') {
-    return undefined;
+    return { lineUserId: providedLineUserId, isRecentlyActiveInLiff: false };
   }
   try {
     const user = await prismaClient.user.findUnique({
       where: { id: recipientUserId },
-      select: { lineUserId: true },
+      select: { lineUserId: true, lastActiveAt: true },
     });
-    return user?.lineUserId ?? null;
+    const lastActiveMs = user?.lastActiveAt ? new Date(user.lastActiveAt).getTime() : 0;
+    const isRecentlyActiveInLiff =
+      Number.isFinite(lastActiveMs) &&
+      lastActiveMs > 0 &&
+      Date.now() - lastActiveMs <= LIFF_ACTIVE_WINDOW_MS;
+    return {
+      lineUserId: providedLineUserId !== undefined ? providedLineUserId : (user?.lineUserId ?? null),
+      isRecentlyActiveInLiff,
+    };
   } catch (err) {
     console.warn('[lineNotifyService] Failed to resolve recipient lineUserId:', err);
-    return undefined;
+    return { lineUserId: providedLineUserId, isRecentlyActiveInLiff: false };
   }
 }
 
 /**
  * ส่งทั้ง In-App Notification และ LINE Push Notification สำหรับเหตุการณ์คำสั่งซื้อ
+ * - ข้าม LINE Push เมื่อ pushLine === false หรือผู้รับกำลังเปิดใช้งาน LIFF อยู่ภายใน 2 นาทีล่าสุด
  */
 export async function notifyOrderEvent(
   params: LineOrderNotificationParams,
@@ -195,11 +205,20 @@ export async function notifyOrderEvent(
     console.warn('[lineNotifyService] Failed to persist in-app notification:', err);
   }
 
-  const recipientLineUserId = await resolveRecipientLineUserId(
-    params.recipientUserId,
-    params.recipientLineUserId,
-    prismaClient
-  );
+  if (params.pushLine === false) {
+    return { pushed: false, reason: 'LINE_PUSH_DISABLED' };
+  }
+
+  const { lineUserId: recipientLineUserId, isRecentlyActiveInLiff } =
+    await resolveRecipientPushTarget(
+      params.recipientUserId,
+      params.recipientLineUserId,
+      prismaClient
+    );
+
+  if (isRecentlyActiveInLiff) {
+    return { pushed: false, reason: 'USER_ACTIVE_IN_LIFF' };
+  }
 
   const flex = buildOrderFlexMessage({
     title: params.title,

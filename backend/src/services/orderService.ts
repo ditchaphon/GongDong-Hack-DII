@@ -141,6 +141,7 @@ async function expireOverdueRequestedOrders(
           title: 'คำขอซื้อหมดอายุแล้ว',
           message: 'ผู้ขายไม่ได้ตอบรับภายใน 24 ชั่วโมง คุณสามารถเลือกสั่งซื้อจากร้านอื่นได้',
           badgeText: 'ORDER EXPIRED',
+          pushLine: false,
         },
         db
       );
@@ -200,6 +201,7 @@ async function autoCompleteOverdueShippedOrders(
             title: 'ปิดการขายอัตโนมัติ (ครบ 7 วัน)',
             message: 'คำสั่งซื้อครบกำหนด 7 วันหลังจัดส่งและปิดการขายเรียบร้อยแล้ว',
             badgeText: 'AUTO COMPLETED',
+            pushLine: false,
           },
           db
         );
@@ -211,6 +213,7 @@ async function autoCompleteOverdueShippedOrders(
             title: 'คำสั่งซื้อปิดอัตโนมัติ (ครบ 7 วัน)',
             message: 'หากมีปัญหาเพิ่มเติมสามารถติดต่อทีมงานได้',
             badgeText: 'AUTO COMPLETED',
+            pushLine: false,
           },
           db
         );
@@ -1301,6 +1304,7 @@ export async function acceptOrder(
         title: 'คำขอซื้อหมดอายุแล้ว',
         message: 'คำขอซื้อเกินกำหนด 24 ชั่วโมงแล้ว กรุณาส่งคำขอใหม่อีกครั้งหากยังต้องการสั่งซื้อ',
         badgeText: 'ORDER EXPIRED',
+        pushLine: false,
       },
       db
     );
@@ -1344,6 +1348,7 @@ export async function acceptOrder(
         title: 'คำขอซื้อถูกยกเลิกอัตโนมัติ',
         message: 'หนังสือบางเล่มในคำขอถูกขายให้ผู้ซื้อท่านอื่นแล้ว กรุณาเลือกหนังสือเล่มใหม่',
         badgeText: 'ORDER AUTO-REJECTED',
+        pushLine: false,
       },
       db
     );
@@ -1833,6 +1838,7 @@ export async function completeDeliveryOrder(
       title: 'ผู้ซื้อยืนยันได้รับหนังสือแล้ว!',
       message: 'คำสั่งซื้อเสร็จสมบูรณ์เรียบร้อยแล้ว',
       badgeText: 'COMPLETED',
+      pushLine: false,
     },
     db
   );
@@ -1946,6 +1952,7 @@ export async function receiveOrder(
       title: 'ผู้ซื้อยืนยันได้รับหนังสือแล้ว!',
       message: 'คำสั่งซื้อเสร็จสมบูรณ์เรียบร้อยแล้ว',
       badgeText: 'COMPLETED',
+      pushLine: false,
     },
     db
   );
@@ -2376,6 +2383,7 @@ export async function verifyHandoverCode(
       title: 'นัดรับหนังสือสำเร็จ!',
       message: 'ผู้ขายยืนยันรหัสส่งมอบ 6 หลักเรียบร้อยแล้ว อย่าลืมให้คะแนนร้านค้านะครับ',
       badgeText: 'MEETUP COMPLETED',
+      pushLine: false,
     },
     db
   );

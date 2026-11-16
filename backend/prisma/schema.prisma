@@ -37,6 +37,7 @@ model User {
   isBlacklisted       Boolean   @default(false) @map("is_blacklisted")
   noShowCount         Int       @default(0) @map("no_show_count")
   credits             Int       @default(1)
+  lastActiveAt        DateTime? @map("last_active_at") @db.Timestamptz
   createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt           DateTime  @updatedAt @map("updated_at") @db.Timestamptz
 

@@ -399,6 +399,37 @@ export const LiffProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setUser((prev) => ({ ...prev, credits: prev.credits + amount }));
   }, []);
 
+  // Keep user's lastActiveAt fresh while LIFF is visible so Backend skips redundant LINE pushes.
+  useEffect(() => {
+    if (!isReady || !isLoggedIn || !idToken || isMock) return;
+
+    let lastPingAt = Date.now();
+    const pingPresence = (force = false) => {
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
+        return;
+      }
+      const now = Date.now();
+      if (!force && now - lastPingAt < 45_000) return;
+      lastPingAt = now;
+      api.post('/api/users/me/presence', undefined, { token: idToken }).catch(() => {
+        /* Best-effort heartbeat; never surface errors to UI */
+      });
+    };
+
+    const intervalId = window.setInterval(() => pingPresence(true), 60_000);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        pingPresence(false);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [isReady, isLoggedIn, idToken, isMock]);
+
   return (
     <LiffContext.Provider
       value={{
