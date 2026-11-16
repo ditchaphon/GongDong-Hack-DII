@@ -1,6 +1,48 @@
+import crypto from 'crypto';
 import { Request, Response, NextFunction } from 'express';
 import { prisma } from '../config/prisma';
 import { AppError, LineTokenPayload } from '../types';
+
+const LINE_TOKEN_CACHE_TTL_MS = 60 * 1000;
+const verifiedLineTokenCache = new Map<
+  string,
+  { payload: LineTokenPayload; expiresAtMs: number }
+>();
+
+export function clearVerifiedLineTokenCacheForTest(): void {
+  verifiedLineTokenCache.clear();
+}
+
+function getTokenCacheKey(token: string): string {
+  return crypto.createHash('sha256').update(token).digest('hex');
+}
+
+async function verifyLineTokenCached(token: string): Promise<LineTokenPayload> {
+  const key = getTokenCacheKey(token);
+  const now = Date.now();
+  const cached = verifiedLineTokenCache.get(key);
+  if (cached && cached.expiresAtMs > now) {
+    return cached.payload;
+  }
+
+  const payload = await verifyLineToken(token);
+  const tokenExpMs =
+    typeof payload.exp === 'number' && Number.isFinite(payload.exp)
+      ? payload.exp * 1000 - 5_000
+      : now + LINE_TOKEN_CACHE_TTL_MS;
+  const expiresAtMs = Math.min(now + LINE_TOKEN_CACHE_TTL_MS, tokenExpMs);
+
+  if (expiresAtMs > now) {
+    if (verifiedLineTokenCache.size > 2000) {
+      for (const [entryKey, entry] of verifiedLineTokenCache.entries()) {
+        if (entry.expiresAtMs <= now) verifiedLineTokenCache.delete(entryKey);
+      }
+    }
+    verifiedLineTokenCache.set(key, { payload, expiresAtMs });
+  }
+
+  return payload;
+}
 
 declare global {
   namespace Express {
@@ -206,9 +248,10 @@ export function createAuthMiddleware(options: AuthMiddlewareOptions = {}) {
         return next();
       }
 
-      // 2. Verify กับ LINE API
-      const verifier = options.tokenVerifier || verifyLineToken;
-      const payload = await verifier(token);
+      // 2. Verify กับ LINE API (ใช้ cache 60 วินาทีเฉพาะ production verifier เพื่อลด roundtrip)
+      const payload = options.tokenVerifier
+        ? await options.tokenVerifier(token)
+        : await verifyLineTokenCached(token);
 
       const lineUserId = payload.sub;
 

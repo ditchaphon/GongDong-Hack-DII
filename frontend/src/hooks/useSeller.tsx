@@ -5,9 +5,11 @@ import React, {
   useCallback,
   useContext,
   useEffect,
+  useRef,
   useState,
   ReactNode,
 } from 'react';
+import { usePathname } from 'next/navigation';
 import { ListingDraft, ListingStatus, SellerListing } from '@/types';
 import { CreditEntry } from '@/types/v4';
 import { useLiff } from '@/hooks/useLiff';
@@ -101,12 +103,23 @@ const SellerContext = createContext<SellerContextValue | null>(null);
 const FALLBACK_COVER =
   'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=600';
 
+function isSellerContextRoute(pathname: string | null): boolean {
+  if (!pathname) return false;
+  return (
+    pathname.startsWith('/seller') ||
+    pathname.startsWith('/profile') ||
+    pathname.startsWith('/orders')
+  );
+}
+
 export const SellerProvider: React.FC<{ children: ReactNode }> = ({
   children,
 }) => {
+  const pathname = usePathname();
   const { user, isReady, isLoggedIn, idToken, refreshUser, addCredits } =
     useLiff();
 
+  const loadedTokenRef = useRef<string | null>(null);
   const [shop, setShop] = useState<ShopSettings | null>(null);
   const [listings, setListings] = useState<SellerListing[]>([]);
   const [ledger, setLedger] = useState<CreditEntry[]>([]);
@@ -118,6 +131,7 @@ export const SellerProvider: React.FC<{ children: ReactNode }> = ({
 
   const refreshSellerData = useCallback(async () => {
     if (!idToken) return;
+    loadedTokenRef.current = idToken;
     setLoading(true);
     try {
       const [shopRes, booksRes, ledgerRes] = await Promise.all([
@@ -150,9 +164,14 @@ export const SellerProvider: React.FC<{ children: ReactNode }> = ({
   }, [idToken, user.id, user.displayName, user.pictureUrl, user.isVerifiedSeller]);
 
   useEffect(() => {
-    if (!isReady || !isLoggedIn || !idToken) return;
+    if (!isReady || !isLoggedIn || !idToken) {
+      loadedTokenRef.current = null;
+      return;
+    }
+    if (!isSellerContextRoute(pathname)) return;
+    if (loadedTokenRef.current === idToken) return;
     refreshSellerData();
-  }, [isReady, isLoggedIn, idToken, refreshSellerData]);
+  }, [isReady, isLoggedIn, idToken, pathname, refreshSellerData]);
 
   const saveShop = async (
     settings: Omit<ShopSettings, 'setupComplete' | 'payeeVerified' | 'kyc'>

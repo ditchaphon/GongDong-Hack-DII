@@ -153,6 +153,10 @@ bookRouter.get(
         offset: parsePaginationInt(offset, 'offset'),
       });
 
+      res.setHeader(
+        'Cache-Control',
+        'public, max-age=0, s-maxage=15, stale-while-revalidate=60'
+      );
       res.status(200).json({
         success: true,
         data: result,
@@ -173,6 +177,10 @@ bookRouter.get(
     try {
       const limit = parsePaginationInt(req.query.limit, 'limit') ?? 8;
       const result = await getRecommendedBooks(limit);
+      res.setHeader(
+        'Cache-Control',
+        'public, max-age=0, s-maxage=15, stale-while-revalidate=60'
+      );
       res.status(200).json({ success: true, data: result });
     } catch (error) {
       next(error);

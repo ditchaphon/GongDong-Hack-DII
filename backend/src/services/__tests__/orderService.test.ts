@@ -2,11 +2,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   acceptOrder,
   clearHandoverAttemptsForTest,
+  clearUserMaintenanceCooldownForTest,
   createBatchOrders,
   createOrder,
   expireStaleOrders,
   generateHandoverCode,
   getAdminOrders,
+  getUserOrders,
   resolveDisputedOrder,
   schedulePickupOrder,
   verifyHandoverCode,
@@ -1172,6 +1174,103 @@ describe('OrderService - State Machine & Core Transactions', () => {
         statusCode: 400,
         code: 'SCHEDULE_LOCKED',
       });
+    });
+  });
+
+  describe('getUserOrders Performance (includeDetails & Lazy Maintenance Cooldown)', () => {
+    it('getUserOrders แบบ includeDetails ต้องดึง details ในครั้งเดียวและติด cooldown ของ lazy maintenance 5 นาที', async () => {
+      clearUserMaintenanceCooldownForTest();
+
+      const sampleOrder = {
+        id: 'ord_perf_1',
+        buyerId: 'usr_buyer_perf',
+        sellerId: 'usr_seller_perf',
+        status: 'REQUESTED',
+        shippingMethod: 'PICKUP',
+        paymentMethod: 'COD',
+        shippingFee: 0,
+        totalPrice: 150,
+        pickupLat: 18.79,
+        pickupLng: 98.95,
+        pickupLocationName: 'หน้าหอสมุด มช.',
+        scheduledAt: new Date('2099-12-22T16:00:00+07:00'),
+        scheduleDateIso: '2099-12-22',
+        scheduleTimeLabel: '16:00 - 17:00',
+        scheduleProposedBy: 'BUYER',
+        scheduleConfirmedByBuyer: false,
+        handoverCode: null,
+        receivedPhotoUrl: null,
+        receivedAt: null,
+        missedMeetingReportedAt: null,
+        cancelReason: null,
+        disputeReason: null,
+        disputeOpenedBy: null,
+        disputedAt: null,
+        deliveryDetail: null,
+        reviews: [],
+        paymentSlips: [],
+        buyer: {
+          id: 'usr_buyer_perf',
+          nickname: 'ผู้ซื้อเอ',
+          avatarUrl: null,
+          phoneNumber: '0811111111',
+          noShowCount: 0,
+        },
+        seller: {
+          id: 'usr_seller_perf',
+          nickname: 'ร้านบี',
+          avatarUrl: null,
+          promptpayId: null,
+          verifiedName: null,
+          isVerifiedSeller: true,
+          shopProfile: { shopName: 'ร้านหนังสือบี' },
+        },
+        orderItems: [
+          {
+            bookListingId: 'bok_1',
+            price: 150,
+            bookListing: {
+              grade: 'LIKE_NEW',
+              bookCatalog: { title: 'Clean Architecture', coverUrl: 'https://img/cover.webp' },
+              images: [],
+            },
+          },
+        ],
+        createdAt: new Date('2026-11-16T10:00:00Z'),
+        updatedAt: new Date('2026-11-16T10:00:00Z'),
+      };
+
+      const findManyMock = vi
+        .fn()
+        // Call 1: expireOverdueRequestedOrders, Call 2: autoCompleteOverdueShippedOrders, Call 3: main order query
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([sampleOrder])
+        // Second getUserOrders call: lazy maintenance skipped via cooldown -> only 1 findMany call!
+        .mockResolvedValueOnce([sampleOrder]);
+
+      const mockDb: any = {
+        order: {
+          findMany: findManyMock,
+          updateMany: vi.fn(),
+        },
+      };
+
+      const first = await getUserOrders('usr_buyer_perf', undefined, mockDb, {
+        includeDetails: true,
+      });
+      expect(first.details).toHaveLength(1);
+      expect(first.details?.[0].items[0].title).toBe('Clean Architecture');
+      expect(first.buying).toHaveLength(1);
+      expect(findManyMock).toHaveBeenCalledTimes(3);
+
+      const second = await getUserOrders('usr_buyer_perf', undefined, mockDb, {
+        includeDetails: true,
+      });
+      expect(second.details).toHaveLength(1);
+      expect(findManyMock).toHaveBeenCalledTimes(4);
+
+      clearUserMaintenanceCooldownForTest();
     });
   });
 });

@@ -99,6 +99,83 @@ function serializeCreateOrderResult(result: CreateOrderResult) {
   };
 }
 
+export function serializeOrderDetailDto(orderDetail: Awaited<ReturnType<typeof getOrderDetail>>) {
+  return {
+    id: orderDetail.id,
+    status: orderDetail.status,
+    shipping_method: orderDetail.shippingMethod,
+    payment_method: orderDetail.paymentMethod,
+    shipping_fee: orderDetail.shippingFee,
+    total_price: orderDetail.totalPrice,
+    pickup_lat: orderDetail.pickupLat,
+    pickup_lng: orderDetail.pickupLng,
+    pickup_location_name: orderDetail.pickupLocationName,
+    scheduled_at: orderDetail.scheduledAt,
+    schedule_date_iso: orderDetail.scheduleDateIso,
+    schedule_time_label: orderDetail.scheduleTimeLabel,
+    schedule_proposed_by: orderDetail.scheduleProposedBy,
+    schedule_confirmed_by_buyer: orderDetail.scheduleConfirmedByBuyer,
+    handover_code: orderDetail.handoverCode ?? null,
+    received_photo_url: orderDetail.receivedPhotoUrl,
+    received_at: orderDetail.receivedAt,
+    cancel_reason: orderDetail.cancelReason,
+    missed_meeting_reported_at: orderDetail.missedMeetingReportedAt ?? null,
+    review: orderDetail.review
+      ? {
+          rating: orderDetail.review.rating,
+          is_condition_accurate: orderDetail.review.isConditionAccurate,
+          tags: orderDetail.review.tags,
+          comment: orderDetail.review.comment,
+          created_at: orderDetail.review.createdAt,
+        }
+      : null,
+    dispute: orderDetail.dispute
+      ? {
+          reason: orderDetail.dispute.reason,
+          opened_by: orderDetail.dispute.openedBy,
+          opened_at: orderDetail.dispute.openedAt,
+        }
+      : null,
+    items: orderDetail.items.map((item) => ({
+      book_id: item.bookId,
+      title: item.title,
+      price: item.price,
+      cover_image_url: item.coverImageUrl,
+      grade: item.grade,
+    })),
+    buyer: {
+      id: orderDetail.buyer.id,
+      nickname: orderDetail.buyer.nickname,
+      avatar_url: orderDetail.buyer.avatarUrl,
+      phone_number: orderDetail.buyer.phoneNumber ?? null,
+      no_show_count: orderDetail.buyer.noShowCount ?? 0,
+    },
+    seller: {
+      id: orderDetail.seller.id,
+      nickname: orderDetail.seller.nickname,
+      shop_name: orderDetail.seller.shopName,
+      avatar_url: orderDetail.seller.avatarUrl,
+      verified_name: maskAccountHolderName(orderDetail.seller.verifiedName),
+      is_verified_seller: orderDetail.seller.isVerifiedSeller,
+    },
+    delivery_details: orderDetail.deliveryDetails
+      ? {
+          recipient_name: orderDetail.deliveryDetails.recipientName,
+          recipient_phone: orderDetail.deliveryDetails.recipientPhone,
+          province: orderDetail.deliveryDetails.province,
+          delivery_address: orderDetail.deliveryDetails.deliveryAddress,
+          courier_name: orderDetail.deliveryDetails.courierName,
+          tracking_number: orderDetail.deliveryDetails.trackingNumber,
+          parcel_image_url: orderDetail.deliveryDetails.parcelImageUrl,
+          shipped_at: orderDetail.deliveryDetails.shippedAt,
+        }
+      : null,
+    payment_slip_url: orderDetail.paymentSlipUrl ?? null,
+    created_at: orderDetail.createdAt,
+    updated_at: orderDetail.updatedAt,
+  };
+}
+
 /**
  * POST /api/orders
  * ผู้ซื้อส่งคำขอซื้อสินค้าจากตะกร้า (หน้าจอ B3)
@@ -232,80 +309,7 @@ orderRouter.get(
 
       res.status(200).json({
         success: true,
-        data: {
-          id: orderDetail.id,
-          status: orderDetail.status,
-          shipping_method: orderDetail.shippingMethod,
-          payment_method: orderDetail.paymentMethod,
-          shipping_fee: orderDetail.shippingFee,
-          total_price: orderDetail.totalPrice,
-          pickup_lat: orderDetail.pickupLat,
-          pickup_lng: orderDetail.pickupLng,
-          pickup_location_name: orderDetail.pickupLocationName,
-          scheduled_at: orderDetail.scheduledAt,
-          schedule_date_iso: orderDetail.scheduleDateIso,
-          schedule_time_label: orderDetail.scheduleTimeLabel,
-          schedule_proposed_by: orderDetail.scheduleProposedBy,
-          schedule_confirmed_by_buyer: orderDetail.scheduleConfirmedByBuyer,
-          handover_code: orderDetail.handoverCode ?? null,
-          received_photo_url: orderDetail.receivedPhotoUrl,
-          received_at: orderDetail.receivedAt,
-          cancel_reason: orderDetail.cancelReason,
-          missed_meeting_reported_at: orderDetail.missedMeetingReportedAt ?? null,
-          review: orderDetail.review
-            ? {
-                rating: orderDetail.review.rating,
-                is_condition_accurate: orderDetail.review.isConditionAccurate,
-                tags: orderDetail.review.tags,
-                comment: orderDetail.review.comment,
-                created_at: orderDetail.review.createdAt,
-              }
-            : null,
-          dispute: orderDetail.dispute
-            ? {
-                reason: orderDetail.dispute.reason,
-                opened_by: orderDetail.dispute.openedBy,
-                opened_at: orderDetail.dispute.openedAt,
-              }
-            : null,
-          items: orderDetail.items.map((item) => ({
-            book_id: item.bookId,
-            title: item.title,
-            price: item.price,
-            cover_image_url: item.coverImageUrl,
-            grade: item.grade,
-          })),
-          buyer: {
-            id: orderDetail.buyer.id,
-            nickname: orderDetail.buyer.nickname,
-            avatar_url: orderDetail.buyer.avatarUrl,
-            phone_number: orderDetail.buyer.phoneNumber ?? null,
-            no_show_count: orderDetail.buyer.noShowCount ?? 0,
-          },
-          seller: {
-            id: orderDetail.seller.id,
-            nickname: orderDetail.seller.nickname,
-            shop_name: orderDetail.seller.shopName,
-            avatar_url: orderDetail.seller.avatarUrl,
-            verified_name: maskAccountHolderName(orderDetail.seller.verifiedName),
-            is_verified_seller: orderDetail.seller.isVerifiedSeller,
-          },
-          delivery_details: orderDetail.deliveryDetails
-            ? {
-                recipient_name: orderDetail.deliveryDetails.recipientName,
-                recipient_phone: orderDetail.deliveryDetails.recipientPhone,
-                province: orderDetail.deliveryDetails.province,
-                delivery_address: orderDetail.deliveryDetails.deliveryAddress,
-                courier_name: orderDetail.deliveryDetails.courierName,
-                tracking_number: orderDetail.deliveryDetails.trackingNumber,
-                parcel_image_url: orderDetail.deliveryDetails.parcelImageUrl,
-                shipped_at: orderDetail.deliveryDetails.shippedAt,
-              }
-            : null,
-          payment_slip_url: orderDetail.paymentSlipUrl ?? null,
-          created_at: orderDetail.createdAt,
-          updated_at: orderDetail.updatedAt,
-        },
+        data: serializeOrderDetailDto(orderDetail),
       });
     } catch (error) {
       next(error);

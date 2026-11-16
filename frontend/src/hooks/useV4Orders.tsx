@@ -160,7 +160,13 @@ export const V4OrdersProvider: React.FC<{ children: ReactNode }> = ({
       const summary = await api.get<{
         buying?: Array<{ id: string }>;
         selling?: Array<{ id: string }>;
-      }>('/api/users/me/orders', { token: idToken });
+        details?: BackendOrderDetail[];
+      }>('/api/users/me/orders?include=details', { token: idToken });
+
+      if (Array.isArray(summary.details)) {
+        setOrders(summary.details.map(mapBackendOrderDetailToV4Order));
+        return;
+      }
 
       const uniqueIds = Array.from(
         new Set([
