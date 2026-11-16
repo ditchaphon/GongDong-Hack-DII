@@ -352,10 +352,15 @@ async function loadAndAuthorizeOrder(
   return order;
 }
 
+const DEFAULT_TX_OPTIONS = {
+  maxWait: 10_000,
+  timeout: 15_000,
+};
+
 // ponytail: shared order completion helper used by completeDelivery, receive, completeMeetup, verifyHandover
 async function withTransaction<T>(db: any, fn: (tx: any) => Promise<T>): Promise<T> {
   if (typeof db?.$transaction === 'function') {
-    return await db.$transaction(fn);
+    return await db.$transaction(fn, DEFAULT_TX_OPTIONS);
   }
   return await fn(db);
 }
@@ -753,7 +758,7 @@ async function executeBatchOrders(
 
   let createdEntries: Array<{ result: CreateOrderResult; bookCount: number; sellerId: string }>;
   try {
-    createdEntries = await db.$transaction(async (tx: any) => {
+    createdEntries = await withTransaction(db, async (tx: any) => {
       const userRepo = tx.user?.findUnique ? tx.user : db.user;
       const orderRepo = tx.order?.count ? tx.order : db.order;
 
@@ -1107,15 +1112,31 @@ export async function acceptOrder(
 ): Promise<AcceptOrderResult> {
   const db = prismaClient || defaultPrisma;
 
-  const result = await db.$transaction(async (tx: any) => {
+  const result = await withTransaction(db, async (tx: any) => {
     const order = await loadAndAuthorizeOrder(tx, orderId, sellerId, {
       role: 'SELLER',
       forbiddenMessage: 'คุณไม่มีสิทธิ์จัดการคำสั่งซื้อนี้',
       allowedStatuses: ['REQUESTED'],
       statusErrorBuilder: (s) => `ไม่สามารถรับออเดอร์นี้ได้เนื่องจากสถานะปัจจุบันคือ ${s}`,
       include: {
-        seller: true,
-        orderItems: { include: { bookListing: true } },
+        seller: {
+          select: {
+            id: true,
+            isVerifiedSeller: true,
+            credits: true,
+          },
+        },
+        orderItems: {
+          select: {
+            bookListingId: true,
+            bookListing: {
+              select: {
+                id: true,
+                status: true,
+              },
+            },
+          },
+        },
       },
     });
 
@@ -1256,13 +1277,6 @@ export async function acceptOrder(
       ...(shipBy ? { shipBy } : {}),
     });
 
-    await createSystemOrderMessage(
-      orderId,
-      'ผู้ขายตอบรับคำสั่งซื้อแล้ว สามารถสื่อสารรายละเอียดการส่งมอบได้ในห้องแชทนี้',
-      'SYSTEM',
-      tx
-    );
-
     return {
       expired: false as const,
       buyerId: order.buyerId,
@@ -1295,6 +1309,17 @@ export async function acceptOrder(
       400,
       'ORDER_EXPIRED'
     );
+  }
+
+  try {
+    await createSystemOrderMessage(
+      orderId,
+      'ผู้ขายตอบรับคำสั่งซื้อแล้ว สามารถสื่อสารรายละเอียดการส่งมอบได้ในห้องแชทนี้',
+      'SYSTEM',
+      db
+    );
+  } catch (err) {
+    console.warn('[orderService] Failed to create accept system message:', orderId, err);
   }
 
   await safeNotifyOrder(
@@ -1396,7 +1421,7 @@ export async function cancelOrder(
     throw new AppError('กรุณาระบุเหตุผลการยกเลิกคำสั่งซื้อ', 400, 'CANCEL_REASON_REQUIRED');
   }
 
-  const outcome = await db.$transaction(async (tx: any) => {
+  const outcome = await withTransaction(db, async (tx: any) => {
     const order = await loadAndAuthorizeOrder(tx, orderId, userId, {
       role: 'PARTICIPANT',
       forbiddenMessage: 'คุณไม่มีสิทธิ์ยกเลิกคำสั่งซื้อนี้',

@@ -957,4 +957,46 @@ describe('OrderService - State Machine & Core Transactions', () => {
       expect(orders[0].recentMessages.map((m) => m.id)).toEqual(['m1', 'm2']);
     });
   });
+
+  describe('acceptOrder Transaction Timeout & Post-Commit Message Resilience', () => {
+    it('acceptOrder ต้องส่ง maxWait และ timeout ให้ $transaction และสร้าง system message หลัง commit โดยไม่ทำให้รับออเดอร์ล้มเหลว', async () => {
+      const mockTx: any = {
+        order: {
+          findUnique: vi.fn().mockResolvedValue({
+            id: 'ord_tx_opt_1',
+            sellerId: 'usr_seller_1',
+            buyerId: 'usr_buyer_1',
+            status: 'REQUESTED',
+            shippingMethod: 'PICKUP',
+            seller: { id: 'usr_seller_1', isVerifiedSeller: true, credits: 2 },
+            orderItems: [{ bookListingId: 'bok_1', bookListing: { id: 'bok_1', status: 'AVAILABLE' } }],
+          }),
+          updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+        },
+        user: {
+          updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+          findUnique: vi.fn().mockResolvedValue({ credits: 1 }),
+        },
+        creditTransaction: { create: vi.fn().mockResolvedValue({}) },
+        bookListing: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+        orderItem: { findMany: vi.fn().mockResolvedValue([]) },
+      };
+
+      const postCommitMessageCreate = vi.fn().mockRejectedValue(new Error('chat insert timeout'));
+      const mockPrisma: any = {
+        $transaction: vi.fn(async (cb: any, _opts?: any) => await cb(mockTx)),
+        orderMessage: { create: postCommitMessageCreate },
+      };
+
+      const result = await acceptOrder('ord_tx_opt_1', 'usr_seller_1', mockPrisma);
+
+      expect(mockPrisma.$transaction).toHaveBeenCalledWith(expect.any(Function), {
+        maxWait: 10_000,
+        timeout: 15_000,
+      });
+      expect(postCommitMessageCreate).toHaveBeenCalledTimes(1);
+      expect(result.status).toBe('ACCEPTED');
+      expect(result.remainingCredits).toBe(1);
+    });
+  });
 });

@@ -28,6 +28,25 @@ export function errorHandler(
     return;
   }
 
+  const prismaCode = (err as any)?.code;
+  const rawMessage = err.message || '';
+  if (
+    prismaCode === 'P2028' ||
+    prismaCode === 'P2024' ||
+    rawMessage.includes('Transaction API error: Transaction not found')
+  ) {
+    console.error(`[Error] ${prismaCode || 'PRISMA_TX'} (503): ${rawMessage}`);
+    res.status(503).json({
+      success: false,
+      error: {
+        code: 'DATABASE_TIMEOUT',
+        message: 'การเชื่อมต่อฐานข้อมูลใช้เวลานานเกินกำหนด กรุณาลองใหม่อีกครั้ง',
+        details: process.env.NODE_ENV === 'development' ? { prismaCode, rawMessage } : null,
+      },
+    });
+    return;
+  }
+
   const customErr = err as AppError;
   const statusCode = customErr.statusCode || 500;
   const errorCode = customErr.code || 'INTERNAL_SERVER_ERROR';
