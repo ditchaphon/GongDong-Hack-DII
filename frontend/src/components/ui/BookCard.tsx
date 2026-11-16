@@ -3,6 +3,7 @@
 import React from 'react';
 import clsx from 'clsx';
 import { Book } from '@/types';
+import { countSetActualVolumes } from '@/lib/delivery';
 import { GradeBadge } from './GradeBadge';
 import { MapPin, Truck, Star } from 'lucide-react';
 
@@ -25,6 +26,15 @@ export const BookCard: React.FC<BookCardProps> = ({
 }) => {
   const hasMeetup = book.deliveryMethods.includes('MEETUP');
   const hasParcel = book.deliveryMethods.includes('PARCEL');
+  const actualSetVolumes = book.isSet ? countSetActualVolumes(book) : 1;
+  const hasMissingSetVolumes = Boolean(
+    book.isSet && book.missingVolumes && book.missingVolumes.length > 0 && book.totalVolumes
+  );
+  const setBadgeLabel = book.isSet
+    ? hasMissingSetVolumes
+      ? `ชุด ${actualSetVolumes}/${book.totalVolumes} เล่ม`
+      : `ชุด ${actualSetVolumes} เล่ม`
+    : '';
 
   if (layout === 'horizontal') {
     return (
@@ -69,7 +79,7 @@ export const BookCard: React.FC<BookCardProps> = ({
             </h3>
             {book.isSet && (
               <span className="inline-block mt-1 text-[10px] font-bold px-1.5 py-0.5 bg-purple-50 text-purple-700 border border-purple-200 rounded">
-                ยกชุด {book.totalVolumes} เล่ม
+                {setBadgeLabel}
               </span>
             )}
           </div>
@@ -126,7 +136,7 @@ export const BookCard: React.FC<BookCardProps> = ({
           <GradeBadge grade={book.grade} size="sm" />
           {book.isSet && (
             <span className="text-[10px] font-bold px-1.5 py-0.5 bg-purple-600 text-white rounded-md shadow-xs">
-              ยกชุด {book.totalVolumes} เล่ม
+              {setBadgeLabel}
             </span>
           )}
         </div>

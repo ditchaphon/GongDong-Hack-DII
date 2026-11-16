@@ -290,6 +290,7 @@ describe('BookService - Marketplace & Listings Management', () => {
         categories: ['จิตวิทยา / พัฒนาตนเอง'],
         isSet: false,
         totalVolumes: null,
+        missingVolumes: [],
         coverImageUrl: 'https://storage.com/front.webp',
         price: 220,
         originalPrice: 295,
@@ -781,6 +782,15 @@ describe('BookService - Marketplace & Listings Management', () => {
 
       const res = await getBookIsbnComparison('bok_curr', mockDb);
 
+      expect(mockDb.bookListing.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            isbn: '9786161845678',
+            isSet: false,
+            status: 'AVAILABLE',
+          }),
+        })
+      );
       expect(res.isSyntheticIsbn).toBe(false);
       expect(res.totalOffers).toBe(2);
       expect(res.isCurrentCheapest).toBe(false);
@@ -824,6 +834,33 @@ describe('BookService - Marketplace & Listings Management', () => {
       expect(res.isSyntheticIsbn).toBe(true);
       expect(res.offers).toEqual([]);
       expect(mockDb.bookListing.findMany).not.toHaveBeenCalled();
+    });
+
+    it('ส่งคำสั่งซื้อขายยกชุด: createBookListing ปฏิเสธ 400 INVALID_SET_VOLUMES หากหักเล่มที่ขาดแล้วเหลือน้อยกว่า 2 เล่ม', async () => {
+      await expect(
+        createBookListing(
+          'usr_seller_1',
+          {
+            isbn: '9786161845678',
+            title: 'ชุดทดสอบ',
+            price: 300,
+            isSet: true,
+            totalVolumes: 3,
+            missingVolumes: [1, 3],
+            conditionAnswers: { spine: false, stains: false, markings: false, covers: false, pages: false },
+            images: [
+              { imageUrl: 'https://img/1.webp', imageType: 'FRONT_COVER', displayOrder: 1, isCover: true },
+              { imageUrl: 'https://img/2.webp', imageType: 'BACK_COVER', displayOrder: 2 },
+              { imageUrl: 'https://img/3.webp', imageType: 'SPINE', displayOrder: 3 },
+              { imageUrl: 'https://img/4.webp', imageType: 'INNER', displayOrder: 4 },
+            ],
+          },
+          mockDb
+        )
+      ).rejects.toMatchObject({
+        statusCode: 400,
+        code: 'INVALID_SET_VOLUMES',
+      });
     });
   });
 });

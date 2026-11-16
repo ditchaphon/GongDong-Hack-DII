@@ -13,7 +13,7 @@ import {
   Toast,
 } from '@/components/ui';
 import { PhotoGallery, ConfirmSheet, CartAddedSheet, CartAddedState } from '@/components/v4';
-import { calcParcelFee } from '@/lib/delivery';
+import { calcParcelFee, countSetActualVolumes } from '@/lib/delivery';
 import { toUiBookGrade } from '@/lib/catalog';
 import { api } from '@/lib/api';
 import {
@@ -58,6 +58,7 @@ interface IsbnCompareOffer {
   defectCount: number;
   isSet: boolean;
   totalVolumes: number | null;
+  missingVolumes?: number[];
   allowPickup: boolean;
   pickupLocationName: string | null;
   allowDelivery: boolean;
@@ -370,7 +371,9 @@ export default function BookDetailPage({
           </button>
           {book.isSet && (
             <span className="text-xs font-bold px-2 py-0.5 bg-purple-50 text-purple-700 border border-purple-200 rounded-md">
-              ยกชุด {book.totalVolumes} เล่ม
+              {book.missingVolumes && book.missingVolumes.length > 0 && book.totalVolumes
+                ? `ต้องการขาย ${countSetActualVolumes(book)} จาก ${book.totalVolumes} เล่ม`
+                : `ต้องการขาย ${countSetActualVolumes(book)} เล่ม`}
             </span>
           )}
         </div>
@@ -412,19 +415,38 @@ export default function BookDetailPage({
           )}
         </div>
 
-        <div className="flex items-baseline gap-2 pt-2 border-t border-slate-50">
-          <span className="text-2xl font-black text-[var(--color-primary)]">
-            ฿{book.price.toLocaleString()}
-          </span>
-          {book.originalPrice && (
-            <>
-              <span className="text-sm text-slate-400 line-through">
-                ฿{book.originalPrice.toLocaleString()}
-              </span>
-              <span className="text-xs font-bold text-rose-500 bg-rose-50 px-1.5 py-0.5 rounded">
-                ลด {Math.round(((book.originalPrice - book.price) / book.originalPrice) * 100)}%
-              </span>
-            </>
+        <div className="space-y-1.5 pt-2 border-t border-slate-50">
+          <div className="flex items-baseline gap-2">
+            <span className="text-2xl font-black text-[var(--color-primary)]">
+              ฿{book.price.toLocaleString()}
+            </span>
+            {book.originalPrice && (
+              <>
+                <span className="text-sm text-slate-400 line-through">
+                  ฿{book.originalPrice.toLocaleString()}
+                </span>
+                <span className="text-xs font-bold text-rose-500 bg-rose-50 px-1.5 py-0.5 rounded">
+                  ลด {Math.round(((book.originalPrice - book.price) / book.originalPrice) * 100)}%
+                </span>
+              </>
+            )}
+          </div>
+          {book.isSet && (
+            <p className="text-xs font-semibold text-purple-700">
+              ชุด {countSetActualVolumes(book)} เล่ม · เฉลี่ย ~฿
+              {Math.round(book.price / countSetActualVolumes(book)).toLocaleString()}/เล่ม
+            </p>
+          )}
+          {book.isSet && book.missingVolumes && book.missingVolumes.length > 0 && (
+            <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900">
+              <p className="font-bold">
+                ชุดนี้ขาดเล่ม: {[...book.missingVolumes].sort((a, b) => a - b).map((v) => `เล่ม ${v}`).join(', ')}
+              </p>
+              <p className="text-[11px] text-amber-700 mt-0.5">
+                ผู้ซื้อจะได้รับทั้งหมด {countSetActualVolumes(book)} เล่ม
+                {book.totalVolumes ? ` (จากปกติ ${book.totalVolumes} เล่ม)` : ''}
+              </p>
+            </div>
           )}
         </div>
         <p className="text-[10px] text-slate-400">
@@ -491,7 +513,7 @@ export default function BookDetailPage({
                 ส่งพัสดุ
               </span>
               <span className="text-xs font-bold text-slate-800">
-                ฿{calcParcelFee(1, shop?.province, shop?.province)}
+                ฿{calcParcelFee(book.isSet ? countSetActualVolumes(book) : 1, shop?.province, shop?.province)}
               </span>
             </div>
             <p className="text-[11px] text-slate-500 leading-relaxed">
@@ -499,7 +521,9 @@ export default function BookDetailPage({
               {shop ? ` · ส่งจาก${shop.province}` : ''}
             </p>
             <p className="text-[10px] text-slate-400">
-              เล่มแรก ฿50 · เล่มถัดไป +฿10/เล่ม (รวมในยอดเก็บเงินปลายทาง)
+              {book.isSet
+                ? `ชุดนี้คิดค่าส่งตามจำนวน ${countSetActualVolumes(book)} เล่ม (฿50 เล่มแรก + ฿10/เล่มถัดไป สูงสุด ฿150)`
+                : 'เล่มแรก ฿50 · เล่มถัดไป +฿10/เล่ม สูงสุด ฿150 (รวมในยอดเก็บเงินปลายทาง)'}
             </p>
           </div>
         )}
@@ -583,7 +607,7 @@ export default function BookDetailPage({
             <div>
               <h2 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
                 <ArrowUpDown className="w-4 h-4 text-[var(--color-primary)]" />
-                เทียบกับร้านอื่น (ISBN เดียวกัน)
+                {book.isSet ? 'เทียบกับชุดอื่น (ISBN เดียวกัน)' : 'เทียบกับร้านอื่น (ISBN เดียวกัน)'}
               </h2>
               <p className="text-[11px] text-slate-400 mt-0.5">
                 ISBN {compareData.isbn}
@@ -592,7 +616,9 @@ export default function BookDetailPage({
             <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200 shrink-0">
               {compareData.totalOffers > 0
                 ? `อีก ${compareData.totalOffers} ตัวเลือก`
-                : 'มีเฉพาะเล่มนี้'}
+                : book.isSet
+                  ? 'มีเฉพาะชุดนี้'
+                  : 'มีเฉพาะเล่มนี้'}
             </span>
           </div>
 
@@ -696,6 +722,11 @@ export default function BookDetailPage({
                             {offer.isCheapest && (
                               <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800">
                                 ถูกที่สุด
+                              </span>
+                            )}
+                            {offer.isSet && (
+                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-purple-100 text-purple-800">
+                                ชุด {countSetActualVolumes(offer)} เล่ม
                               </span>
                             )}
                             {offer.isBestGrade && (

@@ -1228,5 +1228,53 @@ describe('OrderService - State Machine & Core Transactions', () => {
 
       clearUserMaintenanceCooldownForTest();
     });
+
+    it('createOrder คิดค่าส่งพัสดุของชุดหนังสือตามจำนวนเล่มจริง (หัก missingVolumes) และจำกัดเพดาน ฿150', async () => {
+      const tx = {
+        order: {
+          create: vi.fn().mockImplementation(async ({ data }: any) => ({
+            id: 'ord_set_ship_1',
+            ...data,
+            createdAt: new Date(),
+          })),
+        },
+      };
+      const mockDb: any = {
+        user: { findUnique: vi.fn().mockResolvedValue({ id: 'usr_buyer_set', phoneNumber: null }) },
+        order: { count: vi.fn().mockResolvedValue(0) },
+        bookListing: {
+          findMany: vi.fn().mockResolvedValue([
+            {
+              id: 'bok_set_1',
+              sellerId: 'usr_seller_1',
+              price: 450,
+              status: 'AVAILABLE',
+              allowDelivery: true,
+              codEnabled: true,
+              isSet: true,
+              totalVolumes: 5,
+              missingVolumes: [4], // เหลือ 4 เล่มจริง -> 50 + 3*10 = 80
+            },
+          ]),
+        },
+        shopProfile: { findUnique: vi.fn().mockResolvedValue({ province: 'เชียงใหม่', shipWithinDays: 2 }) },
+        $transaction: vi.fn(async (cb: any) => await cb(tx)),
+      };
+
+      const res = await createOrder(
+        'usr_buyer_set',
+        {
+          sellerId: 'usr_seller_1',
+          bookIds: ['bok_set_1'],
+          shippingMethod: 'DELIVERY',
+          recipientName: 'สมชาย',
+          deliveryAddress: 'หอ 4 มช.',
+        },
+        mockDb
+      );
+
+      expect(res.shippingFee).toBe(80);
+      expect(res.totalPrice).toBe(530);
+    });
   });
 });

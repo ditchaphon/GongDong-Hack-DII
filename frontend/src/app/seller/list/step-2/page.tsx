@@ -24,12 +24,19 @@ export default function SellerListStep2Page() {
   const { draft, setPhoto } = useListing();
   const isSet = draft.mode === 'SET';
 
-  const slots: { key: SlotKey; label: string; hint: string }[] = [
-    { key: 'cover', label: isSet ? 'ปกหน้าทั้งชุด' : 'ปกหน้า', hint: 'ถ่ายตรง เห็นขอบครบ 4 ด้าน' },
-    { key: 'back', label: 'ปกหลัง', hint: 'เห็นบาร์โค้ดและรอยถลอก' },
-    { key: 'spine', label: isSet ? 'สันทุกเล่ม' : 'สันหนังสือ', hint: 'เห็นความหนาและรอยย่น' },
-    { key: 'inner', label: 'หน้าด้านใน', hint: 'เปิดกลางเล่ม เห็นสีกระดาษ' },
-  ];
+  const slots: { key: SlotKey; label: string; hint: string }[] = isSet
+    ? [
+        { key: 'cover', label: 'ภาพรวมหน้าปกทั้งชุด', hint: 'วางเรียงให้เห็นปกครบทุกเล่มที่มีจริง' },
+        { key: 'back', label: 'ปกหลัง / ขอบกระดาษรวม', hint: 'วางเรียงให้เห็นขอบบน-ข้างของทั้งชุด' },
+        { key: 'spine', label: 'สันหนังสือเรียงทุกเล่ม', hint: 'เห็นเลขเล่ม ความหนา และรอยย่นครบ' },
+        { key: 'inner', label: 'ตัวอย่างหน้าด้านใน', hint: 'เปิดเล่มตัวอย่าง (แนะนำเล่มสีเข้มสุด)' },
+      ]
+    : [
+        { key: 'cover', label: 'ปกหน้า', hint: 'ถ่ายตรง เห็นขอบครบ 4 ด้าน' },
+        { key: 'back', label: 'ปกหลัง', hint: 'เห็นบาร์โค้ดและรอยถลอก' },
+        { key: 'spine', label: 'สันหนังสือ', hint: 'เห็นความหนาและรอยย่น' },
+        { key: 'inner', label: 'หน้าด้านใน', hint: 'เปิดกลางเล่ม เห็นสีกระดาษ' },
+      ];
 
   const [camera, setCamera] = useState<{ key: SlotKey; label: string } | null>(null);
   const [error, setError] = useState<string | null>(null);

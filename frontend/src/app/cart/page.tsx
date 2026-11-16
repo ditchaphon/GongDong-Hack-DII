@@ -20,6 +20,8 @@ import {
 import { Book, BookedPickupSlot, DeliveryMethod, ShopProfile } from '@/types';
 import {
   calcParcelFee,
+  countOrderBookUnits,
+  countSetActualVolumes,
   expandShopHourlySlots,
   isSlotBookedForDate,
   mapDirectionsUrl,
@@ -538,7 +540,7 @@ export default function CartPage() {
       const groupBookSum = group.items.reduce((s, b) => s + b.price, 0);
       const fee =
         validation?.delivery === 'PARCEL'
-          ? calcParcelFee(group.items.length, shop?.province, selectedAddress?.province)
+          ? calcParcelFee(countOrderBookUnits(group.items), shop?.province, selectedAddress?.province)
           : 0;
       bookSubtotal += groupBookSum;
       shippingSubtotal += fee;
@@ -579,7 +581,7 @@ export default function CartPage() {
         const groupBookTotal = group.items.reduce((s, b) => s + b.price, 0);
         const shippingFee =
           delivery === 'PARCEL'
-            ? calcParcelFee(group.items.length, shop?.province, selectedAddress?.province)
+            ? calcParcelFee(countOrderBookUnits(group.items), shop?.province, selectedAddress?.province)
             : 0;
         const point = validation.points.find((p) => p.id === cfg?.pointId) ?? validation.points[0];
 
@@ -797,7 +799,7 @@ export default function CartPage() {
           const isHighlightedSeller = highlightedSellerId === group.sellerId;
 
           const parcelFee = calcParcelFee(
-            group.items.length,
+            countOrderBookUnits(group.items),
             shop?.province,
             selectedAddress?.province
           );
@@ -899,6 +901,16 @@ export default function CartPage() {
                         <h4 className="font-semibold text-slate-900 text-sm line-clamp-1">
                           {book.title}
                         </h4>
+                        {book.isSet && (
+                          <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-purple-50 text-purple-700 border border-purple-200">
+                              ชุด {countSetActualVolumes(book)} เล่ม
+                              {book.missingVolumes && book.missingVolumes.length > 0 && book.totalVolumes
+                                ? ` (ขาดเล่ม ${[...book.missingVolumes].sort((a, b) => a - b).join(', ')})`
+                                : ''}
+                            </span>
+                          </div>
+                        )}
                         <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-slate-400 mt-0.5">
                           <span>เกรด {book.grade}</span>
                           <span>·</span>

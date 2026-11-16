@@ -6,6 +6,7 @@ import { TopBar } from '@/components/layout/TopBar';
 import { Button, Input, Stepper } from '@/components/ui';
 import { useListing } from '@/hooks/useListing';
 import { BOOK_CATEGORIES } from '@/lib/catalog';
+import { countSetActualVolumes } from '@/lib/delivery';
 import { getIsbnSourceMeta, getIsbnToneClasses } from '@/lib/isbnSource';
 import { BookOpen, ChevronRight, Info, Lock } from 'lucide-react';
 
@@ -14,15 +15,23 @@ export default function SellerListDetailsPage() {
   const router = useRouter();
   const { draft, update } = useListing();
   const isSet = draft.mode === 'SET';
+  const actualVolumes = countSetActualVolumes({
+    isSet,
+    totalVolumes: draft.totalVolumes,
+    missingVolumes: draft.missingVolumes,
+  });
   const hasIsbn = !!draft.isbn;
   const sourceMeta = getIsbnSourceMeta(draft.isbnLookupSource, draft.isbnLookupMessage);
   const toneClasses = sourceMeta ? getIsbnToneClasses(sourceMeta.tone) : null;
-  // Lock only metadata fields that were pre-populated by ISBN lookup (don't lock missing fields or mid-typing)
+  // Lock only metadata fields that were pre-populated by ISBN lookup (keep set total price editable)
   const [lockedFields] = useState(() => ({
     author: hasIsbn && !!draft.author,
     publisher: hasIsbn && !!draft.publisher,
     originalPrice: hasIsbn && draft.originalPrice > 0,
   }));
+  const [singleBookOriginalPrice] = useState(() =>
+    hasIsbn && draft.originalPrice > 0 ? draft.originalPrice : 0
+  );
 
   const toggleCategory = (category: string) =>
     update({
@@ -106,17 +115,31 @@ export default function SellerListDetailsPage() {
 
           <Input
             id="listing-original-price"
-            label="ราคามือหนึ่ง (บาท)"
+            label={isSet ? 'ราคามือหนึ่งทั้งชุด (บาท)' : 'ราคามือหนึ่ง (บาท)'}
             type="number"
             inputMode="numeric"
             placeholder="0"
             value={draft.originalPrice ? String(draft.originalPrice) : ''}
-            disabled={lockedFields.originalPrice}
+            disabled={!isSet && lockedFields.originalPrice}
             onChange={(event) =>
               update({ originalPrice: Number(event.target.value) || 0 })
             }
-            helperText="ใช้คำนวณราคาแนะนำในขั้นตอนสุดท้าย"
+            helperText={
+              isSet
+                ? `กรอกราคามือหนึ่งรวมของหนังสือทั้ง ${actualVolumes} เล่มเพื่อคำนวณราคาแนะนำ`
+                : 'ใช้คำนวณราคาแนะนำในขั้นตอนสุดท้าย'
+            }
           />
+
+          {isSet && singleBookOriginalPrice > 0 && (
+            <button
+              type="button"
+              onClick={() => update({ originalPrice: singleBookOriginalPrice * actualVolumes })}
+              className="w-full text-left px-3 py-2 rounded-xl bg-purple-50 border border-purple-200 text-[11px] font-semibold text-purple-800 hover:bg-purple-100/70 transition"
+            >
+              ราคาปกเล่มเดียว ฿{singleBookOriginalPrice.toLocaleString()} → แตะเพื่อใช้ราคารวม {actualVolumes} เล่ม (฿{(singleBookOriginalPrice * actualVolumes).toLocaleString()})
+            </button>
+          )}
 
           <div className="space-y-1.5">
             <label

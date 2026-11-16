@@ -254,6 +254,7 @@ export interface BookListingItem {
   categories: string[];
   isSet: boolean;
   totalVolumes: number | null;
+  missingVolumes: number[];
   coverImageUrl: string;
   price: number;
   originalPrice: number | null;
@@ -326,6 +327,7 @@ export interface UserBookListingItem {
   categories: string[];
   isSet: boolean;
   totalVolumes: number | null;
+  missingVolumes: number[];
   price: number;
   grade: BookGrade;
   coverImageUrl: string;

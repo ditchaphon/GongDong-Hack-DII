@@ -12,6 +12,7 @@ import {
 } from '@/components/ui';
 import { useListing } from '@/hooks/useListing';
 import { useSeller } from '@/hooks/useSeller';
+import { calcParcelFee, countSetActualVolumes } from '@/lib/delivery';
 import {
   MapPin,
   Truck,
@@ -27,6 +28,12 @@ export default function SellerListStep4Page() {
   const { publishListing, shop } = useSeller();
 
   const isSet = draft.mode === 'SET';
+  const actualVolumes = countSetActualVolumes({
+    isSet,
+    totalVolumes: draft.totalVolumes,
+    missingVolumes: draft.missingVolumes,
+  });
+  const estimatedParcelFee = calcParcelFee(actualVolumes);
   const canParcel = Boolean(shop?.payeeVerified && shop?.supportsParcel);
   const hasMeetup = draft.deliveryMethods.includes('MEETUP');
   const hasParcel = draft.deliveryMethods.includes('PARCEL') && canParcel;
@@ -95,11 +102,18 @@ export default function SellerListStep4Page() {
           </div>
 
           {isSet && (
-            <div className="flex items-center gap-2 text-[11px] text-slate-500">
-              <Layers className="w-3.5 h-3.5" />
-              ขายยกชุด {draft.totalVolumes} เล่ม
-              {draft.missingVolumes.length > 0 &&
-                ` · ขาดเล่ม ${draft.missingVolumes.join(', ')}`}
+            <div className="flex items-center justify-between gap-2 text-[11px] text-slate-600 bg-purple-50/70 border border-purple-200 px-3 py-2 rounded-xl">
+              <span className="inline-flex items-center gap-1.5">
+                <Layers className="w-3.5 h-3.5 text-purple-700" />
+                ต้องการขาย {actualVolumes} เล่ม
+                {draft.missingVolumes.length > 0 &&
+                  ` (จาก ${draft.totalVolumes} เล่ม · ขาดเล่ม ${draft.missingVolumes.join(', ')})`}
+              </span>
+              {price > 0 && (
+                <span className="font-bold text-purple-900 shrink-0">
+                  เฉลี่ย ~฿{Math.round(price / actualVolumes).toLocaleString()}/เล่ม
+                </span>
+              )}
             </div>
           )}
 
@@ -186,7 +200,9 @@ export default function SellerListStep4Page() {
               </span>
               <span className="block text-[11px] text-slate-500 mt-0.5">
                 {canParcel
-                  ? 'เล่มแรก ฿50 · เล่มถัดไป +฿10/เล่ม (เก็บเงินปลายทาง)'
+                  ? isSet
+                    ? `ชุด ${actualVolumes} เล่ม: ค่าส่ง ฿${estimatedParcelFee} (฿50 + ฿10/เล่ม, สูงสุด ฿150 · เก็บเงินปลายทาง)`
+                    : 'เล่มแรก ฿50 · เล่มถัดไป +฿10/เล่ม (เก็บเงินปลายทาง)'
                   : 'ต้องยืนยันตัวตน (KYC) และเปิดรับส่งพัสดุในตั้งค่าร้านก่อน'}
               </span>
             </span>
@@ -214,7 +230,11 @@ export default function SellerListStep4Page() {
           <div className="flex justify-between text-slate-500">
             <span>ค่าส่ง</span>
             <span className="font-semibold text-slate-800">
-              {hasParcel ? '฿50 เล่มแรก (+฿10/เล่ม)' : 'นัดรับฟรี (฿0)'}
+              {hasParcel
+                ? isSet
+                  ? `฿${estimatedParcelFee} (${actualVolumes} เล่ม, สูงสุด ฿150)`
+                  : '฿50 เล่มแรก (+฿10/เล่ม)'
+                : 'นัดรับฟรี (฿0)'}
             </span>
           </div>
           <div className="pt-2 border-t border-slate-100 flex justify-between items-baseline text-sm">

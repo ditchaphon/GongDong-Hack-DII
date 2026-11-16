@@ -22,6 +22,7 @@ export interface Book {
   categories?: string[];
   isSet: boolean;
   totalVolumes?: number;
+  missingVolumes?: number[];
   price: number;
   originalPrice?: number;
   grade: BookGrade;

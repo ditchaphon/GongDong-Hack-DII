@@ -101,6 +101,7 @@ function buildDefectNote(item: ConditionItemSpec, customNote: string): string {
 export default function SellerListStep3Page() {
   const router = useRouter();
   const { draft, grade, update, setChecklist } = useListing();
+  const isSet = draft.mode === 'SET';
   const [isGradeSheetOpen, setIsGradeSheetOpen] = useState(false);
   const [activeCameraItem, setActiveCameraItem] = useState<ConditionItemSpec | null>(null);
   const [galleryIndex, setGalleryIndex] = useState<number | null>(null);
@@ -250,13 +251,18 @@ export default function SellerListStep3Page() {
           </section>
         )}
 
-        <div className="px-1">
+        <div className="px-1 space-y-2">
           <p className="text-xs font-bold text-slate-800">
             ตรวจสอบสภาพหนังสือทั้ง 5 จุด
           </p>
           <p className="text-[11px] text-slate-500 leading-relaxed mt-0.5">
             หากจุดใดเลือก <strong className="text-amber-700">มีตำหนิ</strong> ระบบจะให้ถ่ายรูปจุดที่มีตำหนินั้นเพื่อให้ผู้ซื้อซูมดูสภาพจริงได้อย่างโปร่งใส
           </p>
+          {isSet && (
+            <div className="p-2.5 rounded-xl bg-purple-50 border border-purple-200 text-[11px] text-purple-900 leading-relaxed">
+              <strong>เกณฑ์สำหรับขายชุด:</strong> ให้คะแนนตามเล่มที่มีสภาพต่ำสุดในชุด และระบุเลขเล่มที่พบตำหนิในช่องอธิบายเพิ่มเติม
+            </div>
+          )}
         </div>
 
         {/* 5 Condition Check Items */}
@@ -401,7 +407,11 @@ export default function SellerListStep3Page() {
                         maxLength={120}
                         value={customNote}
                         onChange={(e) => handleDefectNoteChange(item, e.target.value)}
-                        placeholder={item.notePlaceholder}
+                        placeholder={
+                          isSet
+                            ? 'เช่น เล่ม 3 มุมปกพับ, เล่ม 5 มีรอยไฮไลต์ 2 หน้า (ไม่บังคับ)'
+                            : item.notePlaceholder
+                        }
                         className="w-full text-xs px-3 py-2 rounded-xl border border-slate-200 bg-white focus:outline-none focus:border-[#8B5E3C]"
                       />
                     </div>

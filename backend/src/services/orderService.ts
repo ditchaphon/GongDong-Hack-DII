@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import { prisma as defaultPrisma } from '../config/prisma';
 import { env } from '../config/env';
-import { calcParcelFee } from './shippingService';
+import { calcParcelFee, countOrderBookUnits } from './shippingService';
 import { createSystemOrderMessage } from './messageService';
 import { maskAccountHolderName, maskSensitiveData } from './dataMaskingService';
 import { notifyOrderEvent } from './lineNotifyService';
@@ -694,9 +694,10 @@ async function createOrderInTx(
   }
 
   const booksPrice = books.reduce((sum: number, b: any) => sum + Number(b.price), 0);
+  const billableBookUnits = countOrderBookUnits(books);
   const shippingFee =
     input.shippingMethod === 'DELIVERY'
-      ? calcParcelFee(books.length, sellerProvince, input.buyerProvince)
+      ? calcParcelFee(billableBookUnits, sellerProvince, input.buyerProvince)
       : 0;
   const totalPrice = booksPrice + shippingFee;
 

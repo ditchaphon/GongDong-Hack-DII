@@ -94,6 +94,10 @@ function mapBookFeedItem(item: any): BookListingItem {
     categories,
     isSet: Boolean(item.isSet),
     totalVolumes: item.totalVolumes ?? null,
+    missingVolumes:
+      Boolean(item.isSet) && Array.isArray(item.missingVolumes)
+        ? item.missingVolumes
+        : [],
     coverImageUrl: item.images[0]?.imageUrl || item.bookCatalog.coverUrl || '',
     price: Number(item.price),
     originalPrice: resolvedOriginalPrice,
@@ -364,6 +368,37 @@ export async function createBookListing(
     throw new AppError('กรุณาระบุข้อมูลสภาพหนังสือ', 400, 'INVALID_CONDITION_ANSWERS');
   }
 
+  let normalizedTotalVolumes: number | null = null;
+  let normalizedMissingVolumes: number[] = [];
+  if (input.isSet) {
+    const total = Number(input.totalVolumes);
+    if (!Number.isInteger(total) || total < 2 || total > 99) {
+      throw new AppError(
+        'การขายยกชุดต้องระบุจำนวนเล่มทั้งหมดตั้งแต่ 2 ถึง 99 เล่ม',
+        400,
+        'INVALID_SET_VOLUMES'
+      );
+    }
+    const rawMissing = Array.isArray(input.missingVolumes) ? input.missingVolumes : [];
+    const uniqueMissing = Array.from(
+      new Set(
+        rawMissing
+          .map((v) => Number(v))
+          .filter((v) => Number.isInteger(v) && v >= 1 && v <= total)
+      )
+    ).sort((a, b) => a - b);
+    const actualCount = total - uniqueMissing.length;
+    if (actualCount < 2) {
+      throw new AppError(
+        'การขายยกชุดต้องมีหนังสือที่ขายจริงอย่างน้อย 2 เล่ม',
+        400,
+        'INVALID_SET_VOLUMES'
+      );
+    }
+    normalizedTotalVolumes = total;
+    normalizedMissingVolumes = uniqueMissing;
+  }
+
   // 3. ตรวจสอบสิทธิ์ส่งพัสดุและช่องทางการส่งมอบ
   const canParcel = await getSellerParcelCapability(db, sellerId);
   const allowPickup = input.allowPickup ?? true;
@@ -494,11 +529,8 @@ export async function createBookListing(
         categories,
         description: input.description ?? null,
         isSet: Boolean(input.isSet),
-        totalVolumes: input.isSet ? input.totalVolumes ?? null : null,
-        missingVolumes:
-          input.isSet && Array.isArray(input.missingVolumes)
-            ? input.missingVolumes
-            : [],
+        totalVolumes: input.isSet ? normalizedTotalVolumes : null,
+        missingVolumes: input.isSet ? normalizedMissingVolumes : [],
         defects: (input.defects ?? []) as any,
         photoChecks: photoChecksWithSnapshot as any,
         allowPickup,
@@ -665,6 +697,10 @@ export async function getUserBookListings(
         : [item.category],
     isSet: Boolean(item.isSet),
     totalVolumes: item.totalVolumes ?? null,
+    missingVolumes:
+      Boolean(item.isSet) && Array.isArray(item.missingVolumes)
+        ? item.missingVolumes
+        : [],
     price: Number(item.price),
     grade: item.grade as BookGrade,
     coverImageUrl: item.images[0]?.imageUrl || item.bookCatalog.coverUrl || '',
@@ -881,6 +917,7 @@ export interface IsbnCompareOffer {
   defectCount: number;
   isSet: boolean;
   totalVolumes: number | null;
+  missingVolumes: number[];
   allowPickup: boolean;
   pickupLocationName: string | null;
   allowDelivery: boolean;
@@ -944,6 +981,7 @@ export async function getBookIsbnComparison(
       sellerId: true,
       price: true,
       grade: true,
+      isSet: true,
       status: true,
     },
   });
@@ -975,6 +1013,7 @@ export async function getBookIsbnComparison(
     where: {
       isbn: current.isbn,
       id: { not: current.id },
+      isSet: Boolean(current.isSet),
       status: 'AVAILABLE',
     },
     orderBy: [{ price: 'asc' }, { createdAt: 'desc' }],
@@ -1067,6 +1106,10 @@ export async function getBookIsbnComparison(
       defectCount: countDefectsFromListing(item),
       isSet: Boolean(item.isSet),
       totalVolumes: item.totalVolumes ?? null,
+      missingVolumes:
+        Boolean(item.isSet) && Array.isArray(item.missingVolumes)
+          ? item.missingVolumes
+          : [],
       allowPickup: Boolean(item.allowPickup),
       pickupLocationName: item.pickupLocationName ?? null,
       allowDelivery: Boolean(item.allowDelivery),

@@ -17,6 +17,7 @@ import { useAppMode } from '@/hooks/useAppMode';
 import { IsbnScanner } from '@/components/v4';
 import { api } from '@/lib/api';
 import { mapApiCategoryToThaiCategories } from '@/lib/catalog';
+import { countSetActualVolumes } from '@/lib/delivery';
 import { getIsbnSourceMeta, getIsbnToneClasses } from '@/lib/isbnSource';
 import type { IsbnLookupSource } from '@/types';
 import {
@@ -69,6 +70,11 @@ export default function SellerListStep1Page() {
   const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
 
   const isSet = draft.mode === 'SET';
+  const actualVolumes = countSetActualVolumes({
+    isSet,
+    totalVolumes: draft.totalVolumes,
+    missingVolumes: draft.missingVolumes,
+  });
 
   const selectCandidate = (candidate: PreviousListingOption) => {
     setSelectedCandidateId(candidate.id);
@@ -257,6 +263,10 @@ export default function SellerListStep1Page() {
       setError('ตั้งชื่อร้านก่อนลงขายหนังสือ');
       return;
     }
+    if (isSet && draft.totalVolumes - draft.missingVolumes.length < 2) {
+      setError('การขายยกชุดต้องมีหนังสือที่ต้องการขายอย่างน้อย 2 เล่ม');
+      return;
+    }
     router.push('/seller/list/details');
   };
 
@@ -353,7 +363,7 @@ export default function SellerListStep1Page() {
         <div className="bg-white rounded-2xl border border-slate-200 p-4 space-y-3">
           <div className="flex items-center justify-between">
             <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-              {isSet ? 'ขั้นที่ 1 · สแกนบาร์โค้ดทุกเล่ม' : 'ขั้นที่ 1 · สแกนบาร์โค้ด ISBN'}
+              {isSet ? 'ขั้นที่ 1 · สแกนบาร์โค้ดเล่มตัวแทน (เช่น เล่ม 1)' : 'ขั้นที่ 1 · สแกนบาร์โค้ด ISBN'}
             </h3>
           </div>
 
@@ -655,6 +665,13 @@ export default function SellerListStep1Page() {
                 แจ้งไว้แล้วว่าขาดเล่ม: {draft.missingVolumes.join(', ')}
               </div>
             )}
+
+            <div className="flex items-center justify-between px-3 py-2 rounded-xl bg-purple-50 border border-purple-200 text-xs">
+              <span className="text-purple-800 font-medium">จำนวนหนังสือในประกาศนี้</span>
+              <span className="font-bold text-purple-900">
+                ต้องการขาย {Math.max(0, draft.totalVolumes - draft.missingVolumes.length)} เล่ม
+              </span>
+            </div>
           </div>
         )}
 
