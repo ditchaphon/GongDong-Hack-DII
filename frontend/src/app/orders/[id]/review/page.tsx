@@ -7,7 +7,7 @@ import { Button, Toast } from '@/components/ui';
 import { useV4Orders } from '@/hooks/useV4Orders';
 import { Star, CheckCircle2, ShieldCheck } from 'lucide-react';
 
-const TAGS = ['สภาพตรงเกรด', 'นัดตรงเวลา', 'แพ็กดี', 'คุยง่าย'];
+const TAGS = ['คุณภาพตรงเกรด', 'นัดตรงเวลา', 'แพ็กดี', 'คุยง่าย'];
 
 export default function OrderReviewPage({
   params,
@@ -61,7 +61,7 @@ export default function OrderReviewPage({
 
   const handleSubmit = async () => {
     if (gradeMatched === null) {
-      setError('กรุณาตอบว่าสภาพหนังสือตรงเกรดที่ร้านแจ้งไว้หรือไม่');
+      setError('กรุณาตอบว่าคุณภาพหนังสือตรงเกรดที่ร้านแจ้งไว้หรือไม่');
       return;
     }
     setError(null);
@@ -108,11 +108,10 @@ export default function OrderReviewPage({
                 className="p-1 active:scale-125 transition"
               >
                 <Star
-                  className={`w-8 h-8 ${
-                    star <= rating
+                  className={`w-8 h-8 ${star <= rating
                       ? 'fill-amber-400 stroke-amber-400'
                       : 'stroke-slate-300 fill-transparent'
-                  }`}
+                    }`}
                 />
               </button>
             ))}
@@ -124,7 +123,7 @@ export default function OrderReviewPage({
 
         <div className="space-y-2">
           <span className="text-xs font-semibold text-slate-600">
-            สภาพหนังสือตรงกับเกรดที่แจ้งไหม?
+            คุณภาพหนังสือตรงกับเกรดที่แจ้งไหม?
           </span>
           <div className="grid grid-cols-2 gap-2">
             <button
@@ -133,11 +132,10 @@ export default function OrderReviewPage({
                 setGradeMatched(true);
                 setError(null);
               }}
-              className={`p-3 rounded-xl border text-xs font-bold ${
-                gradeMatched === true
+              className={`p-3 rounded-xl border text-xs font-bold ${gradeMatched === true
                   ? 'border-emerald-300 bg-emerald-50 text-emerald-800'
                   : 'border-slate-200 text-slate-600'
-              }`}
+                }`}
             >
               ตรงเกรด
             </button>
@@ -147,11 +145,10 @@ export default function OrderReviewPage({
                 setGradeMatched(false);
                 setError(null);
               }}
-              className={`p-3 rounded-xl border text-xs font-bold ${
-                gradeMatched === false
+              className={`p-3 rounded-xl border text-xs font-bold ${gradeMatched === false
                   ? 'border-amber-300 bg-amber-50 text-amber-800'
                   : 'border-slate-200 text-slate-600'
-              }`}
+                }`}
             >
               ไม่ตรงเกรด
             </button>
@@ -166,11 +163,10 @@ export default function OrderReviewPage({
                 key={tag}
                 type="button"
                 onClick={() => toggleTag(tag)}
-                className={`text-xs px-3 py-1.5 rounded-full border transition ${
-                  tags.includes(tag)
+                className={`text-xs px-3 py-1.5 rounded-full border transition ${tags.includes(tag)
                     ? 'bg-emerald-50 border-emerald-300 text-emerald-800 font-bold'
                     : 'bg-white border-slate-200 text-slate-600'
-                }`}
+                  }`}
               >
                 {tag}
               </button>
@@ -194,7 +190,7 @@ export default function OrderReviewPage({
 
         <p className="flex items-start gap-1.5 text-[10px] text-slate-400 leading-relaxed">
           <ShieldCheck className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-          รีวิวจะแสดงโดยใช้ชื่อเล่นของคุณ · ไม่มีเบอร์โทรหรือข้อมูลติดต่อ
+          รีวิวจะแสดงโดยใช้ชื่อเล่นของคุณ
         </p>
 
         {error && (
@@ -215,8 +211,8 @@ export default function OrderReviewPage({
             {order.review
               ? 'รีวิวเรียบร้อยแล้ว'
               : submitting
-              ? 'กำลังส่งคะแนนรีวิว...'
-              : 'ส่งคะแนนรีวิว'}
+                ? 'กำลังส่งคะแนนรีวิว...'
+                : 'ส่งคะแนนรีวิว'}
           </Button>
         </div>
       </div>

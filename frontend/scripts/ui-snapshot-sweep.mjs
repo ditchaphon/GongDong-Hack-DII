@@ -377,7 +377,6 @@ function buildRouteList(ctx) {
     { id: '04_book_detail', path: `/book/${ctx.bookId}`, label: 'รายละเอียดหนังสือ + เทียบ ISBN' },
     { id: '05_cart', path: '/cart', label: 'ตะกร้าสินค้า' },
     { id: '06_cart_success', path: `/cart/success?id=${encodeURIComponent(ctx.orderId)}`, label: 'สั่งซื้อสำเร็จ' },
-    { id: '07_wishlist', path: '/wishlist', label: 'หนังสือที่ถูกใจ' },
     { id: '08_addresses', path: '/addresses', label: 'ที่อยู่จัดส่ง' },
     { id: '09_addresses_edit', path: '/addresses/edit', label: 'เพิ่ม/แก้ไขที่อยู่' },
     { id: '10_notifications', path: '/notifications', label: 'การแจ้งเตือน' },

@@ -11,7 +11,7 @@ import {
   BackendNotification,
   mapBackendNotificationToItem,
 } from '@/lib/mappers';
-import { Package, Bell, Sparkles, Store, ShoppingBag, Coins } from 'lucide-react';
+import { Package, Bell, Store, ShoppingBag, Coins } from 'lucide-react';
 
 export default function NotificationsPage() {
   const { isReady, isLoggedIn, idToken } = useLiff();
@@ -73,8 +73,6 @@ export default function NotificationsPage() {
     switch (type) {
       case 'order':
         return <Package className="w-5 h-5 text-emerald-600" />;
-      case 'wishlist':
-        return <Sparkles className="w-5 h-5 text-amber-600" />;
       case 'credit':
         return <Coins className="w-5 h-5 text-amber-500" />;
       default:

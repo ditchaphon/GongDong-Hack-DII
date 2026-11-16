@@ -65,6 +65,16 @@
   padding-top: env(safe-area-inset-top, 16px);
 }
 
+/* Horizontal chip rows stay scrollable without a visible scrollbar. */
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
 
 @keyframes gd-pop {
   0% { transform: scale(0.6); opacity: 0; }

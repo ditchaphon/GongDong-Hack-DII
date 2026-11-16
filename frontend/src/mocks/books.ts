@@ -196,41 +196,11 @@ export const MOCK_ORDERS: Order[] = [
   },
 ];
 
-export interface WishlistItem {
-  id: string;
-  title: string;
-  author?: string;
-  maxPrice: number;
-  meetupZone?: string;
-  createdAt: string;
-  matchCount: number;
-}
-
-export const MOCK_WISHLIST: WishlistItem[] = [
-  {
-    id: 'wish-01',
-    title: 'เจ้าชายน้อย (The Little Prince)',
-    author: 'Antoine de Saint-Exupéry',
-    maxPrice: 150,
-    meetupZone: 'หน้าหอสมุดกลาง มช.',
-    createdAt: '5 พ.ย. 2569',
-    matchCount: 2,
-  },
-  {
-    id: 'wish-02',
-    title: 'Sapiens ประวัติย่อมนุษยชาติ',
-    author: 'Yuval Noah Harari',
-    maxPrice: 280,
-    createdAt: '8 พ.ย. 2569',
-    matchCount: 0,
-  },
-];
-
 export interface NotificationItem {
   id: string;
   title: string;
   message: string;
-  type: 'order' | 'wishlist' | 'system';
+  type: 'order' | 'system';
   linkUrl: string;
   createdAt: string;
   isRead: boolean;
@@ -244,15 +214,6 @@ export const MOCK_NOTIFICATIONS: NotificationItem[] = [
     type: 'order',
     linkUrl: '/orders/ORD-12345',
     createdAt: '10 นาทีที่แล้ว',
-    isRead: false,
-  },
-  {
-    id: 'notif-02',
-    title: 'พบหนังสือที่คุณฝากตามหา! 📚',
-    message: 'มีผู้ลงขาย "เจ้าชายน้อย" ในราคา ฿140 นัดรับใน มช. ได้',
-    type: 'wishlist',
-    linkUrl: '/book/book-01',
-    createdAt: '2 ชั่วโมงที่แล้ว',
     isRead: false,
   },
   {

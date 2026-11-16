@@ -258,7 +258,18 @@ export const SellerProvider: React.FC<{ children: ReactNode }> = ({
       : draft.deliveryMethods.filter((method) => method === 'MEETUP');
     const finalDelivery = allowedDelivery.length ? allowedDelivery : ['MEETUP'];
 
-    const primaryCategory = draft.categories[0] || 'อื่น ๆ';
+    const resolvedCategories = Array.from(
+      new Set(
+        draft.categories
+          .map((category) =>
+            category === 'อื่น ๆ'
+              ? draft.customCategory.trim() || category
+              : category.trim()
+          )
+          .filter(Boolean)
+      )
+    );
+    const primaryCategory = resolvedCategories[0] || 'อื่น ๆ';
     const rawCoverUrl = draft.photos.cover || FALLBACK_COVER;
     const rawBackUrl = draft.photos.back || rawCoverUrl;
     const rawSpineUrl = draft.photos.spine || rawCoverUrl;
@@ -356,7 +367,7 @@ export const SellerProvider: React.FC<{ children: ReactNode }> = ({
           author: draft.author.trim() || null,
           publisher: draft.publisher.trim() || null,
           category: primaryCategory,
-          categories: draft.categories.length ? draft.categories : [primaryCategory],
+          categories: resolvedCategories.length ? resolvedCategories : [primaryCategory],
           description: draft.description.trim() || null,
           isSet: draft.mode === 'SET',
           totalVolumes: draft.mode === 'SET' ? draft.totalVolumes : null,
@@ -386,7 +397,7 @@ export const SellerProvider: React.FC<{ children: ReactNode }> = ({
         author: draft.author,
         publisher: draft.publisher || undefined,
         description: draft.description || undefined,
-        categories: created.categories?.length ? created.categories : draft.categories,
+        categories: created.categories?.length ? created.categories : resolvedCategories,
         isbn: safeIsbn,
         isSet: draft.mode === 'SET',
         totalVolumes: draft.mode === 'SET' ? draft.totalVolumes : undefined,

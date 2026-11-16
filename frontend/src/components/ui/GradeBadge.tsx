@@ -20,7 +20,7 @@ const GRADE_CONFIG: Record<BookGrade, { label: string; title: string; styles: st
   },
   B: {
     label: 'เกรด B',
-    title: 'สภาพดีมาก',
+    title: 'คุณภาพดีมาก',
     styles: 'bg-sky-50 text-sky-700 border-sky-200',
     badgeBg: 'bg-sky-600 text-white',
   },

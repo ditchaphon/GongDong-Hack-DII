@@ -40,7 +40,7 @@ import {
 
 const GRADE_LABEL: Record<string, string> = {
   LIKE_NEW: 'เหมือนใหม่',
-  GENTLY_READ: 'สภาพดีมาก',
+  GENTLY_READ: 'คุณภาพดีมาก',
   WELL_LOVED: 'อ่านทั่วไป',
   WORN_BUT_READABLE: 'เน้นอ่าน',
 };
@@ -382,7 +382,7 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
               <ReviewBlock order={order} />
             ) : (
               <>
-                <p className="text-[11px] text-slate-500">สภาพหนังสือตรงเกรดไหม ผู้ขายมาตรงเวลาไหม · รีวิวช่วยผู้ซื้อคนอื่น</p>
+                <p className="text-[11px] text-slate-500">คุณภาพหนังสือตรงเกรดไหม ผู้ขายมาตรงเวลาไหม · รีวิวช่วยผู้ซื้อคนอื่น</p>
                 <Button fullWidth onClick={() => router.push(`/orders/${order.id}/review`)}>
                   ให้คะแนนและรีวิว
                 </Button>
@@ -732,7 +732,7 @@ function AddressBlock({ order }: { order: V4Order }) {
         ส่งถึง {order.shipping.receiverName}
       </p>
       {order.shipping.receiverAddress && <p className="leading-snug">{order.shipping.receiverAddress}</p>}
-      <p className="text-[10px] text-slate-400">ไม่มีเบอร์โทรให้อีกฝ่ายเห็น · ติดต่อผ่านแชทในออเดอร์</p>
+      <p className="text-[10px] text-slate-400">ติดต่อผ่านแชทในออเดอร์</p>
     </div>
   );
 }
@@ -748,7 +748,7 @@ function ReviewBlock({ order }: { order: V4Order }) {
         <span className="ml-1.5 text-[11px] font-semibold text-slate-600">{review.rating}/5</span>
       </div>
       <p className={clsx('text-[11px] font-semibold', review.isGradeMatched ? 'text-emerald-700' : 'text-amber-700')}>
-        {review.isGradeMatched ? '✓ สภาพตรงเกรด' : '⚠ สภาพไม่ตรงเกรด'}
+        {review.isGradeMatched ? '✓ คุณภาพตรงเกรด' : '⚠ คุณภาพไม่ตรงเกรด'}
       </p>
       {review.tags.length > 0 && (
         <div className="flex flex-wrap gap-1">
