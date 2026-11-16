@@ -3,12 +3,12 @@
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { SearchBar, Chip, BookCard, BottomSheet, EmptyState } from '@/components/ui';
+import { SearchBar, Chip, BookCard, EmptyState } from '@/components/ui';
 import { BottomTab } from '@/components/layout/BottomTab';
 import { api } from '@/lib/api';
 import { BackendBookFeedItem, BackendNotification, mapBackendBookToBook } from '@/lib/mappers';
 import { Book } from '@/types';
-import { Bell, MoreHorizontal, BookOpen, ChevronRight, Sparkles, ShoppingBag } from 'lucide-react';
+import { Bell, BookOpen, ChevronRight, Sparkles, ShoppingBag } from 'lucide-react';
 import { useCart } from '@/hooks/useCart';
 import { useAppMode } from '@/hooks/useAppMode';
 import { useLiff } from '@/hooks/useLiff';
@@ -33,7 +33,6 @@ export default function HomePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeCategory, setActiveCategory] = useState<string>('all');
-  const [isLiffMenuOpen, setIsLiffMenuOpen] = useState(false);
 
   const loadFeed = async () => {
     setLoading(true);
@@ -155,15 +154,6 @@ export default function HomePage() {
               </span>
             )}
           </Link>
-
-          <button
-            type="button"
-            onClick={() => setIsLiffMenuOpen(true)}
-            aria-label="เมนู LIFF"
-            className="p-2 text-slate-500 hover:text-slate-800 rounded-full hover:bg-slate-100 transition"
-          >
-            <MoreHorizontal className="w-5 h-5" />
-          </button>
         </div>
       </header>
 
@@ -285,61 +275,6 @@ export default function HomePage() {
           )}
         </div>
       </div>
-
-      {/* LIFF Menu BottomSheet (M1 in Figma) */}
-      <BottomSheet
-        isOpen={isLiffMenuOpen}
-        onClose={() => setIsLiffMenuOpen(false)}
-        title="เมนูตัวเลือก"
-      >
-        <div className="space-y-2 py-1">
-          <Link
-            href="/help"
-            onClick={() => setIsLiffMenuOpen(false)}
-            className="flex items-center justify-between p-3.5 rounded-xl hover:bg-slate-50 border border-slate-100"
-          >
-            <span className="text-sm font-medium text-slate-800">วิธีใช้งาน & ช่วยเหลือ</span>
-            <span className="text-xs text-slate-400">→</span>
-          </Link>
-          <Link
-            href="/profile"
-            onClick={() => setIsLiffMenuOpen(false)}
-            className="flex items-center justify-between p-3.5 rounded-xl hover:bg-slate-50 border border-slate-100"
-          >
-            <span className="text-sm font-medium text-slate-800">โปรไฟล์ / สลับโหมดผู้ขาย</span>
-            <span className="text-xs text-slate-400">→</span>
-          </Link>
-          <Link
-            href="/onboarding"
-            onClick={() => setIsLiffMenuOpen(false)}
-            className="flex items-center justify-between p-3.5 rounded-xl hover:bg-slate-50 border border-slate-100"
-          >
-            <span className="text-sm font-medium text-slate-800">แนะนำวิธีใช้งาน (Onboarding)</span>
-            <span className="text-xs text-slate-400">→</span>
-          </Link>
-          {(process.env.NODE_ENV !== 'production' ||
-            process.env.NEXT_PUBLIC_ENABLE_DEBUG === 'true') && (
-            <>
-              <Link
-                href="/design-system"
-                onClick={() => setIsLiffMenuOpen(false)}
-                className="flex items-center justify-between p-3.5 rounded-xl hover:bg-slate-50 border border-slate-100"
-              >
-                <span className="text-sm font-medium text-slate-800">Design System Library</span>
-                <span className="text-xs text-slate-400">→</span>
-              </Link>
-              <Link
-                href="/debug"
-                onClick={() => setIsLiffMenuOpen(false)}
-                className="flex items-center justify-between p-3.5 rounded-xl hover:bg-slate-50 border border-slate-100"
-              >
-                <span className="text-sm font-medium text-slate-800">LIFF Diagnostics / Debug</span>
-                <span className="text-xs text-slate-400">→</span>
-              </Link>
-            </>
-          )}
-        </div>
-      </BottomSheet>
 
       {/* Fixed Bottom Navigation */}
       <BottomTab forceMode="BUYER" orderBadge={activeBuyerOrderCount || undefined} />
