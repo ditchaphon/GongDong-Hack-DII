@@ -52,22 +52,13 @@ export function provinceCentre(province: string): { lat: number; lng: number } {
   return { lat, lng };
 }
 
-const REGION: Record<string, string> = {};
-const assign = (region: string, list: string[]) => list.forEach((p) => (REGION[p] = region));
-assign('N', ['เชียงใหม่', 'เชียงราย', 'ลำปาง', 'ลำพูน', 'แม่ฮ่องสอน', 'น่าน', 'พะเยา', 'แพร่', 'อุตรดิตถ์', 'ตาก', 'สุโขทัย', 'พิษณุโลก', 'พิจิตร', 'กำแพงเพชร', 'เพชรบูรณ์', 'นครสวรรค์', 'อุทัยธานี']);
-assign('S', ['กระบี่', 'ชุมพร', 'ตรัง', 'นครศรีธรรมราช', 'นราธิวาส', 'ปัตตานี', 'พังงา', 'พัทลุง', 'ภูเก็ต', 'ยะลา', 'ระนอง', 'สงขลา', 'สตูล', 'สุราษฎร์ธานี']);
-assign('NE', ['กาฬสินธุ์', 'ขอนแก่น', 'ชัยภูมิ', 'นครพนม', 'นครราชสีมา', 'บึงกาฬ', 'บุรีรัมย์', 'มหาสารคาม', 'มุกดาหาร', 'ยโสธร', 'ร้อยเอ็ด', 'เลย', 'ศรีสะเกษ', 'สกลนคร', 'สุรินทร์', 'หนองคาย', 'หนองบัวลำภู', 'อำนาจเจริญ', 'อุดรธานี', 'อุบลราชธานี']);
-
-const regionOf = (province?: string) => (province ? REGION[province] ?? 'C' : 'C');
-
 /**
- * GongDong-calculated parcel fee (prototype rates):
- * ฿35 first book, +฿10 per extra book, +฿15 when crossing regions.
+ * GongDong-calculated parcel fee (COD-ready flat base rates):
+ * ฿50 first book nationwide, +฿10 per extra book.
  */
-export function calcParcelFee(bookCount: number, fromProvince?: string, toProvince?: string): number {
+export function calcParcelFee(bookCount: number, _fromProvince?: string, _toProvince?: string): number {
   if (bookCount <= 0) return 0;
-  const crossRegion = !!fromProvince && !!toProvince && regionOf(fromProvince) !== regionOf(toProvince);
-  return 35 + (bookCount - 1) * 10 + (crossRegion ? 15 : 0);
+  return 50 + (bookCount - 1) * 10;
 }
 
 export function shipModeLabel(mode: ShipMode, withinDays: number): string {
@@ -102,37 +93,20 @@ const parseLocal = (iso: string) => {
 export function upcomingDates(
   availableDays: string[],
   count = 6,
-  from = new Date(),
-  unavailableDates: string[] = []
+  from = new Date()
 ) {
-  const blocked = new Set(unavailableDates.map((d) => d.slice(0, 10)));
   const out: { iso: string; label: string }[] = [];
   const cursor = new Date(from);
   cursor.setHours(0, 0, 0, 0);
   for (let i = 1; out.length < count && i < 45; i += 1) {
     const day = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() + i);
     const iso = localISO(day);
-    if (blocked.has(iso)) continue;
     if (availableDays.includes(DAY_CODES[day.getDay()])) {
       out.push({
         iso,
         label: day.toLocaleDateString('th-TH', { weekday: 'short', day: 'numeric', month: 'short' }),
       });
     }
-  }
-  return out;
-}
-
-export function nextCalendarDays(count = 14, from = new Date()): { iso: string; label: string }[] {
-  const cursor = new Date(from);
-  cursor.setHours(0, 0, 0, 0);
-  const out: { iso: string; label: string }[] = [];
-  for (let i = 1; i <= count; i += 1) {
-    const day = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() + i);
-    out.push({
-      iso: localISO(day),
-      label: day.toLocaleDateString('th-TH', { weekday: 'short', day: 'numeric', month: 'short' }),
-    });
   }
   return out;
 }

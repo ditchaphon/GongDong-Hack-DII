@@ -70,7 +70,7 @@ export default function OrderSchedulePage({
     const availableDays = shop?.availableDays?.length
       ? shop.availableDays
       : ['จ', 'อ', 'พ', 'พฤ', 'ศ'];
-    return upcomingDates(availableDays, 6, new Date(), shop?.unavailableDates ?? []);
+    return upcomingDates(availableDays, 6, new Date());
   }, [shop]);
 
   const slots = useMemo(

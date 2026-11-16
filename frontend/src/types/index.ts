@@ -129,7 +129,6 @@ export interface ShopProfile {
   meetupPoints: MeetupPoint[];
   availableDays: string[];
   availableSlots: string[];
-  unavailableDates?: string[];
   bookedPickupSlots?: BookedPickupSlot[];
   shipMode: ShipMode;
   shipWithinDays: number;

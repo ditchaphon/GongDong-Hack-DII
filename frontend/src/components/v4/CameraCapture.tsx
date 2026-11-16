@@ -43,6 +43,7 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({
   const fileRef = useRef<HTMLInputElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const selectedFileRef = useRef<File | null>(null);
+  const galleryRequestIdRef = useRef(0);
   const [state, setState] = useState<'LOADING' | 'LIVE' | 'NO_CAMERA'>('LOADING');
   const [shot, setShot] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
@@ -53,10 +54,12 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({
   useEffect(() => {
     if (!isOpen) return;
     let cancelled = false;
+    galleryRequestIdRef.current += 1;
     selectedFileRef.current = null;
     setShot(null);
     setScanning(false);
     setUploading(false);
+    setPreparingPhoto(false);
     setUploadError(null);
     setState('LOADING');
 
@@ -85,44 +88,83 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({
 
     return () => {
       cancelled = true;
+      galleryRequestIdRef.current += 1;
       streamRef.current?.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
+      if (videoRef.current) {
+        videoRef.current.srcObject = null;
+      }
     };
   }, [isOpen]);
+
+  // Keep <video> bound and playing when returning from a captured preview ("ถ่ายใหม่")
+  useEffect(() => {
+    if (!isOpen || shot || state !== 'LIVE') return;
+    const video = videoRef.current;
+    const stream = streamRef.current;
+    if (!video || !stream) return;
+
+    if (video.srcObject !== stream) {
+      video.srcObject = stream;
+    }
+    if (video.paused) {
+      void video.play().catch(() => undefined);
+    }
+  }, [isOpen, shot, state]);
 
   if (!isOpen) return null;
 
   const takePhoto = () => {
     const video = videoRef.current;
+    galleryRequestIdRef.current += 1;
     selectedFileRef.current = null;
     setUploadError(null);
-    if (state === 'LIVE' && video && video.videoWidth) {
-      const canvas = document.createElement('canvas');
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      canvas.getContext('2d')?.drawImage(video, 0, 0);
-      setShot(canvas.toDataURL('image/jpeg', 0.85));
+    if (state === 'LIVE') {
+      if (video && video.videoWidth > 0 && video.videoHeight > 0) {
+        const canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        canvas.getContext('2d')?.drawImage(video, 0, 0);
+        setShot(canvas.toDataURL('image/jpeg', 0.85));
+      } else {
+        setUploadError('กล้องยังไม่พร้อม กรุณารอสักครู่แล้วกดถ่ายใหม่');
+      }
       return;
     }
-    if (demoImage) setShot(demoImage);
+    if (state === 'NO_CAMERA' && demoImage) {
+      setShot(demoImage);
+    }
   };
 
   const pickFromGallery = async (file?: File | null) => {
     if (!file) return;
+    const requestId = ++galleryRequestIdRef.current;
     setUploadError(null);
     setPreparingPhoto(true);
     try {
       const normalized = await prepareImageForPreviewAndUpload(file);
+      if (galleryRequestIdRef.current !== requestId) return;
+
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          if (typeof reader.result === 'string') {
+            resolve(reader.result);
+          } else {
+            reject(new Error('ไม่สามารถอ่านไฟล์รูปภาพได้ กรุณาลองเลือกรูปอื่น'));
+          }
+        };
+        reader.onerror = () => {
+          reject(new Error('ไม่สามารถอ่านไฟล์รูปภาพได้ กรุณาลองเลือกรูปอื่น'));
+        };
+        reader.readAsDataURL(normalized);
+      });
+
+      if (galleryRequestIdRef.current !== requestId) return;
       selectedFileRef.current = normalized;
-      const reader = new FileReader();
-      reader.onload = () => {
-        if (typeof reader.result === 'string') setShot(reader.result);
-      };
-      reader.onerror = () => {
-        setUploadError('ไม่สามารถอ่านไฟล์รูปภาพได้ กรุณาลองเลือกรูปอื่น');
-      };
-      reader.readAsDataURL(normalized);
+      setShot(dataUrl);
     } catch (err) {
+      if (galleryRequestIdRef.current !== requestId) return;
       selectedFileRef.current = null;
       setUploadError(
         err instanceof Error
@@ -130,7 +172,9 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({
           : 'ไม่สามารถเตรียมไฟล์รูปภาพได้ กรุณาลองเลือกรูปอื่น'
       );
     } finally {
-      setPreparingPhoto(false);
+      if (galleryRequestIdRef.current === requestId) {
+        setPreparingPhoto(false);
+      }
     }
   };
 
@@ -184,15 +228,17 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({
         </header>
 
         <div className="relative flex-1 overflow-hidden bg-slate-950">
-          {shot ? (
+          <video
+            ref={videoRef}
+            playsInline
+            muted
+            className={clsx(
+              'absolute inset-0 w-full h-full object-cover',
+              (state !== 'LIVE' || !!shot) && 'hidden'
+            )}
+          />
+          {shot && (
             <img src={shot} alt="รูปที่ถ่าย" className="absolute inset-0 w-full h-full object-contain" />
-          ) : (
-            <video
-              ref={videoRef}
-              playsInline
-              muted
-              className={clsx('absolute inset-0 w-full h-full object-cover', state !== 'LIVE' && 'hidden')}
-            />
           )}
 
           {!shot && state === 'LOADING' && (
@@ -241,8 +287,10 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({
                   type="button"
                   disabled={uploading}
                   onClick={() => {
+                    galleryRequestIdRef.current += 1;
                     setShot(null);
                     selectedFileRef.current = null;
+                    setPreparingPhoto(false);
                     setUploadError(null);
                   }}
                   className="min-h-[48px] rounded-xl border border-white/30 text-white text-sm font-semibold inline-flex items-center justify-center gap-1.5 disabled:opacity-50"

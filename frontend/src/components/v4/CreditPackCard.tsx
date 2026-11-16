@@ -4,7 +4,6 @@ import React from 'react';
 import clsx from 'clsx';
 import { Check, Sparkles } from 'lucide-react';
 import { CreditPack } from '@/types/v4';
-import { formatTHB } from '@/lib/qr';
 
 export interface CreditPackCardProps {
   pack: CreditPack;
@@ -58,7 +57,7 @@ export const CreditPackCard: React.FC<CreditPackCardProps> = ({
         </div>
       </div>
       <div className="text-right shrink-0">
-        <div className="text-lg font-black text-slate-900">{formatTHB(pack.price)}</div>
+        <div className="text-lg font-black text-slate-900">฿{pack.price.toLocaleString('th-TH')}</div>
         <div className="text-[10px] text-slate-400">
           ฿{(pack.price / pack.credits).toFixed(1)} / ออเดอร์
         </div>

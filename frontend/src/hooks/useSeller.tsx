@@ -50,7 +50,6 @@ export interface ShopSettings {
   /** Days the seller can meet or ship, e.g. ['จ', 'พ']. */
   availableDays: string[];
   availableSlots: string[];
-  unavailableDates?: string[];
   supportsParcel: boolean;
   /** Ship every day, or within N days after the order is paid. */
   shipMode: ShipMode;
@@ -78,7 +77,6 @@ export interface SellerContextValue {
   saveShop: (
     settings: Omit<ShopSettings, 'setupComplete' | 'payeeVerified' | 'kyc'>
   ) => Promise<void>;
-  saveUnavailableDates: (dates: string[]) => Promise<string[]>;
   submitKyc: (kyc: ShopKyc & { nationalId?: string; pdpaConsent?: boolean }) => Promise<void>;
   credits: number;
   addCredits: (amount: number) => void;
@@ -189,9 +187,6 @@ export const SellerProvider: React.FC<{ children: ReactNode }> = ({
         province: settings.province,
         availableDays: settings.availableDays,
         availableSlots: settings.availableSlots,
-        ...(settings.unavailableDates !== undefined
-          ? { unavailableDates: settings.unavailableDates }
-          : {}),
         supportsParcel: settings.supportsParcel,
         shipMode: settings.shipMode,
         shipWithinDays: settings.shipWithinDays,
@@ -229,20 +224,6 @@ export const SellerProvider: React.FC<{ children: ReactNode }> = ({
     }
 
     await refreshSellerData();
-  };
-
-  const saveUnavailableDates = async (dates: string[]): Promise<string[]> => {
-    if (!idToken) {
-      throw new Error('ยังไม่ได้เข้าสู่ระบบ กรุณารอสักครู่');
-    }
-    const res = await api.patch<{ unavailable_dates: string[] }>(
-      '/api/seller/shop/unavailable-dates',
-      { unavailable_dates: dates },
-      { token: idToken }
-    );
-    const nextDates = res.unavailable_dates ?? dates;
-    setShop((prev) => (prev ? { ...prev, unavailableDates: nextDates } : prev));
-    return nextDates;
   };
 
   const submitKyc = async (kyc: ShopKyc & { nationalId?: string; pdpaConsent?: boolean }) => {
@@ -535,7 +516,6 @@ export const SellerProvider: React.FC<{ children: ReactNode }> = ({
         loading,
         refreshSellerData,
         saveShop,
-        saveUnavailableDates,
         submitKyc,
         credits: user.credits,
         addCredits,

@@ -119,22 +119,10 @@ async function validatePickupAvailability(
       select: {
         availableDays: true,
         availableSlots: true,
-        unavailableDates: true,
       },
     });
 
     if (shop) {
-      if (
-        Array.isArray(shop.unavailableDates) &&
-        shop.unavailableDates.includes(cleanDateIso)
-      ) {
-        throw new AppError(
-          'ผู้ขายไม่สะดวกนัดรับในวันที่เลือก กรุณาเลือกวันอื่น',
-          400,
-          'PICKUP_DATE_UNAVAILABLE'
-        );
-      }
-
       if (Array.isArray(shop.availableDays) && shop.availableDays.length > 0) {
         const weekdayCode = getBangkokWeekdayCode(cleanDateIso);
         if (weekdayCode && !shop.availableDays.includes(weekdayCode)) {
@@ -964,7 +952,7 @@ async function executeBatchOrders(
  * ผู้ซื้อส่งคำขอซื้อสินค้าจากตะกร้า (POST /api/orders)
  * - 1 ออเดอร์ = 1 ร้านค้า
  * - จำกัดคำขอค้าง REQUESTED ไม่เกิน 10 ออเดอร์ และไม่เกิน 1 ออเดอร์ค้างต่อร้านค้าเดียวกัน
- * - คำนวณค่าส่งตามสูตร v4: PICKUP = ฿0, DELIVERY = ฿35 + ฿10*(N-1) + ฿15(ข้ามภาค)
+ * - คำนวณค่าส่งตามสูตร v4: PICKUP = ฿0, DELIVERY = ฿50 + ฿10*(N-1)
  */
 export async function createOrder(
   buyerId: string,

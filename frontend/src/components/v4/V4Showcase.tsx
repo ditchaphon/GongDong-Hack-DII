@@ -36,7 +36,6 @@ import { SlipCheckState, V4OrderStatus } from '@/types/v4';
 import { MapPoint } from '@/components/v4/MapPinPicker';
 import { ScheduleValue } from '@/components/v4/DateTimePicker';
 import { TrackingValue } from '@/components/v4/TrackingForm';
-import { formatTHB } from '@/lib/qr';
 
 const ALL_STATUSES: V4OrderStatus[] = [
   'REQUESTED',
@@ -198,7 +197,7 @@ export const V4Showcase: React.FC = () => {
             previewUrl={slip}
             onChange={setSlip}
             onRemove={() => setSlip('')}
-            amountLabel={formatTHB(170)}
+            amountLabel={`฿${(170).toLocaleString('th-TH')}`}
           />
           <div className="flex flex-wrap gap-1.5">
             {(['CHECKING', 'PASSED', 'FAILED', 'ADMIN_REVIEW'] as const).map((state) => (

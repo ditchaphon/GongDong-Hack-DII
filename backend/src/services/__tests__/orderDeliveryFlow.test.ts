@@ -70,15 +70,15 @@ describe('OrderService - Delivery Flow & PDPA Protection', () => {
       { id: 'bok_2', sellerId: mockSellerId, price: 200, status: 'AVAILABLE', allowDelivery: true, allowPickup: true },
     ];
 
-    it('กรณีสำเร็จ (DELIVERY): คำนวณค่าส่ง ฿40 เล่มแรก + ฿10 เล่มถัดไป และสร้างออเดอร์ REQUESTED', async () => {
+    it('กรณีสำเร็จ (DELIVERY): คำนวณค่าส่ง ฿50 เล่มแรก + ฿10 เล่มถัดไป และสร้างออเดอร์ REQUESTED', async () => {
       mockDb.user.findUnique.mockResolvedValue({ id: mockBuyerId, phoneNumber: '0812345678' });
       mockDb.order.count.mockResolvedValue(1); // มีค้าง 1 ออเดอร์ (โควต้าไม่เกิน 3)
       mockDb.bookListing.findMany.mockResolvedValue(mockBooks);
 
       mockTx.order.create.mockResolvedValue({
         id: 'ord_new_001',
-        totalPrice: 395, // (150 + 200) + (35 + 10) = 395 (ภาคเดียวกัน)
-        shippingFee: 45,
+        totalPrice: 410, // (150 + 200) + (50 + 10) = 410
+        shippingFee: 60,
         paymentMethod: 'COD',
         status: 'REQUESTED',
         createdAt: new Date('2026-11-12T17:00:00Z'),
@@ -86,8 +86,8 @@ describe('OrderService - Delivery Flow & PDPA Protection', () => {
 
       const result = await createOrder(mockBuyerId, baseInput, mockDb);
 
-      expect(result.shippingFee).toBe(45);
-      expect(result.totalPrice).toBe(395);
+      expect(result.shippingFee).toBe(60);
+      expect(result.totalPrice).toBe(410);
       expect(result.paymentMethod).toBe('COD');
       expect(result.status).toBe('REQUESTED');
 
@@ -97,8 +97,8 @@ describe('OrderService - Delivery Flow & PDPA Protection', () => {
           sellerId: mockSellerId,
           shippingMethod: 'DELIVERY',
           paymentMethod: 'COD',
-          shippingFee: 45,
-          totalPrice: 395,
+          shippingFee: 60,
+          totalPrice: 410,
           status: 'REQUESTED',
           deliveryDetail: {
             create: {
@@ -152,8 +152,8 @@ describe('OrderService - Delivery Flow & PDPA Protection', () => {
       mockDb.bookListing.findMany.mockResolvedValue([mockBooks[0]]);
       mockTx.order.create.mockResolvedValue({
         id: 'ord_pdpa_001',
-        totalPrice: 185,
-        shippingFee: 35,
+        totalPrice: 200,
+        shippingFee: 50,
         paymentMethod: 'COD',
         status: 'REQUESTED',
         createdAt: new Date(),
@@ -171,7 +171,7 @@ describe('OrderService - Delivery Flow & PDPA Protection', () => {
         mockDb
       );
       expect(result.status).toBe('REQUESTED');
-      expect(result.shippingFee).toBe(35);
+      expect(result.shippingFee).toBe(50);
     });
 
     it('ต้องปฏิเสธหากมีคำขอค้าง REQUESTED ครบ 10 ออเดอร์แล้ว (TOO_MANY_PENDING_REQUESTS)', async () => {
@@ -239,8 +239,8 @@ describe('OrderService - Delivery Flow & PDPA Protection', () => {
       };
       mockTx.order.create.mockResolvedValue({
         id: 'ord_ship_days',
-        totalPrice: 185,
-        shippingFee: 35,
+        totalPrice: 200,
+        shippingFee: 50,
         paymentMethod: 'COD',
         status: 'REQUESTED',
         createdAt: new Date(),
@@ -256,7 +256,7 @@ describe('OrderService - Delivery Flow & PDPA Protection', () => {
           buyerProvince: 'เชียงใหม่',
           deliveryAddress: 'มช.',
           shipWithinDays: 99, // พยายามปลอมแปลงจาก client
-          expectedTotal: 185,
+          expectedTotal: 200,
         },
         mockDb
       );

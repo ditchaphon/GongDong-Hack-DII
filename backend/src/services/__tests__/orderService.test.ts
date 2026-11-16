@@ -1003,49 +1003,6 @@ describe('OrderService - State Machine & Core Transactions', () => {
   });
 
   describe('Pickup Availability Lock & Immutable Schedule', () => {
-    it('createOrder ต้องปฏิเสธ 400 PICKUP_DATE_UNAVAILABLE เมื่อวันที่เลือกอยู่ใน unavailableDates ของร้าน', async () => {
-      const mockDb: any = {
-        user: { findUnique: vi.fn().mockResolvedValue({ id: 'usr_buyer_1', phoneNumber: null }) },
-        order: { count: vi.fn().mockResolvedValue(0), findMany: vi.fn().mockResolvedValue([]) },
-        bookListing: {
-          findMany: vi.fn().mockResolvedValue([
-            { id: 'bok_1', sellerId: 'usr_seller_1', price: 150, status: 'AVAILABLE', allowPickup: true, codEnabled: true },
-          ]),
-        },
-        shopProfile: {
-          findUnique: vi.fn().mockResolvedValue({
-            province: 'เชียงใหม่',
-            shipWithinDays: 2,
-            availableDays: ['จ', 'อ', 'พ', 'พฤ', 'ศ'],
-            availableSlots: ['เย็น 16–20 น.'],
-            unavailableDates: ['2099-12-21'],
-          }),
-        },
-        $transaction: vi.fn(async (cb: any) => await cb(mockDb)),
-      };
-
-      await expect(
-        createOrder(
-          'usr_buyer_1',
-          {
-            sellerId: 'usr_seller_1',
-            bookIds: ['bok_1'],
-            shippingMethod: 'PICKUP',
-            pickupLat: 18.79,
-            pickupLng: 98.95,
-            pickupLocationName: 'หน้าหอสมุด มช.',
-            scheduledAt: '2099-12-21T16:00:00+07:00',
-            scheduleDateIso: '2099-12-21',
-            scheduleTimeLabel: '16:00 - 17:00',
-          },
-          mockDb
-        )
-      ).rejects.toMatchObject({
-        statusCode: 400,
-        code: 'PICKUP_DATE_UNAVAILABLE',
-      });
-    });
-
     it('createOrder ต้องปฏิเสธ 409 PICKUP_SLOT_ALREADY_BOOKED เมื่อร้านมีออเดอร์อื่นนัดเวลาเดียวกันไว้แล้ว', async () => {
       const mockDb: any = {
         user: { findUnique: vi.fn().mockResolvedValue({ id: 'usr_buyer_2', phoneNumber: null }) },
@@ -1071,7 +1028,6 @@ describe('OrderService - State Machine & Core Transactions', () => {
             shipWithinDays: 2,
             availableDays: ['จ', 'อ', 'พ', 'พฤ', 'ศ'],
             availableSlots: ['เย็น 16–20 น.'],
-            unavailableDates: [],
           }),
         },
         $transaction: vi.fn(async (cb: any) => await cb(mockDb)),

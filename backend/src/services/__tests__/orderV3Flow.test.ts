@@ -13,7 +13,7 @@ import {
 import { createBookListing, updateBookListing } from '../bookService';
 
 describe('v3.0.0 Flows (Dual Payment COD, Cancel, Receive, Dispute, Book Set/INNER)', () => {
-  it('คำนวณค่าส่งข้ามภาคใน createOrder: เชียงใหม่ -> กรุงเทพฯ 2 เล่ม = ฿35 + ฿10 + ฿15 = ฿60', async () => {
+  it('คำนวณค่าส่งแบบ Flat Base ใน createOrder: เชียงใหม่ -> กรุงเทพฯ 2 เล่ม = ฿50 + ฿10 = ฿60', async () => {
     const tx = {
       order: {
         create: vi.fn().mockImplementation(async ({ data }: any) => ({

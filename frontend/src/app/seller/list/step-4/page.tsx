@@ -186,7 +186,7 @@ export default function SellerListStep4Page() {
               </span>
               <span className="block text-[11px] text-slate-500 mt-0.5">
                 {canParcel
-                  ? 'ค่าส่งแยกจากค่าหนังสือ · เก็บเงินปลายทางเมื่อรับพัสดุ'
+                  ? 'เล่มแรก ฿50 · เล่มถัดไป +฿10/เล่ม (เก็บเงินปลายทาง)'
                   : 'ต้องยืนยันตัวตน (KYC) และเปิดรับส่งพัสดุในตั้งค่าร้านก่อน'}
               </span>
             </span>
@@ -213,7 +213,9 @@ export default function SellerListStep4Page() {
           </div>
           <div className="flex justify-between text-slate-500">
             <span>ค่าส่ง</span>
-            <span className="font-semibold text-slate-800">แยกจากค่าหนังสือ · ตกลงกันเอง</span>
+            <span className="font-semibold text-slate-800">
+              {hasParcel ? '฿50 เล่มแรก (+฿10/เล่ม)' : 'นัดรับฟรี (฿0)'}
+            </span>
           </div>
           <div className="pt-2 border-t border-slate-100 flex justify-between items-baseline text-sm">
             <span className="font-bold text-slate-900">คุณได้รับ</span>

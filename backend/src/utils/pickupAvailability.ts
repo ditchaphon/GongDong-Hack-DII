@@ -1,5 +1,3 @@
-import { AppError } from '../types';
-
 const THAI_WEEKDAY_CODES = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'] as const;
 
 export const HOURLY_SLOTS_BY_BLOCK: Record<string, string[]> = {
@@ -41,41 +39,6 @@ export function getBangkokWeekdayCode(dateIso: string): string | null {
   if (isNaN(d.getTime())) return null;
   const bkk = new Date(d.getTime() + 7 * 60 * 60 * 1000);
   return THAI_WEEKDAY_CODES[bkk.getUTCDay()] ?? null;
-}
-
-/**
- * Sanitizes an array of YYYY-MM-DD blackout dates, dropping invalid or already-past dates.
- */
-export function sanitizeUnavailableDates(
-  values: unknown,
-  todayIso: string = getBangkokTodayIso()
-): string[] {
-  if (values === undefined || values === null) return [];
-  if (!Array.isArray(values)) {
-    throw new AppError(
-      'รูปแบบวันที่ไม่สะดวกนัดรับไม่ถูกต้อง',
-      400,
-      'INVALID_UNAVAILABLE_DATES'
-    );
-  }
-
-  const seen = new Set<string>();
-  const cleaned: string[] = [];
-  for (const raw of values) {
-    if (typeof raw !== 'string') continue;
-    const iso = raw.trim().slice(0, 10);
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) continue;
-    const parsed = new Date(`${iso}T12:00:00+07:00`);
-    if (isNaN(parsed.getTime())) continue;
-    if (iso < todayIso) continue;
-    if (!seen.has(iso)) {
-      seen.add(iso);
-      cleaned.push(iso);
-    }
-    if (cleaned.length >= 60) break;
-  }
-
-  return cleaned.sort();
 }
 
 /**

@@ -7,7 +7,6 @@ import {
   isValidThaiNationalId,
   maskThaiNationalId,
   submitSellerKyc,
-  updateUnavailableDates,
   upsertMyShop,
 } from '../shopService';
 
@@ -348,25 +347,8 @@ describe('shopService', () => {
       expect(pub.total_reviews).toBe(0);
     });
 
-    it('updateUnavailableDates คัดกรองวันอดีตออกและเรียงลำดับ และ getPublicShop คืน unavailable_dates + booked_pickup_slots', async () => {
+    it('getPublicShop คืน booked_pickup_slots ของร้านค้า', async () => {
       const futureDate1 = '2099-12-20';
-      const futureDate2 = '2099-12-18';
-      const mockDb = {
-        shopProfile: {
-          findUnique: vi.fn().mockResolvedValue({ id: 'shop-1' }),
-          update: vi.fn().mockImplementation(async ({ data }: any) => ({
-            unavailableDates: data.unavailableDates,
-          })),
-        },
-      };
-
-      const updated = await updateUnavailableDates(
-        'usr-1',
-        [futureDate1, '2020-01-01', futureDate2, futureDate1],
-        mockDb
-      );
-      expect(updated.unavailable_dates).toEqual([futureDate2, futureDate1]);
-
       const mockPublicDb = {
         user: {
           findUnique: vi.fn().mockResolvedValue({
@@ -386,7 +368,6 @@ describe('shopService', () => {
               shipWithinDays: 2,
               availableDays: ['จ', 'อ'],
               availableSlots: ['เย็น 16–20 น.'],
-              unavailableDates: [futureDate2, '2020-01-01'],
               meetupPoints: [],
             },
           }),
@@ -402,7 +383,6 @@ describe('shopService', () => {
       };
 
       const pub = await getPublicShop('usr-1', mockPublicDb);
-      expect(pub.unavailable_dates).toEqual([futureDate2]);
       expect(pub.booked_pickup_slots).toEqual([
         { date_iso: futureDate1, time_label: '16:00 - 17:00' },
       ]);

@@ -105,7 +105,7 @@ function evaluateShopGroup(
   const points = shop?.meetupPoints ?? [];
   const availableDays = shop?.availableDays?.length ? shop.availableDays : ['จ', 'อ', 'พ', 'พฤ', 'ศ'];
   const slots = expandShopHourlySlots(shop?.availableSlots ?? []);
-  const dates = upcomingDates(availableDays, 6, new Date(), shop?.unavailableDates ?? []);
+  const dates = upcomingDates(availableDays, 6, new Date());
   const bookedSlots = shop?.bookedPickupSlots ?? [];
   const firstFree = findFirstFreeDateAndSlot(dates, slots, bookedSlots);
   const hasAvailableSlot = Boolean(firstFree);
@@ -415,7 +415,7 @@ export default function CartPage() {
         const points = shop?.meetupPoints ?? [];
         const availableDays = shop?.availableDays?.length ? shop.availableDays : ['จ', 'อ', 'พ', 'พฤ', 'ศ'];
         const slots = expandShopHourlySlots(shop?.availableSlots ?? []);
-        const dates = upcomingDates(availableDays, 6, new Date(), shop?.unavailableDates ?? []);
+        const dates = upcomingDates(availableDays, 6, new Date());
         const bookedSlots = shop?.bookedPickupSlots ?? [];
         const firstFree = findFirstFreeDateAndSlot(dates, slots, bookedSlots);
 

@@ -3,14 +3,13 @@
 import React from 'react';
 import clsx from 'clsx';
 import { QrCode, ShieldAlert, ExternalLink, Loader2 } from 'lucide-react';
-import { buildQrCells, finderOrigins, formatTHB, isFinderArea, QR_SIZE } from '@/lib/qr';
 
 export interface QrPayCardProps {
   amount: number;
   /** Masked recipient label only, e.g. "ป้า••• · ผู้ขาย". Never a raw account number. */
   recipientLabel: string;
   reference: string;
-  /** PromptPay QR Data URL from backend; falls back to demo SVG when omitted. */
+  /** PromptPay QR Data URL from backend. */
   qrDataUrl?: string;
   state?: 'ready' | 'loading';
   onOpenBankApp?: () => void;
@@ -26,8 +25,6 @@ export const QrPayCard: React.FC<QrPayCardProps> = ({
   onOpenBankApp,
   className,
 }) => {
-  const cells = qrDataUrl ? [] : buildQrCells(`gongdong-${reference}-${amount}`);
-
   return (
     <section
       className={clsx(
@@ -46,7 +43,7 @@ export const QrPayCard: React.FC<QrPayCardProps> = ({
 
       <div className="text-center">
         <div className="text-[11px] text-slate-400">ยอดที่ต้องชำระ</div>
-        <div className="text-2xl font-black text-slate-900">{formatTHB(amount)}</div>
+        <div className="text-2xl font-black text-slate-900">฿{amount.toLocaleString('th-TH')}</div>
       </div>
 
       <div className="mx-auto w-48 h-48 p-2.5 bg-white border border-slate-200 rounded-2xl">
@@ -62,29 +59,10 @@ export const QrPayCard: React.FC<QrPayCardProps> = ({
             className="w-full h-full object-contain rounded-lg"
           />
         ) : (
-          <svg
-            viewBox={`0 0 ${QR_SIZE} ${QR_SIZE}`}
-            className="w-full h-full"
-            role="img"
-            aria-label="คิวอาร์พร้อมเพย์สำหรับชำระเงิน"
-          >
-            <rect width={QR_SIZE} height={QR_SIZE} fill="#ffffff" />
-            {cells.map((filled, index) => {
-              const row = Math.floor(index / QR_SIZE);
-              const col = index % QR_SIZE;
-              if (isFinderArea(row, col) || !filled) return null;
-              return (
-                <rect key={index} x={col} y={row} width={1} height={1} fill="#0F172A" />
-              );
-            })}
-            {finderOrigins().map((origin) => (
-              <g key={`${origin.x}-${origin.y}`}>
-                <rect x={origin.x} y={origin.y} width={7} height={7} fill="#0F172A" />
-                <rect x={origin.x + 1} y={origin.y + 1} width={5} height={5} fill="#ffffff" />
-                <rect x={origin.x + 2} y={origin.y + 2} width={3} height={3} fill="#0F172A" />
-              </g>
-            ))}
-          </svg>
+          <div className="w-full h-full flex flex-col items-center justify-center gap-2 text-slate-400 text-center px-3">
+            <QrCode className="w-8 h-8 text-slate-300" />
+            <span className="text-[11px]">ยังไม่มีคิวอาร์พร้อมเพย์</span>
+          </div>
         )}
       </div>
 
@@ -103,7 +81,7 @@ export const QrPayCard: React.FC<QrPayCardProps> = ({
       <p className="text-[10px] text-center text-slate-400">
         {qrDataUrl
           ? 'PromptPay QR พร้อมยอดชำระอัตโนมัติ · สแกนได้ทุกแอปธนาคาร'
-          : 'คิวอาร์ตัวอย่างสำหรับเดโม · ไม่ใช่ข้อมูลพร้อมเพย์จริง'}
+          : 'ไม่สามารถแสดงคิวอาร์พร้อมเพย์ได้ในขณะนี้'}
       </p>
 
       {onOpenBankApp && (

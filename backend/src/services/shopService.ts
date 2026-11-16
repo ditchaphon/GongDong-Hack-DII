@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import { env } from '../config/env';
 import { prisma as defaultPrisma } from '../config/prisma';
-import { getBangkokTodayIso, sanitizeUnavailableDates } from '../utils/pickupAvailability';
+import { getBangkokTodayIso } from '../utils/pickupAvailability';
 import { maskSensitiveData } from './dataMaskingService';
 import {
   BlacklistCheckResult,
@@ -142,7 +142,6 @@ export async function getMyShop(userId: string, prismaClient?: any) {
           province: user.shopProfile.province,
           available_days: user.shopProfile.availableDays,
           available_slots: user.shopProfile.availableSlots,
-          unavailable_dates: user.shopProfile.unavailableDates ?? [],
           supports_parcel: user.shopProfile.supportsParcel,
           ship_mode: user.shopProfile.shipMode,
           ship_within_days: user.shopProfile.shipWithinDays,
@@ -227,10 +226,6 @@ export async function upsertMyShop(
 
   const availableDays = sanitizeScheduleValues(input.availableDays, 'วันที่สะดวกนัดรับ/ส่ง');
   const availableSlots = sanitizeScheduleValues(input.availableSlots, 'ช่วงเวลาที่สะดวก');
-  const hasUnavailableDates = input.unavailableDates !== undefined;
-  const unavailableDates = hasUnavailableDates
-    ? sanitizeUnavailableDates(input.unavailableDates)
-    : undefined;
 
   const user = await db.user.findUnique({ where: { id: userId } });
   if (!user) {
@@ -244,7 +239,6 @@ export async function upsertMyShop(
     province,
     availableDays,
     availableSlots,
-    ...(hasUnavailableDates ? { unavailableDates } : {}),
     supportsParcel: Boolean(input.supportsParcel),
     shipMode,
     shipWithinDays: rawShipDays,
@@ -271,7 +265,6 @@ export async function upsertMyShop(
     province: shop.province,
     available_days: shop.availableDays,
     available_slots: shop.availableSlots,
-    unavailable_dates: shop.unavailableDates ?? [],
     supports_parcel: shop.supportsParcel,
     ship_mode: shop.shipMode,
     ship_within_days: shop.shipWithinDays,
@@ -284,36 +277,6 @@ export async function upsertMyShop(
       lng: Number(p.lng),
       note: p.note,
     })),
-  };
-}
-
-/**
- * อัปเดตวันที่ไม่สะดวกนัดรับเฉพาะวันของร้านค้า (PATCH /api/seller/shop/unavailable-dates)
- */
-export async function updateUnavailableDates(
-  userId: string,
-  rawDates: unknown,
-  prismaClient?: any
-): Promise<{ unavailable_dates: string[] }> {
-  const db = prismaClient || defaultPrisma;
-  const unavailableDates = sanitizeUnavailableDates(rawDates);
-
-  const existing = await db.shopProfile.findUnique({
-    where: { userId },
-    select: { id: true },
-  });
-  if (!existing) {
-    throw new AppError('กรุณาตั้งค่าข้อมูลร้านค้าก่อนกำหนดวันที่ไม่สะดวก', 404, 'SHOP_NOT_FOUND');
-  }
-
-  const updated = await db.shopProfile.update({
-    where: { userId },
-    data: { unavailableDates },
-    select: { unavailableDates: true },
-  });
-
-  return {
-    unavailable_dates: updated.unavailableDates ?? unavailableDates,
   };
 }
 
@@ -688,7 +651,6 @@ export async function getPublicShop(idOrUserId: string, prismaClient?: any) {
     ship_within_days: shop?.shipWithinDays ?? 2,
     available_days: shop?.availableDays ?? [],
     available_slots: shop?.availableSlots ?? [],
-    unavailable_dates: (shop?.unavailableDates ?? []).filter((d: string) => d >= todayIso),
     booked_pickup_slots: bookedPickupSlots,
     meetup_points: (shop?.meetupPoints ?? []).map((p: any) => ({
       id: p.id,

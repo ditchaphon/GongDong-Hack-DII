@@ -14,3 +14,7 @@ node_modules/
 
 # TypeScript incremental build
 *.tsbuildinfo
+
+# Playwright UI snapshot sweep outputs
+ui-snapshots/
+AGENTS.md

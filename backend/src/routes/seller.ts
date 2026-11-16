@@ -6,7 +6,6 @@ import {
   getMyShop,
   getPublicShop,
   submitSellerKyc,
-  updateUnavailableDates,
   upsertMyShop,
 } from '../services/shopService';
 import { AppError } from '../types';
@@ -51,28 +50,6 @@ sellerRouter.put(
         success: true,
         data: shop,
         message: 'บันทึกข้อมูลร้านค้าสำเร็จ',
-      });
-    } catch (error) {
-      next(error);
-    }
-  }
-);
-
-/**
- * PATCH /api/seller/shop/unavailable-dates
- * อัปเดตวันที่ไม่สะดวกนัดรับเฉพาะวันของร้านค้า
- */
-sellerRouter.patch(
-  '/shop/unavailable-dates',
-  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-    try {
-      const userId = getUserIdFromRequest(req);
-      const rawDates = req.body?.unavailable_dates ?? req.body?.unavailableDates;
-      const result = await updateUnavailableDates(userId, rawDates);
-      res.status(200).json({
-        success: true,
-        data: result,
-        message: 'อัปเดตวันที่ไม่สะดวกนัดรับเรียบร้อยแล้ว',
       });
     } catch (error) {
       next(error);

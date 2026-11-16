@@ -396,7 +396,7 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
           <Panel icon={<Hourglass className="w-4 h-4 text-amber-600" />} title="ตอบรับคำขอนี้?">
             <div className="grid grid-cols-2 gap-2 text-[11px]">
               <InfoTile label="ผู้ซื้อเลือก" value={order.delivery === 'MEETUP' ? 'นัดรับ' : 'ส่งพัสดุ'} />
-              <InfoTile label="ค่าส่ง (แยกจากค่าหนังสือ)" value={order.shippingFee ? `฿${order.shippingFee}` : 'ไม่มี'} />
+              <InfoTile label="ค่าส่งพัสดุ" value={order.shippingFee ? `฿${order.shippingFee}` : 'ไม่มี'} />
             </div>
             <div className="flex items-start gap-2 p-3 rounded-xl bg-slate-50 border border-dashed border-slate-300 text-[11px] text-slate-500 leading-relaxed">
               <MapPin className="w-4 h-4 shrink-0 mt-0.5 text-slate-400" />

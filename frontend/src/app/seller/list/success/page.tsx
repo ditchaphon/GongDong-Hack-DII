@@ -131,7 +131,10 @@ function SellerListSuccessContent() {
             fullWidth
             size="lg"
             leftIcon={<Store className="w-4 h-4" />}
-            onClick={() => router.push('/seller')}
+            onClick={() => {
+              resetDraft('SINGLE');
+              router.push('/seller');
+            }}
           >
             ไปที่ร้านของฉัน
           </Button>

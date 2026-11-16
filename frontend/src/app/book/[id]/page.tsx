@@ -491,7 +491,7 @@ export default function BookDetailPage({
                 ส่งพัสดุ
               </span>
               <span className="text-xs font-bold text-slate-800">
-                เริ่ม ฿{calcParcelFee(1, shop?.province, shop?.province)}
+                ฿{calcParcelFee(1, shop?.province, shop?.province)}
               </span>
             </div>
             <p className="text-[11px] text-slate-500 leading-relaxed">
@@ -499,7 +499,7 @@ export default function BookDetailPage({
               {shop ? ` · ส่งจาก${shop.province}` : ''}
             </p>
             <p className="text-[10px] text-slate-400">
-              ค่าส่งแยกจากค่าหนังสือ · จ่ายเงินสดตอนรับพัสดุ
+              เล่มแรก ฿50 · เล่มถัดไป +฿10/เล่ม (รวมในยอดเก็บเงินปลายทาง)
             </p>
           </div>
         )}
