@@ -6,7 +6,7 @@
 > **โค้ดเป้าหมายการตรวจสอบ:** โฟลเดอร์ `frontend/src/` (Next.js 16 App Router, TypeScript, Tailwind CSS v4, `@line/liff`)  
 > **ผู้ตรวจสอบ:** Antigravity AI ร่วมกับ Biw (Backend) & Frame (Frontend)
 
----
+---    
        
 ## 1. บทสรุปผู้บริหาร (Executive Summary)
 
