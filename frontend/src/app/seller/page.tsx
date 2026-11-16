@@ -6,6 +6,7 @@ import { TopBar } from '@/components/layout/TopBar';
 import { BottomTab } from '@/components/layout/BottomTab';
 import {
   Button,
+  BottomSheet,
   Chip,
   GradeBadge,
   StatusBadge,
@@ -16,9 +17,11 @@ import { useSeller } from '@/hooks/useSeller';
 import { useAppMode } from '@/hooks/useAppMode';
 import { useV4Orders } from '@/hooks/useV4Orders';
 import { StatusBadgeV4, LineOaBanner } from '@/components/v4';
+import { nextCalendarDays } from '@/lib/delivery';
 import {
   Plus,
   BookOpen,
+  CalendarOff,
   Store,
   CreditCard,
   ShieldAlert,
@@ -43,6 +46,7 @@ export default function SellerShopPage() {
     credits,
     listings,
     setListingStatus,
+    saveUnavailableDates,
   } = useSeller();
 
   const { mode, setMode } = useAppMode();
@@ -56,6 +60,27 @@ export default function SellerShopPage() {
 
   const [tab, setTab] = useState<Tab>('LISTINGS');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [isScheduleSheetOpen, setIsScheduleSheetOpen] = useState(false);
+  const [draftBlockedDates, setDraftBlockedDates] = useState<string[]>([]);
+  const [savingBlockedDates, setSavingBlockedDates] = useState(false);
+
+  const openScheduleSheet = () => {
+    setDraftBlockedDates(shop?.unavailableDates ?? []);
+    setIsScheduleSheetOpen(true);
+  };
+
+  const handleSaveBlockedDates = async () => {
+    setSavingBlockedDates(true);
+    try {
+      await saveUnavailableDates(draftBlockedDates);
+      setIsScheduleSheetOpen(false);
+      setToastMessage('บันทึกวันที่ไม่สะดวกนัดรับแล้ว');
+    } catch (err) {
+      setToastMessage(err instanceof Error ? err.message : 'บันทึกไม่สำเร็จ');
+    } finally {
+      setSavingBlockedDates(false);
+    }
+  };
 
   const pendingRequestBookIds = new Set(
     sales
@@ -205,15 +230,28 @@ export default function SellerShopPage() {
             </button>
           ) : null}
 
-          <Button
-            size="sm"
-            variant="outline"
-            fullWidth
-            leftIcon={<CreditCard className="w-4 h-4" />}
-            onClick={() => router.push('/seller/credits')}
-          >
-            เติมเครดิต · เหลือ {credits}
-          </Button>
+          <div className={isShopSetup ? 'grid grid-cols-2 gap-2' : ''}>
+            <Button
+              size="sm"
+              variant="outline"
+              fullWidth
+              leftIcon={<CreditCard className="w-4 h-4" />}
+              onClick={() => router.push('/seller/credits')}
+            >
+              เติมเครดิต · เหลือ {credits}
+            </Button>
+            {isShopSetup && (
+              <Button
+                size="sm"
+                variant="outline"
+                fullWidth
+                leftIcon={<CalendarOff className="w-4 h-4 text-rose-600" />}
+                onClick={openScheduleSheet}
+              >
+                วันไม่สะดวก{(shop?.unavailableDates?.length ?? 0) > 0 ? ` (${shop?.unavailableDates?.length})` : ''}
+              </Button>
+            )}
+          </div>
         </div>
 
         {/* Tabs */}
@@ -516,6 +554,51 @@ export default function SellerShopPage() {
       </div>
 
       <BottomTab orderBadge={newOrderCount} />
+
+      <BottomSheet
+        isOpen={isScheduleSheetOpen}
+        onClose={() => setIsScheduleSheetOpen(false)}
+        title="จัดการวันที่ไม่สะดวกนัดรับ"
+      >
+        <div className="space-y-4 py-1">
+          <p className="text-xs text-slate-500 leading-relaxed">
+            แตะวันที่คุณติดธุระหรือไม่สะดวกนัดรับใน 14 วันข้างหน้า ผู้ซื้อจะเลือกนัดวันนั้นไม่ได้
+          </p>
+          <div className="grid grid-cols-2 gap-2">
+            {nextCalendarDays(14).map((d) => {
+              const blocked = draftBlockedDates.includes(d.iso);
+              return (
+                <button
+                  key={d.iso}
+                  type="button"
+                  onClick={() =>
+                    setDraftBlockedDates((prev) =>
+                      prev.includes(d.iso)
+                        ? prev.filter((x) => x !== d.iso)
+                        : [...prev, d.iso]
+                    )
+                  }
+                  className={`flex items-center justify-between px-3 py-2.5 rounded-xl border text-xs font-medium transition ${
+                    blocked
+                      ? 'bg-rose-50 border-rose-300 text-rose-700 font-bold'
+                      : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  <span>{d.label}</span>
+                  <span className="text-[10px]">{blocked ? 'ไม่สะดวก' : 'ว่าง'}</span>
+                </button>
+              );
+            })}
+          </div>
+          <Button
+            fullWidth
+            onClick={handleSaveBlockedDates}
+            disabled={savingBlockedDates}
+          >
+            {savingBlockedDates ? 'กำลังบันทึก...' : 'บันทึกวันไม่สะดวก'}
+          </Button>
+        </div>
+      </BottomSheet>
 
       <Toast
         isOpen={!!toastMessage}

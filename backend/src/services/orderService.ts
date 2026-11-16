@@ -8,6 +8,11 @@ import { notifyOrderEvent } from './lineNotifyService';
 import { generatePromptPayQR } from './promptPayService';
 import { extractStoragePathFromUrl, resolveSignedStorageUrl } from './uploadService';
 import {
+  getBangkokWeekdayCode,
+  isSlotWithinShopAvailability,
+  slotsOverlap,
+} from '../utils/pickupAvailability';
+import {
   AcceptOrderResult,
   AppError,
   CreateBatchOrdersInput,
@@ -69,6 +74,104 @@ function validateScheduledAtFuture(scheduledAt: Date): void {
       400,
       'SCHEDULE_IN_THE_PAST'
     );
+  }
+}
+
+async function validatePickupAvailability(
+  db: any,
+  sellerId: string,
+  scheduleDateIso?: string | null,
+  scheduleTimeLabel?: string | null,
+  options?: {
+    excludeOrderId?: string;
+    conflictStatuses?: string[];
+    skipShopChecks?: boolean;
+  }
+): Promise<void> {
+  if (!scheduleDateIso) return;
+  const cleanDateIso = scheduleDateIso.trim().slice(0, 10);
+
+  if (!options?.skipShopChecks && typeof db?.shopProfile?.findUnique === 'function') {
+    const shop = await db.shopProfile.findUnique({
+      where: { userId: sellerId },
+      select: {
+        availableDays: true,
+        availableSlots: true,
+        unavailableDates: true,
+      },
+    });
+
+    if (shop) {
+      if (
+        Array.isArray(shop.unavailableDates) &&
+        shop.unavailableDates.includes(cleanDateIso)
+      ) {
+        throw new AppError(
+          'ผู้ขายไม่สะดวกนัดรับในวันที่เลือก กรุณาเลือกวันอื่น',
+          400,
+          'PICKUP_DATE_UNAVAILABLE'
+        );
+      }
+
+      if (Array.isArray(shop.availableDays) && shop.availableDays.length > 0) {
+        const weekdayCode = getBangkokWeekdayCode(cleanDateIso);
+        if (weekdayCode && !shop.availableDays.includes(weekdayCode)) {
+          throw new AppError(
+            'วันที่เลือกอยู่นอกวันที่ร้านเปิดรับนัด กรุณาเลือกวันอื่น',
+            400,
+            'PICKUP_DAY_UNAVAILABLE'
+          );
+        }
+      }
+
+      if (
+        scheduleTimeLabel &&
+        Array.isArray(shop.availableSlots) &&
+        shop.availableSlots.length > 0 &&
+        !isSlotWithinShopAvailability(scheduleTimeLabel, shop.availableSlots)
+      ) {
+        throw new AppError(
+          'ช่วงเวลาที่เลือกอยู่นอกเวลาที่ร้านสะดวก กรุณาเลือกเวลาอื่น',
+          400,
+          'PICKUP_SLOT_UNAVAILABLE'
+        );
+      }
+    }
+  }
+
+  if (scheduleTimeLabel && typeof db?.order?.findMany === 'function') {
+    const statuses = options?.conflictStatuses ?? ['REQUESTED', 'ACCEPTED', 'SCHEDULED'];
+    const existingOrders = await db.order.findMany({
+      where: {
+        sellerId,
+        ...(options?.excludeOrderId ? { id: { not: options.excludeOrderId } } : {}),
+        shippingMethod: 'PICKUP',
+        status: { in: statuses },
+        scheduleDateIso: cleanDateIso,
+        scheduleTimeLabel: { not: null },
+      },
+      select: {
+        id: true,
+        status: true,
+        createdAt: true,
+        scheduleTimeLabel: true,
+      },
+    });
+
+    const hasConflict = (existingOrders || []).some((existing: any) => {
+      if (existing.status === 'REQUESTED' && isRequestedOrderExpired(existing)) {
+        return false;
+      }
+      return slotsOverlap(scheduleTimeLabel, existing.scheduleTimeLabel);
+    });
+
+    if (hasConflict) {
+      throw new AppError(
+        'ช่วงเวลานัดรับนี้มีคำสั่งซื้ออื่นจองไว้แล้ว กรุณาเลือกวันหรือเวลาอื่น',
+        409,
+        'PICKUP_SLOT_ALREADY_BOOKED'
+      );
+    }
   }
 }
 
@@ -613,6 +716,15 @@ async function createOrderInTx(
     const d = new Date(input.scheduledAt);
     validateScheduledAtFuture(d);
     parsedScheduledAt = d;
+  }
+
+  if (input.shippingMethod === 'PICKUP' && input.scheduleDateIso) {
+    await validatePickupAvailability(
+      tx,
+      input.sellerId,
+      input.scheduleDateIso,
+      input.scheduleTimeLabel
+    );
   }
 
   const order = await tx.order.create({
@@ -1275,19 +1387,54 @@ export async function acceptOrder(
         ? new Date(Date.now() + shipWithinDays * 24 * 60 * 60 * 1000)
         : null;
 
+    const hasCheckoutPickupSchedule =
+      order.shippingMethod === 'PICKUP' &&
+      Boolean(order.scheduledAt) &&
+      order.pickupLat !== null &&
+      order.pickupLat !== undefined &&
+      order.pickupLng !== null &&
+      order.pickupLng !== undefined;
+
+    if (hasCheckoutPickupSchedule && order.scheduleDateIso && order.scheduleTimeLabel) {
+      await validatePickupAvailability(
+        tx,
+        sellerId,
+        order.scheduleDateIso,
+        order.scheduleTimeLabel,
+        {
+          excludeOrderId: orderId,
+          conflictStatuses: ['ACCEPTED', 'SCHEDULED'],
+          skipShopChecks: true,
+        }
+      );
+    }
+
+    const nextStatus = hasCheckoutPickupSchedule ? 'SCHEDULED' : 'ACCEPTED';
+    const handoverCode = hasCheckoutPickupSchedule
+      ? order.handoverCode || generateHandoverCode()
+      : null;
+
     await updateOrderStatusAtomic(tx, orderId, 'REQUESTED', {
-      status: 'ACCEPTED',
+      status: nextStatus,
       ...(shipBy ? { shipBy } : {}),
+      ...(hasCheckoutPickupSchedule
+        ? {
+            handoverCode,
+            scheduleConfirmedByBuyer: true,
+          }
+        : {}),
     });
 
     return {
       expired: false as const,
       buyerId: order.buyerId,
       orderId,
-      status: 'ACCEPTED' as const,
+      status: nextStatus as 'ACCEPTED' | 'SCHEDULED',
       remainingCredits,
       lockedBookIds: bookListingIds,
       rejectedOrderIds,
+      pickupLocationName: order.pickupLocationName ?? null,
+      scheduleTimeLabel: order.scheduleTimeLabel ?? null,
       rejectedOrders: Array.from(rejectedBuyerByOrder.entries()).map(([id, bId]) => ({
         orderId: id,
         buyerId: bId,
@@ -1316,10 +1463,16 @@ export async function acceptOrder(
   }
 
   try {
+    const msgText =
+      result.status === 'SCHEDULED'
+        ? `ผู้ขายตอบรับและยืนยันนัดรับแล้ว: ${result.pickupLocationName || 'จุดนัดรับ'}${
+            result.scheduleTimeLabel ? ` (${result.scheduleTimeLabel})` : ''
+          }`
+        : 'ผู้ขายตอบรับคำสั่งซื้อแล้ว สามารถสื่อสารรายละเอียดการส่งมอบได้ในห้องแชทนี้';
     await createSystemOrderMessage(
       orderId,
-      'ผู้ขายตอบรับคำสั่งซื้อแล้ว สามารถสื่อสารรายละเอียดการส่งมอบได้ในห้องแชทนี้',
-      'SYSTEM',
+      msgText,
+      result.status === 'SCHEDULED' ? 'SCHEDULE_CARD' : 'SYSTEM',
       db
     );
   } catch (err) {
@@ -1331,9 +1484,17 @@ export async function acceptOrder(
       recipientUserId: result.buyerId,
       role: 'BUYER',
       orderId,
-      title: 'ผู้ขายตอบรับคำสั่งซื้อแล้ว!',
-      message: 'ร้านค้าได้ตอบรับคำสั่งซื้อและล็อกหนังสือไว้ให้คุณเรียบร้อยแล้ว',
-      badgeText: 'ORDER ACCEPTED',
+      title:
+        result.status === 'SCHEDULED'
+          ? 'ผู้ขายตอบรับและยืนยันนัดรับแล้ว!'
+          : 'ผู้ขายตอบรับคำสั่งซื้อแล้ว!',
+      message:
+        result.status === 'SCHEDULED'
+          ? `นัดรับที่ ${result.pickupLocationName || 'จุดนัดรับ'}${
+              result.scheduleTimeLabel ? ` (${result.scheduleTimeLabel})` : ''
+            } · รหัสส่งมอบ 6 หลักพร้อมใช้งานแล้ว`
+          : 'ร้านค้าได้ตอบรับคำสั่งซื้อและล็อกหนังสือไว้ให้คุณเรียบร้อยแล้ว',
+      badgeText: result.status === 'SCHEDULED' ? 'ORDER SCHEDULED' : 'ORDER ACCEPTED',
     },
     db
   );
@@ -2221,11 +2382,29 @@ export async function schedulePickupOrder(
       statusErrorBuilder: (s) => `ไม่สามารถบันทึกนัดหมายได้เนื่องจากสถานะปัจจุบันคือ ${s}`,
     });
 
+    if (order.status === 'SCHEDULED') {
+      throw new AppError(
+        'นัดหมายถูกล็อกแล้ว ไม่สามารถเปลี่ยนแปลงวันเวลาหรือสถานที่ได้ หากไม่สะดวกกรุณาคุยในแชทหรือยกเลิกออเดอร์',
+        400,
+        'SCHEDULE_LOCKED'
+      );
+    }
+
     validatePickupCoordinates(input.pickupLat, input.pickupLng);
 
     const handoverCode = order.handoverCode || generateHandoverCode();
     const scheduledAt = new Date(input.scheduledAt);
     validateScheduledAtFuture(scheduledAt);
+
+    if (input.scheduleDateIso) {
+      await validatePickupAvailability(
+        readClient,
+        order.sellerId,
+        input.scheduleDateIso,
+        input.scheduleTimeLabel,
+        { excludeOrderId: orderId }
+      );
+    }
 
     const actorRole = order.buyerId === userId ? 'BUYER' : 'SELLER';
     const writeClient = tx?.order?.findUnique ? tx : db;
@@ -2244,7 +2423,7 @@ export async function schedulePickupOrder(
         ? { scheduleTimeLabel: input.scheduleTimeLabel }
         : {}),
       scheduleProposedBy: actorRole,
-      scheduleConfirmedByBuyer: actorRole === 'BUYER',
+      scheduleConfirmedByBuyer: true,
     });
 
     await createSystemOrderMessage(
@@ -2274,16 +2453,10 @@ export async function schedulePickupOrder(
       recipientUserId: outcome.recipientUserId,
       role: outcome.recipientRole,
       orderId,
-      title:
-        outcome.actorRole === 'SELLER'
-          ? 'ผู้ขายเสนอนัดรับหนังสือ'
-          : 'ผู้ซื้อยืนยัน/อัปเดตเวลานัดรับแล้ว',
-      message:
-        outcome.actorRole === 'SELLER'
-          ? `จุดนัดรับ: ${scheduleSummary} · กรุณาตรวจสอบและกดยืนยันนัดหมาย`
-          : `ยืนยันนัดรับที่ ${scheduleSummary}`,
-      badgeText:
-        outcome.actorRole === 'SELLER' ? 'SCHEDULE PROPOSED' : 'SCHEDULE CONFIRMED',
+      title: 'นัดรับหนังสือถูกบันทึกแล้ว',
+      message: `จุดนัดรับ: ${scheduleSummary}`,
+      badgeText: 'SCHEDULE CONFIRMED',
+      pushLine: false,
     },
     db
   );

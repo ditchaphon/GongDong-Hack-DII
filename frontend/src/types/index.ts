@@ -106,6 +106,11 @@ export interface Review {
   createdAt: string;
 }
 
+export interface BookedPickupSlot {
+  dateISO: string;
+  timeLabel: string;
+}
+
 /** Public shop profile — shop name only, never the owner's real name or contact. */
 export interface ShopProfile {
   id: string;
@@ -124,6 +129,8 @@ export interface ShopProfile {
   meetupPoints: MeetupPoint[];
   availableDays: string[];
   availableSlots: string[];
+  unavailableDates?: string[];
+  bookedPickupSlots?: BookedPickupSlot[];
   shipMode: ShipMode;
   shipWithinDays: number;
 }

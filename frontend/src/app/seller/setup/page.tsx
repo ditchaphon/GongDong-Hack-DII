@@ -9,7 +9,13 @@ import { MapPinPicker } from '@/components/v4';
 import { useSeller } from '@/hooks/useSeller';
 import { useAppMode } from '@/hooks/useAppMode';
 import { safeDeleteUploadedImage, uploadImageFile } from '@/lib/api';
-import { MeetupPoint, ShipMode, THAI_PROVINCES, provinceCentre } from '@/lib/delivery';
+import {
+  MeetupPoint,
+  ShipMode,
+  THAI_PROVINCES,
+  nextCalendarDays,
+  provinceCentre,
+} from '@/lib/delivery';
 import { findContactLeaks } from '@/lib/masking';
 import {
   formatThaiId,
@@ -103,6 +109,9 @@ export default function ShopSetupWizardPage() {
   const [newPointPin, setNewPointPin] = useState<{ lat: number; lng: number } | null>(null);
   const [days, setDays] = useState<string[]>(shop?.availableDays ?? ['จ', 'อ', 'พ', 'พฤ', 'ศ']);
   const [slots, setSlots] = useState<string[]>(shop?.availableSlots ?? [SLOTS[1]]);
+  const [unavailableDates, setUnavailableDates] = useState<string[]>(
+    shop?.unavailableDates ?? []
+  );
   const [supportsParcel, setSupportsParcel] = useState(shop?.supportsParcel ?? false);
   const [shipMode, setShipMode] = useState<ShipMode>(shop?.shipMode ?? 'AFTER_ACCEPT');
   const [shipWithinDays, setShipWithinDays] = useState<number>(shop?.shipWithinDays ?? 2);
@@ -124,6 +133,7 @@ export default function ShopSetupWizardPage() {
     if (shop.meetupPoints?.length) setPoints(shop.meetupPoints);
     if (shop.availableDays?.length) setDays(shop.availableDays);
     if (shop.availableSlots?.length) setSlots(shop.availableSlots);
+    if (shop.unavailableDates?.length) setUnavailableDates(shop.unavailableDates);
     setSupportsParcel(shop.supportsParcel);
     setShipMode(shop.shipMode ?? 'AFTER_ACCEPT');
     setShipWithinDays(shop.shipWithinDays ?? 2);
@@ -211,6 +221,7 @@ export default function ShopSetupWizardPage() {
         meetupPoints: points,
         availableDays: days,
         availableSlots: slots,
+        unavailableDates,
         supportsParcel,
         shipMode,
         shipWithinDays,
@@ -570,6 +581,35 @@ export default function ShopSetupWizardPage() {
                       {slot}
                     </ChoiceChip>
                   ))}
+                </div>
+
+                <div className="pt-2 space-y-1.5">
+                  <div className="text-[11px] font-semibold text-slate-600">
+                    วันที่ไม่สะดวกเฉพาะวัน (เลือกปิดรับนัด 14 วันข้างหน้า)
+                  </div>
+                  <div className="flex gap-1.5 overflow-x-auto pb-1">
+                    {nextCalendarDays(14).map((d) => {
+                      const blocked = unavailableDates.includes(d.iso);
+                      return (
+                        <button
+                          key={d.iso}
+                          type="button"
+                          onClick={() =>
+                            setUnavailableDates((prev) => toggle(prev, d.iso))
+                          }
+                          className={clsx(
+                            'shrink-0 px-2.5 py-1.5 rounded-xl border text-[11px] font-medium transition',
+                            blocked
+                              ? 'bg-rose-50 border-rose-300 text-rose-700 font-bold'
+                              : 'bg-white border-slate-200 text-slate-600'
+                          )}
+                        >
+                          {d.label}
+                          {blocked ? ' · ปิด' : ''}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               </section>
 

@@ -68,9 +68,10 @@ model ShopProfile {
   description    String?  @db.Text
   avatarUrl      String?  @map("avatar_url") @db.Text
   province       String   @default("เชียงใหม่") @db.VarChar(100)
-  availableDays  String[] @default([]) @map("available_days")
-  availableSlots String[] @default([]) @map("available_slots")
-  supportsParcel Boolean  @default(false) @map("supports_parcel")
+  availableDays    String[] @default([]) @map("available_days")
+  availableSlots   String[] @default([]) @map("available_slots")
+  unavailableDates String[] @default([]) @map("unavailable_dates")
+  supportsParcel   Boolean  @default(false) @map("supports_parcel")
   shipMode       String   @default("AFTER_ACCEPT") @map("ship_mode") @db.VarChar(20) // DAILY, AFTER_ACCEPT
   shipWithinDays Int      @default(2) @map("ship_within_days") @db.SmallInt
   setupComplete  Boolean  @default(false) @map("setup_complete")

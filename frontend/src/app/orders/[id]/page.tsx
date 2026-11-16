@@ -315,9 +315,9 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
             </Panel>
             <Panel icon={<MapPin className="w-4 h-4 text-teal-600" />} title="รายละเอียดการนัดรับ">
               {meetupCard}
-              <Button variant="outline" fullWidth onClick={() => router.push(`/orders/${order.id}/schedule`)}>
-                ปรับเปลี่ยน / ยืนยันเวลานัดรับ
-              </Button>
+              <p className="text-[11px] text-slate-500 leading-relaxed">
+                ล็อกนัดหมายแล้ว · ไม่สามารถเปลี่ยนวันเวลาหรือสถานที่ได้ (หากไม่สะดวก กรุณาคุยในแชทหรือยกเลิกออเดอร์)
+              </p>
             </Panel>
           </>
         )}
@@ -448,9 +448,9 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
             </Panel>
             <Panel icon={<MapPin className="w-4 h-4 text-teal-600" />} title="รายละเอียดการนัดรับ">
               {meetupCard}
-              <Button variant="outline" fullWidth onClick={() => router.push(`/orders/${order.id}/schedule`)}>
-                ปรับเปลี่ยนเวลานัดรับ
-              </Button>
+              <p className="text-[11px] text-slate-500 leading-relaxed">
+                ล็อกนัดหมายแล้ว · ไม่สามารถเปลี่ยนวันเวลาหรือสถานที่ได้ (หากไม่สะดวก กรุณาคุยในแชทหรือยกเลิกออเดอร์)
+              </p>
             </Panel>
           </>
         )}

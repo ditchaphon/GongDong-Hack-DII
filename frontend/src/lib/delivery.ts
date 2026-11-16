@@ -99,20 +99,120 @@ const parseLocal = (iso: string) => {
   return new Date(y, (m || 1) - 1, d || 1);
 };
 
-export function upcomingDates(availableDays: string[], count = 6, from = new Date()) {
+export function upcomingDates(
+  availableDays: string[],
+  count = 6,
+  from = new Date(),
+  unavailableDates: string[] = []
+) {
+  const blocked = new Set(unavailableDates.map((d) => d.slice(0, 10)));
   const out: { iso: string; label: string }[] = [];
   const cursor = new Date(from);
   cursor.setHours(0, 0, 0, 0);
-  for (let i = 1; out.length < count && i < 30; i += 1) {
+  for (let i = 1; out.length < count && i < 45; i += 1) {
     const day = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() + i);
+    const iso = localISO(day);
+    if (blocked.has(iso)) continue;
     if (availableDays.includes(DAY_CODES[day.getDay()])) {
       out.push({
-        iso: localISO(day),
+        iso,
         label: day.toLocaleDateString('th-TH', { weekday: 'short', day: 'numeric', month: 'short' }),
       });
     }
   }
   return out;
+}
+
+export function nextCalendarDays(count = 14, from = new Date()): { iso: string; label: string }[] {
+  const cursor = new Date(from);
+  cursor.setHours(0, 0, 0, 0);
+  const out: { iso: string; label: string }[] = [];
+  for (let i = 1; i <= count; i += 1) {
+    const day = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() + i);
+    out.push({
+      iso: localISO(day),
+      label: day.toLocaleDateString('th-TH', { weekday: 'short', day: 'numeric', month: 'short' }),
+    });
+  }
+  return out;
+}
+
+export const HOURLY_SLOTS_BY_BLOCK: Record<string, string[]> = {
+  'เช้า 9–12 น.': ['09:00 - 10:00', '10:00 - 11:00', '11:00 - 12:00'],
+  'บ่าย 12–16 น.': [
+    '12:00 - 13:00',
+    '13:00 - 14:00',
+    '14:00 - 15:00',
+    '15:00 - 16:00',
+  ],
+  'เย็น 16–20 น.': [
+    '16:00 - 17:00',
+    '17:00 - 18:00',
+    '18:00 - 19:00',
+    '19:00 - 20:00',
+  ],
+};
+
+const BLOCK_MINUTE_RANGES: Record<string, [number, number]> = {
+  'เช้า 9–12 น.': [9 * 60, 12 * 60],
+  'บ่าย 12–16 น.': [12 * 60, 16 * 60],
+  'เย็น 16–20 น.': [16 * 60, 20 * 60],
+};
+
+export function expandShopHourlySlots(availableSlots: string[]): string[] {
+  const source = availableSlots.length > 0 ? availableSlots : ['เย็น 16–20 น.'];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const slot of source) {
+    const expanded = HOURLY_SLOTS_BY_BLOCK[slot] ?? [slot];
+    for (const item of expanded) {
+      if (!seen.has(item)) {
+        seen.add(item);
+        out.push(item);
+      }
+    }
+  }
+  return out;
+}
+
+export function parseSlotMinutesRange(label?: string | null): [number, number] | null {
+  if (!label) return null;
+  const clean = label.trim();
+  if (BLOCK_MINUTE_RANGES[clean]) return BLOCK_MINUTE_RANGES[clean];
+  const rangeMatch = clean.match(/(\d{1,2})[:.](\d{2})\s*[-–]\s*(\d{1,2})[:.](\d{2})/);
+  if (rangeMatch) {
+    const start = Number(rangeMatch[1]) * 60 + Number(rangeMatch[2]);
+    const end = Number(rangeMatch[3]) * 60 + Number(rangeMatch[4]);
+    if (end > start) return [start, end];
+  }
+  const singleMatch = clean.match(/(\d{1,2})[:.](\d{2})/);
+  if (singleMatch) {
+    const start = Number(singleMatch[1]) * 60 + Number(singleMatch[2]);
+    return [start, start + 60];
+  }
+  if (clean.includes('เช้า')) return BLOCK_MINUTE_RANGES['เช้า 9–12 น.'];
+  if (clean.includes('บ่าย')) return BLOCK_MINUTE_RANGES['บ่าย 12–16 น.'];
+  if (clean.includes('เย็น')) return BLOCK_MINUTE_RANGES['เย็น 16–20 น.'];
+  return null;
+}
+
+export function slotsOverlap(aLabel?: string | null, bLabel?: string | null): boolean {
+  if (!aLabel || !bLabel) return false;
+  if (aLabel.trim() === bLabel.trim()) return true;
+  const aRange = parseSlotMinutesRange(aLabel);
+  const bRange = parseSlotMinutesRange(bLabel);
+  if (!aRange || !bRange) return false;
+  return aRange[0] < bRange[1] && bRange[0] < aRange[1];
+}
+
+export function isSlotBookedForDate(
+  dateISO: string,
+  slotLabel: string,
+  bookedSlots: Array<{ dateISO: string; timeLabel: string }> = []
+): boolean {
+  return bookedSlots.some(
+    (b) => b.dateISO === dateISO && slotsOverlap(b.timeLabel, slotLabel)
+  );
 }
 
 export function formatThaiDate(iso: string) {

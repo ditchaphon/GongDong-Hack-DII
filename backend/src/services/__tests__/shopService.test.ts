@@ -7,6 +7,7 @@ import {
   isValidThaiNationalId,
   maskThaiNationalId,
   submitSellerKyc,
+  updateUnavailableDates,
   upsertMyShop,
 } from '../shopService';
 
@@ -345,6 +346,66 @@ describe('shopService', () => {
       const pub = await getPublicShop('usr-1', mockPrisma);
       expect(pub.rating).toBe(0);
       expect(pub.total_reviews).toBe(0);
+    });
+
+    it('updateUnavailableDates คัดกรองวันอดีตออกและเรียงลำดับ และ getPublicShop คืน unavailable_dates + booked_pickup_slots', async () => {
+      const futureDate1 = '2099-12-20';
+      const futureDate2 = '2099-12-18';
+      const mockDb = {
+        shopProfile: {
+          findUnique: vi.fn().mockResolvedValue({ id: 'shop-1' }),
+          update: vi.fn().mockImplementation(async ({ data }: any) => ({
+            unavailableDates: data.unavailableDates,
+          })),
+        },
+      };
+
+      const updated = await updateUnavailableDates(
+        'usr-1',
+        [futureDate1, '2020-01-01', futureDate2, futureDate1],
+        mockDb
+      );
+      expect(updated.unavailable_dates).toEqual([futureDate2, futureDate1]);
+
+      const mockPublicDb = {
+        user: {
+          findUnique: vi.fn().mockResolvedValue({
+            id: 'usr-1',
+            nickname: 'ร้านทดสอบ',
+            avatarUrl: null,
+            isVerifiedSeller: true,
+            createdAt: new Date('2026-11-01T00:00:00Z'),
+            shopProfile: {
+              id: 'shop-1',
+              shopName: 'ร้านทดสอบ',
+              description: null,
+              avatarUrl: null,
+              province: 'เชียงใหม่',
+              supportsParcel: true,
+              shipMode: 'AFTER_ACCEPT',
+              shipWithinDays: 2,
+              availableDays: ['จ', 'อ'],
+              availableSlots: ['เย็น 16–20 น.'],
+              unavailableDates: [futureDate2, '2020-01-01'],
+              meetupPoints: [],
+            },
+          }),
+        },
+        order: {
+          count: vi.fn().mockResolvedValue(2),
+          findMany: vi.fn().mockResolvedValue([
+            { scheduleDateIso: futureDate1, scheduleTimeLabel: '16:00 - 17:00' },
+          ]),
+        },
+        review: { aggregate: vi.fn().mockResolvedValue({ _avg: { rating: 5 }, _count: { id: 1 } }) },
+        bookListing: { findMany: vi.fn().mockResolvedValue([]) },
+      };
+
+      const pub = await getPublicShop('usr-1', mockPublicDb);
+      expect(pub.unavailable_dates).toEqual([futureDate2]);
+      expect(pub.booked_pickup_slots).toEqual([
+        { date_iso: futureDate1, time_label: '16:00 - 17:00' },
+      ]);
     });
   });
 });

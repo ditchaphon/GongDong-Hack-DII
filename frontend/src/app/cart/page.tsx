@@ -17,9 +17,11 @@ import {
   mapBackendBookDetailToBook,
   mapPublicShopToShopProfile,
 } from '@/lib/mappers';
-import { Book, DeliveryMethod, ShopProfile } from '@/types';
+import { Book, BookedPickupSlot, DeliveryMethod, ShopProfile } from '@/types';
 import {
   calcParcelFee,
+  expandShopHourlySlots,
+  isSlotBookedForDate,
   mapDirectionsUrl,
   mapEmbedUrl,
   shipDeadlineDays,
@@ -55,6 +57,8 @@ interface ShopValidationResult {
   points: ShopProfile['meetupPoints'];
   dates: Array<{ iso: string; label: string }>;
   slots: string[];
+  bookedSlots: BookedPickupSlot[];
+  hasAvailableSlot: boolean;
   canMeetup: boolean;
   canParcel: boolean;
   delivery: DeliveryMethod | null;
@@ -74,6 +78,21 @@ function makeAttemptKey(): string {
   return `ord-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
+function findFirstFreeDateAndSlot(
+  dates: Array<{ iso: string; label: string }>,
+  slots: string[],
+  bookedSlots: BookedPickupSlot[]
+): { dateISO: string; slot: string } | null {
+  for (const d of dates) {
+    for (const s of slots) {
+      if (!isSlotBookedForDate(d.iso, s, bookedSlots)) {
+        return { dateISO: d.iso, slot: s };
+      }
+    }
+  }
+  return null;
+}
+
 function evaluateShopGroup(
   group: CartShopGroup,
   shop: ShopProfile | null | undefined,
@@ -85,8 +104,11 @@ function evaluateShopGroup(
 ): ShopValidationResult {
   const points = shop?.meetupPoints ?? [];
   const availableDays = shop?.availableDays?.length ? shop.availableDays : ['จ', 'อ', 'พ', 'พฤ', 'ศ'];
-  const slots = shop?.availableSlots?.length ? shop.availableSlots : ['เย็น 16–20 น.'];
-  const dates = upcomingDates(availableDays);
+  const slots = expandShopHourlySlots(shop?.availableSlots ?? []);
+  const dates = upcomingDates(availableDays, 6, new Date(), shop?.unavailableDates ?? []);
+  const bookedSlots = shop?.bookedPickupSlots ?? [];
+  const firstFree = findFirstFreeDateAndSlot(dates, slots, bookedSlots);
+  const hasAvailableSlot = Boolean(firstFree);
 
   const unavailableBookIds = new Set<string>();
   const nonCodBookIds = new Set<string>();
@@ -152,18 +174,38 @@ function evaluateShopGroup(
     }
   }
 
+  const selectedDateISO = config?.dateISO || firstFree?.dateISO || dates[0]?.iso || '';
+  const selectedSlot = config?.slot || firstFree?.slot || slots[0] || '';
+  const selectedSlotBooked =
+    delivery === 'MEETUP' &&
+    Boolean(selectedDateISO && selectedSlot) &&
+    isSlotBookedForDate(selectedDateISO, selectedSlot, bookedSlots);
+  const meetupSlotInvalid =
+    delivery === 'MEETUP' && (!hasAvailableSlot || !selectedDateISO || !selectedSlot || selectedSlotBooked);
+
+  if (delivery === 'MEETUP' && !isShopLoading) {
+    if (!hasAvailableSlot) {
+      issueMessages.push('ร้านนี้ไม่มีวันหรือช่วงเวลานัดรับว่างในช่วงถัดไป กรุณาเลือกส่งพัสดุหรือติดต่อร้านภายหลัง');
+    } else if (selectedSlotBooked) {
+      issueMessages.push('ช่วงเวลานัดรับที่เลือกมีผู้จองแล้ว กรุณาเลือกเวลาอื่น');
+    }
+  }
+
   const isBlockingIssue =
     isOwnShop ||
     isShopLoading ||
     Boolean(existingPendingOrderId) ||
     unavailableBookIds.size > 0 ||
     nonCodBookIds.size > 0 ||
+    meetupSlotInvalid ||
     !delivery;
 
   return {
     points,
     dates,
     slots,
+    bookedSlots,
+    hasAvailableSlot,
     canMeetup,
     canParcel,
     delivery,
@@ -372,8 +414,10 @@ export default function CartPage() {
         const shop = shopsBySeller[group.sellerId];
         const points = shop?.meetupPoints ?? [];
         const availableDays = shop?.availableDays?.length ? shop.availableDays : ['จ', 'อ', 'พ', 'พฤ', 'ศ'];
-        const slots = shop?.availableSlots?.length ? shop.availableSlots : ['เย็น 16–20 น.'];
-        const dates = upcomingDates(availableDays);
+        const slots = expandShopHourlySlots(shop?.availableSlots ?? []);
+        const dates = upcomingDates(availableDays, 6, new Date(), shop?.unavailableDates ?? []);
+        const bookedSlots = shop?.bookedPickupSlots ?? [];
+        const firstFree = findFirstFreeDateAndSlot(dates, slots, bookedSlots);
 
         const existing = next[group.sellerId];
         if (!existing) {
@@ -382,8 +426,8 @@ export default function CartPage() {
             selected: true,
             method: group.items.every((b) => b.deliveryMethods.includes('MEETUP')) ? 'MEETUP' : 'PARCEL',
             pointId: points[0]?.id ?? '',
-            dateISO: dates[0]?.iso ?? '',
-            slot: slots[0] ?? '',
+            dateISO: firstFree?.dateISO ?? dates[0]?.iso ?? '',
+            slot: firstFree?.slot ?? slots[0] ?? '',
           };
         } else {
           const updated = { ...existing };
@@ -393,11 +437,21 @@ export default function CartPage() {
             itemChanged = true;
           }
           if (dates.length > 0 && !dates.some((d) => d.iso === existing.dateISO)) {
-            updated.dateISO = dates[0].iso;
+            updated.dateISO = firstFree?.dateISO ?? dates[0].iso;
             itemChanged = true;
           }
           if (slots.length > 0 && !slots.includes(existing.slot)) {
-            updated.slot = slots[0];
+            updated.slot = firstFree?.slot ?? slots[0];
+            itemChanged = true;
+          }
+          if (
+            updated.dateISO &&
+            updated.slot &&
+            isSlotBookedForDate(updated.dateISO, updated.slot, bookedSlots) &&
+            firstFree
+          ) {
+            updated.dateISO = firstFree.dateISO;
+            updated.slot = firstFree.slot;
             itemChanged = true;
           }
           if (itemChanged) {
@@ -1017,36 +1071,94 @@ export default function CartPage() {
                           <div className="space-y-1.5">
                             <span className="flex items-center gap-1.5 text-xs font-bold text-slate-700">
                               <CalendarDays className="w-4 h-4 text-slate-400" />
-                              วันที่สะดวก
+                              วันที่ผู้ขายสะดวก
                             </span>
-                            <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
-                              {validation.dates.map((d) => (
-                                <Pill
-                                  key={d.iso}
-                                  selected={d.iso === (cfg?.dateISO || validation.dates[0]?.iso)}
-                                  onClick={() => updateShopConfig(group.sellerId, { dateISO: d.iso })}
-                                >
-                                  {d.label}
-                                </Pill>
-                              ))}
-                            </div>
+                            {validation.dates.length === 0 ? (
+                              <p className="text-[11px] text-rose-600">
+                                ไม่มีวันที่เปิดรับนัดในขณะนี้
+                              </p>
+                            ) : (
+                              <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
+                                {validation.dates.map((d) => {
+                                  const dayFullyBooked = validation.slots.every((s) =>
+                                    isSlotBookedForDate(d.iso, s, validation.bookedSlots)
+                                  );
+                                  const activeDate =
+                                    cfg?.dateISO || validation.dates[0]?.iso;
+                                  return (
+                                    <Pill
+                                      key={d.iso}
+                                      disabled={dayFullyBooked}
+                                      selected={d.iso === activeDate}
+                                      onClick={() => {
+                                        const currentSlot =
+                                          cfg?.slot || validation.slots[0] || '';
+                                        const nextFreeSlot =
+                                          currentSlot &&
+                                          !isSlotBookedForDate(
+                                            d.iso,
+                                            currentSlot,
+                                            validation.bookedSlots
+                                          )
+                                            ? currentSlot
+                                            : validation.slots.find(
+                                                (s) =>
+                                                  !isSlotBookedForDate(
+                                                    d.iso,
+                                                    s,
+                                                    validation.bookedSlots
+                                                  )
+                                              ) ?? currentSlot;
+                                        updateShopConfig(group.sellerId, {
+                                          dateISO: d.iso,
+                                          slot: nextFreeSlot,
+                                        });
+                                      }}
+                                    >
+                                      {d.label}
+                                      {dayFullyBooked ? ' (เต็ม)' : ''}
+                                    </Pill>
+                                  );
+                                })}
+                              </div>
+                            )}
                           </div>
 
                           <div className="space-y-1.5">
-                            <span className="flex items-center gap-1.5 text-xs font-bold text-slate-700">
-                              <Clock className="w-4 h-4 text-slate-400" />
-                              ช่วงเวลา
-                            </span>
+                            <div className="flex items-center justify-between">
+                              <span className="flex items-center gap-1.5 text-xs font-bold text-slate-700">
+                                <Clock className="w-4 h-4 text-slate-400" />
+                                ช่วงเวลานัดรับ (1 ชม./คิว)
+                              </span>
+                              <span className="text-[10px] text-slate-400">
+                                ล็อกเวลาที่ร้านมีนัดแล้ว
+                              </span>
+                            </div>
                             <div className="flex flex-wrap gap-2">
-                              {validation.slots.map((s) => (
-                                <Pill
-                                  key={s}
-                                  selected={s === (cfg?.slot || validation.slots[0])}
-                                  onClick={() => updateShopConfig(group.sellerId, { slot: s })}
-                                >
-                                  {s}
-                                </Pill>
-                              ))}
+                              {validation.slots.map((s) => {
+                                const activeDate =
+                                  cfg?.dateISO || validation.dates[0]?.iso || '';
+                                const booked = isSlotBookedForDate(
+                                  activeDate,
+                                  s,
+                                  validation.bookedSlots
+                                );
+                                return (
+                                  <Pill
+                                    key={s}
+                                    disabled={booked}
+                                    selected={
+                                      !booked && s === (cfg?.slot || validation.slots[0])
+                                    }
+                                    onClick={() =>
+                                      updateShopConfig(group.sellerId, { slot: s })
+                                    }
+                                  >
+                                    {s}
+                                    {booked ? ' (มีนัดแล้ว)' : ''}
+                                  </Pill>
+                                );
+                              })}
                             </div>
                           </div>
                         </div>
@@ -1281,23 +1393,28 @@ function MethodCard({
 
 function Pill({
   selected,
+  disabled,
   onClick,
   children,
 }: {
   selected: boolean;
+  disabled?: boolean;
   onClick: () => void;
   children: React.ReactNode;
 }) {
   return (
     <button
       type="button"
+      disabled={disabled}
       onClick={onClick}
       aria-pressed={selected}
       className={clsx(
         'shrink-0 px-3 py-2 rounded-xl text-xs font-semibold border transition',
-        selected
-          ? 'bg-[var(--color-primary)] border-[var(--color-primary)] text-white'
-          : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+        disabled
+          ? 'bg-slate-100 border-slate-200 text-slate-400 opacity-60 cursor-not-allowed line-through'
+          : selected
+            ? 'bg-[var(--color-primary)] border-[var(--color-primary)] text-white'
+            : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
       )}
     >
       {children}

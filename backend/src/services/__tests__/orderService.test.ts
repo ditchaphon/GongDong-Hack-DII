@@ -999,4 +999,179 @@ describe('OrderService - State Machine & Core Transactions', () => {
       expect(result.remainingCredits).toBe(1);
     });
   });
+
+  describe('Pickup Availability Lock & Immutable Schedule', () => {
+    it('createOrder ต้องปฏิเสธ 400 PICKUP_DATE_UNAVAILABLE เมื่อวันที่เลือกอยู่ใน unavailableDates ของร้าน', async () => {
+      const mockDb: any = {
+        user: { findUnique: vi.fn().mockResolvedValue({ id: 'usr_buyer_1', phoneNumber: null }) },
+        order: { count: vi.fn().mockResolvedValue(0), findMany: vi.fn().mockResolvedValue([]) },
+        bookListing: {
+          findMany: vi.fn().mockResolvedValue([
+            { id: 'bok_1', sellerId: 'usr_seller_1', price: 150, status: 'AVAILABLE', allowPickup: true, codEnabled: true },
+          ]),
+        },
+        shopProfile: {
+          findUnique: vi.fn().mockResolvedValue({
+            province: 'เชียงใหม่',
+            shipWithinDays: 2,
+            availableDays: ['จ', 'อ', 'พ', 'พฤ', 'ศ'],
+            availableSlots: ['เย็น 16–20 น.'],
+            unavailableDates: ['2099-12-21'],
+          }),
+        },
+        $transaction: vi.fn(async (cb: any) => await cb(mockDb)),
+      };
+
+      await expect(
+        createOrder(
+          'usr_buyer_1',
+          {
+            sellerId: 'usr_seller_1',
+            bookIds: ['bok_1'],
+            shippingMethod: 'PICKUP',
+            pickupLat: 18.79,
+            pickupLng: 98.95,
+            pickupLocationName: 'หน้าหอสมุด มช.',
+            scheduledAt: '2099-12-21T16:00:00+07:00',
+            scheduleDateIso: '2099-12-21',
+            scheduleTimeLabel: '16:00 - 17:00',
+          },
+          mockDb
+        )
+      ).rejects.toMatchObject({
+        statusCode: 400,
+        code: 'PICKUP_DATE_UNAVAILABLE',
+      });
+    });
+
+    it('createOrder ต้องปฏิเสธ 409 PICKUP_SLOT_ALREADY_BOOKED เมื่อร้านมีออเดอร์อื่นนัดเวลาเดียวกันไว้แล้ว', async () => {
+      const mockDb: any = {
+        user: { findUnique: vi.fn().mockResolvedValue({ id: 'usr_buyer_2', phoneNumber: null }) },
+        order: {
+          count: vi.fn().mockResolvedValue(0),
+          findMany: vi.fn().mockResolvedValue([
+            {
+              id: 'ord_existing_1',
+              status: 'SCHEDULED',
+              createdAt: new Date(),
+              scheduleTimeLabel: '16:00 - 17:00',
+            },
+          ]),
+        },
+        bookListing: {
+          findMany: vi.fn().mockResolvedValue([
+            { id: 'bok_2', sellerId: 'usr_seller_1', price: 150, status: 'AVAILABLE', allowPickup: true, codEnabled: true },
+          ]),
+        },
+        shopProfile: {
+          findUnique: vi.fn().mockResolvedValue({
+            province: 'เชียงใหม่',
+            shipWithinDays: 2,
+            availableDays: ['จ', 'อ', 'พ', 'พฤ', 'ศ'],
+            availableSlots: ['เย็น 16–20 น.'],
+            unavailableDates: [],
+          }),
+        },
+        $transaction: vi.fn(async (cb: any) => await cb(mockDb)),
+      };
+
+      await expect(
+        createOrder(
+          'usr_buyer_2',
+          {
+            sellerId: 'usr_seller_1',
+            bookIds: ['bok_2'],
+            shippingMethod: 'PICKUP',
+            pickupLat: 18.79,
+            pickupLng: 98.95,
+            pickupLocationName: 'หน้าหอสมุด มช.',
+            scheduledAt: '2099-12-22T16:00:00+07:00',
+            scheduleDateIso: '2099-12-22',
+            scheduleTimeLabel: '16:00 - 17:00',
+          },
+          mockDb
+        )
+      ).rejects.toMatchObject({
+        statusCode: 409,
+        code: 'PICKUP_SLOT_ALREADY_BOOKED',
+      });
+    });
+
+    it('acceptOrder ต้องล็อกสถานะเป็น SCHEDULED พร้อมรหัส 6 หลักทันทีเมื่อออเดอร์นัดรับมีวันเวลา+พิกัดจากหน้าสั่งซื้อ', async () => {
+      const mockTx: any = {
+        order: {
+          findUnique: vi.fn().mockResolvedValue({
+            id: 'ord_auto_sched_1',
+            sellerId: 'usr_seller_1',
+            buyerId: 'usr_buyer_1',
+            status: 'REQUESTED',
+            shippingMethod: 'PICKUP',
+            scheduledAt: new Date('2099-12-22T16:00:00+07:00'),
+            pickupLat: 18.795,
+            pickupLng: 98.952,
+            pickupLocationName: 'หน้าหอสมุด มช.',
+            scheduleDateIso: '2099-12-22',
+            scheduleTimeLabel: '16:00 - 17:00',
+            handoverCode: null,
+            seller: { id: 'usr_seller_1', isVerifiedSeller: true, credits: 2 },
+            orderItems: [{ bookListingId: 'bok_1', bookListing: { id: 'bok_1', status: 'AVAILABLE' } }],
+          }),
+          findMany: vi.fn().mockResolvedValue([]),
+          updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+        },
+        user: {
+          updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+          findUnique: vi.fn().mockResolvedValue({ credits: 1 }),
+        },
+        creditTransaction: { create: vi.fn().mockResolvedValue({}) },
+        bookListing: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+        orderItem: { findMany: vi.fn().mockResolvedValue([]) },
+      };
+
+      const result = await acceptOrder('ord_auto_sched_1', 'usr_seller_1', {
+        $transaction: vi.fn(async (cb: any) => await cb(mockTx)),
+      });
+
+      expect(result.status).toBe('SCHEDULED');
+      expect(mockTx.order.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            status: 'SCHEDULED',
+            scheduleConfirmedByBuyer: true,
+            handoverCode: expect.stringMatching(/^\d{6}$/),
+          }),
+        })
+      );
+    });
+
+    it('schedulePickupOrder ต้องปฏิเสธ 400 SCHEDULE_LOCKED เมื่อออเดอร์อยู่ในสถานะ SCHEDULED แล้ว', async () => {
+      const mockDb: any = {
+        order: {
+          findUnique: vi.fn().mockResolvedValue({
+            id: 'ord_locked_1',
+            buyerId: 'usr_buyer_1',
+            sellerId: 'usr_seller_1',
+            shippingMethod: 'PICKUP',
+            status: 'SCHEDULED',
+          }),
+        },
+      };
+
+      await expect(
+        schedulePickupOrder(
+          'ord_locked_1',
+          'usr_seller_1',
+          {
+            scheduledAt: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(),
+            pickupLat: 18.79,
+            pickupLng: 98.95,
+          },
+          mockDb
+        )
+      ).rejects.toMatchObject({
+        statusCode: 400,
+        code: 'SCHEDULE_LOCKED',
+      });
+    });
+  });
 });

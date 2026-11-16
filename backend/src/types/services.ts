@@ -655,6 +655,7 @@ export interface UpsertShopInput {
   province: string;
   availableDays: string[];
   availableSlots: string[];
+  unavailableDates?: string[];
   supportsParcel: boolean;
   shipMode?: 'DAILY' | 'AFTER_ACCEPT';
   shipWithinDays?: number;

@@ -102,6 +102,7 @@ export interface BackendMyShopResponse {
     province: string;
     available_days: string[];
     available_slots: string[];
+    unavailable_dates?: string[];
     supports_parcel: boolean;
     ship_mode: string;
     ship_within_days: number;
@@ -135,6 +136,8 @@ export interface BackendPublicShopResponse {
   ship_within_days: number;
   available_days: string[];
   available_slots: string[];
+  unavailable_dates?: string[];
+  booked_pickup_slots?: Array<{ date_iso: string; time_label: string }>;
   meetup_points: BackendMeetupPoint[];
   listings: Array<{
     id: string;
@@ -465,6 +468,7 @@ export function mapBackendShopToShopSettings(
     meetupPoints: (res.shop.meetup_points ?? []).map(mapMeetupPoint),
     availableDays: res.shop.available_days ?? [],
     availableSlots: res.shop.available_slots ?? [],
+    unavailableDates: res.shop.unavailable_dates ?? [],
     supportsParcel: Boolean(res.shop.supports_parcel),
     shipMode: (res.shop.ship_mode === 'DAILY' ? 'DAILY' : 'AFTER_ACCEPT') as ShipMode,
     shipWithinDays: res.shop.ship_within_days ?? 2,
@@ -518,6 +522,11 @@ export function mapPublicShopToShopProfile(
     meetupPoints: (shop.meetup_points ?? []).map(mapMeetupPoint),
     availableDays: shop.available_days ?? [],
     availableSlots: shop.available_slots ?? [],
+    unavailableDates: shop.unavailable_dates ?? [],
+    bookedPickupSlots: (shop.booked_pickup_slots ?? []).map((slot) => ({
+      dateISO: slot.date_iso,
+      timeLabel: slot.time_label,
+    })),
     shipMode: (shop.ship_mode === 'DAILY' ? 'DAILY' : 'AFTER_ACCEPT') as ShipMode,
     shipWithinDays: shop.ship_within_days ?? 2,
   };
