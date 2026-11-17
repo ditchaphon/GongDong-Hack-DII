@@ -96,6 +96,7 @@ export interface SellerContextValue {
   publishListing: (draft: ListingDraft) => Promise<SellerListing>;
   updateListing: (id: string, patch: Partial<SellerListing>) => Promise<void>;
   setListingStatus: (id: string, status: ListingStatus) => Promise<void>;
+  deleteListing: (id: string) => Promise<void>;
 }
 
 const SellerContext = createContext<SellerContextValue | null>(null);
@@ -567,6 +568,20 @@ export const SellerProvider: React.FC<{ children: ReactNode }> = ({
     await updateListing(id, { status });
   };
 
+  const deleteListing = async (id: string) => {
+    if (!idToken) {
+      throw new Error('ยังไม่ได้เข้าสู่ระบบ กรุณารอสักครู่');
+    }
+    await api.delete(`/api/books/${encodeURIComponent(id)}`, { token: idToken });
+    setListings((prev) => {
+      const next = prev.filter((listing) => listing.id !== id);
+      if (userKey) {
+        writeSellerCache(userKey, { shop, listings: next, ledger });
+      }
+      return next;
+    });
+  };
+
   const submitTopUpSlip = async (input: {
     packId: string;
     credits: number;
@@ -633,6 +648,7 @@ export const SellerProvider: React.FC<{ children: ReactNode }> = ({
         publishListing,
         updateListing,
         setListingStatus,
+        deleteListing,
       }}
     >
       {children}

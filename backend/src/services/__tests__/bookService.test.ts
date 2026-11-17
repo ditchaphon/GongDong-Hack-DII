@@ -519,6 +519,44 @@ describe('BookService - Marketplace & Listings Management', () => {
         deleteBookListing('bok_1', 'usr_seller_1', mockDb)
       ).rejects.toThrow('ไม่สามารถลบหนังสือที่ติดจองหรือขายสำเร็จแล้วได้');
     });
+
+    it('ต้องปฏิเสธหากหนังสือมีคำสั่งซื้อ REQUESTED ค้างอยู่แม้สถานะหนังสือยังเป็น AVAILABLE', async () => {
+      mockDb.bookListing.findUnique.mockResolvedValue({
+        id: 'bok_req_1',
+        sellerId: 'usr_seller_1',
+        status: 'AVAILABLE',
+      });
+      mockDb.orderItem = {
+        findMany: vi.fn().mockResolvedValue([{ order: { status: 'REQUESTED' } }]),
+      };
+
+      await expect(
+        deleteBookListing('bok_req_1', 'usr_seller_1', mockDb)
+      ).rejects.toMatchObject({
+        statusCode: 400,
+        code: 'CANNOT_DELETE_ORDERED_BOOK',
+      });
+      expect(mockDb.bookListing.delete).not.toHaveBeenCalled();
+    });
+
+    it('ต้องปฏิเสธหากหนังสือเคยมีประวัติคำสั่งซื้อที่ถูกยกเลิก/ปฏิเสธไปแล้ว (แนะนำให้ซ่อนแทน)', async () => {
+      mockDb.bookListing.findUnique.mockResolvedValue({
+        id: 'bok_hist_1',
+        sellerId: 'usr_seller_1',
+        status: 'AVAILABLE',
+      });
+      mockDb.orderItem = {
+        findMany: vi.fn().mockResolvedValue([{ order: { status: 'CANCELLED' } }]),
+      };
+
+      await expect(
+        deleteBookListing('bok_hist_1', 'usr_seller_1', mockDb)
+      ).rejects.toMatchObject({
+        statusCode: 400,
+        code: 'CANNOT_DELETE_BOOK_WITH_ORDER_HISTORY',
+      });
+      expect(mockDb.bookListing.delete).not.toHaveBeenCalled();
+    });
   });
 
   describe('BookCatalog Backfill & Previous Listings by ISBN', () => {

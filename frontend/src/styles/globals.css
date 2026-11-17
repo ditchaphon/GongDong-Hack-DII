@@ -89,6 +89,12 @@
 }
 .animate-sheet-up { animation: gd-sheet-up 0.25s ease-out both; }
 
+@keyframes gd-slide-down {
+  from { transform: translateY(-20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+.animate-slide-down { animation: gd-slide-down 0.25s ease-out both; }
+
 @keyframes gd-scan {
   0% { top: 8%; }
   50% { top: 88%; }

@@ -258,5 +258,54 @@ describe('notificationService & lineNotifyService', () => {
     const disputeBubble = disputeFlex.contents as any;
     expect(disputeBubble.header.backgroundColor).toBe('#B91C1C');
     expect(disputeBubble.footer.contents[0].color).toBe('#DC2626');
+
+    const reviewPromptFlex = buildOrderFlexMessage({
+      title: 'นัดรับหนังสือสำเร็จ!',
+      message: 'ผู้ขายยืนยันรหัสส่งมอบ 6 หลักเรียบร้อยแล้ว อย่าลืมให้คะแนนร้านค้านะครับ',
+      orderId: '11111111-2222-3333-4444-555555555555',
+      badgeText: 'MEETUP COMPLETED',
+      role: 'BUYER',
+      linkUrl: 'https://liff.line.me/demo/orders/11111111/review',
+    });
+
+    const reviewPromptBubble = reviewPromptFlex.contents as any;
+    expect(reviewPromptBubble.header.backgroundColor).toBe('#15803D');
+    expect(JSON.stringify(reviewPromptBubble.header)).toContain('⭐ นัดรับสำเร็จ · อย่าลืมรีวิว');
+    expect(reviewPromptBubble.footer.contents[0].action.label).toBe('ให้คะแนนและรีวิวร้าน');
+    expect(reviewPromptBubble.footer.contents[0].action.uri).toBe(
+      'https://liff.line.me/demo/orders/11111111/review'
+    );
+  });
+
+  it('notifyOrderEvent บังคับยิง LINE Push เมื่อ forcePushLine: true แม้ผู้รับกำลังใช้งานใน LIFF อยู่ (lastActiveAt ภายใน 2 นาที)', async () => {
+    const mockPushClient = { pushMessage: vi.fn().mockResolvedValue({}) };
+    const createNotif = vi.fn().mockResolvedValue({ id: 'notif-force-1' });
+    const mockPrisma = {
+      notification: { create: createNotif },
+      user: {
+        findUnique: vi.fn().mockResolvedValue({
+          lineUserId: 'U1234567890abcdef1234567890abcdef',
+          lastActiveAt: new Date(Date.now() - 15_000),
+        }),
+      },
+    };
+
+    const result = await notifyOrderEvent(
+      {
+        recipientUserId: 'seller-uuid-force',
+        role: 'SELLER',
+        orderId: 'ord-force-1',
+        title: 'มีคำขอสั่งซื้อหนังสือใหม่',
+        message: 'ออเดอร์ใหม่',
+        badgeText: 'NEW ORDER REQUEST',
+        forcePushLine: true,
+      },
+      mockPrisma,
+      mockPushClient
+    );
+
+    expect(createNotif).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ pushed: true, reason: undefined });
+    expect(mockPushClient.pushMessage).toHaveBeenCalledTimes(1);
   });
 });

@@ -10,12 +10,14 @@ import { useAppMode, type AppMode } from '@/hooks/useAppMode';
 export interface BottomTabProps {
   orderBadge?: number;
   forceMode?: AppMode;
+  disabled?: boolean;
   className?: string;
 }
 
 export const BottomTab: React.FC<BottomTabProps> = ({
   orderBadge,
   forceMode,
+  disabled = false,
   className,
 }) => {
   const pathname = usePathname();
@@ -56,8 +58,10 @@ export const BottomTab: React.FC<BottomTabProps> = ({
       )}
     >
       <div
+        aria-disabled={disabled || undefined}
         className={clsx(
-          'w-full max-w-[430px] backdrop-blur-md border-t pointer-events-auto safe-area-bottom',
+          'w-full max-w-[430px] backdrop-blur-md border-t safe-area-bottom transition-opacity',
+          disabled ? 'pointer-events-none opacity-60 cursor-wait' : 'pointer-events-auto',
           isSeller ? 'bg-teal-50/95 border-teal-200' : 'bg-white/95 border-slate-200'
         )}
       >
@@ -72,8 +76,12 @@ export const BottomTab: React.FC<BottomTabProps> = ({
               <Link
                 key={tab.id}
                 href={tab.href}
+                aria-disabled={disabled || undefined}
+                tabIndex={disabled ? -1 : undefined}
+                onClick={disabled ? (e) => e.preventDefault() : undefined}
                 className={clsx(
-                  'relative flex flex-col items-center justify-center flex-1 h-full min-h-[44px] transition-colors select-none active:scale-95',
+                  'relative flex flex-col items-center justify-center flex-1 h-full min-h-[44px] transition-colors select-none',
+                  !disabled && 'active:scale-95',
                   isActive ? activeColor : 'text-slate-400 hover:text-slate-600'
                 )}
               >

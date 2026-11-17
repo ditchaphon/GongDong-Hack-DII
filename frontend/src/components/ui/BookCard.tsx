@@ -54,6 +54,7 @@ export const BookCard: React.FC<BookCardProps> = ({
             alt={book.title}
             className="w-full h-full object-cover"
             loading="lazy"
+            decoding="async"
           />
           <div className="absolute top-1 left-1">
             <GradeBadge grade={book.grade} size="sm" showDescription={false} />
@@ -131,6 +132,7 @@ export const BookCard: React.FC<BookCardProps> = ({
           alt={book.title}
           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
           loading="lazy"
+          decoding="async"
         />
         <div className="absolute top-2 left-2 flex flex-col gap-1 items-start">
           <GradeBadge grade={book.grade} size="sm" />

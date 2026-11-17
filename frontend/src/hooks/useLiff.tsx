@@ -76,19 +76,59 @@ const LiffContext = createContext<LiffContextValue | null>(null);
 
 const LIFF_LOGIN_TRIED_KEY = 'gongdong.liffLoginTried';
 const LIFF_REFRESH_TRIED_KEY = 'gongdong.liffTokenRefreshTried';
+const LIFF_USER_CACHE_PREFIX = 'gongdong.userCache.v1.';
 
-function isJwtExpired(token: string): boolean {
-  if (!token || token.startsWith('mock_')) return false;
+interface DecodedIdTokenPayload {
+  sub?: string;
+  name?: string;
+  picture?: string;
+  exp?: number;
+}
+
+function parseJwtPayload(token: string): DecodedIdTokenPayload | null {
+  if (!token || token.startsWith('mock_')) return null;
   const parts = token.split('.');
-  if (parts.length < 2) return false;
+  if (parts.length < 2) return null;
   try {
     const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
     const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4);
-    const payload = JSON.parse(atob(padded)) as { exp?: unknown };
-    if (typeof payload.exp !== 'number') return false;
-    return payload.exp * 1000 <= Date.now() + 15_000;
+    const payload = JSON.parse(atob(padded)) as DecodedIdTokenPayload;
+    return payload && typeof payload === 'object' ? payload : null;
   } catch {
-    return false;
+    return null;
+  }
+}
+
+function isJwtExpired(token: string): boolean {
+  const payload = parseJwtPayload(token);
+  if (!payload || typeof payload.exp !== 'number') return false;
+  return payload.exp * 1000 <= Date.now() + 15_000;
+}
+
+function readCachedUserProfile(lineUserId: string): UserProfile | null {
+  if (!lineUserId || typeof window === 'undefined') return null;
+  try {
+    const raw = window.localStorage.getItem(`${LIFF_USER_CACHE_PREFIX}${lineUserId}`);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as UserProfile;
+    if (!parsed || typeof parsed !== 'object' || !parsed.id || !parsed.lineUserId) {
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedUserProfile(profile: UserProfile): void {
+  if (!profile.lineUserId || !profile.id || typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(
+      `${LIFF_USER_CACHE_PREFIX}${profile.lineUserId}`,
+      JSON.stringify(profile)
+    );
+  } catch {
+    // ignore storage quota errors
   }
 }
 
@@ -130,7 +170,7 @@ export const LiffProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const syncUserWithBackend = useCallback(
     async (token: string, liffProfileFallback?: Partial<UserProfile>) => {
       const profile = await api.get<BackendUserProfile>('/api/users/me', { token });
-      setUser({
+      const nextUser: UserProfile = {
         id: profile.id,
         lineUserId: profile.line_user_id,
         displayName:
@@ -150,7 +190,9 @@ export const LiffProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         pdpaConsentAt: profile.pdpa_consent_at ?? null,
         promptPayName: profile.verified_name || undefined,
         phone: profile.phone_number || undefined,
-      });
+      };
+      setUser(nextUser);
+      writeCachedUserProfile(nextUser);
     },
     []
   );
@@ -241,7 +283,6 @@ export const LiffProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         }
 
         if (loggedIn) {
-          const profile = await liff.getProfile();
           const rawToken = liff.getIDToken();
 
           if (!rawToken || isJwtExpired(rawToken)) {
@@ -251,42 +292,99 @@ export const LiffProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           setApiAuthToken(rawToken);
           setIdToken(rawToken);
 
-          // Check friendship with LINE OA
-          try {
-            const friendStatus = await liff.getFriendship();
-            setFriendship(friendStatus.friendFlag);
-          } catch {
-            setFriendship(true);
-          }
+          // Check LINE OA friendship in the background so it never blocks app hydration
+          liff
+            .getFriendship()
+            .then((friendStatus) => {
+              if (mounted) setFriendship(friendStatus.friendFlag);
+            })
+            .catch(() => {
+              if (mounted) setFriendship(true);
+            });
 
-          if (rawToken) {
-            try {
-              await syncUserWithBackend(rawToken, {
-                displayName: profile.displayName,
-                pictureUrl: profile.pictureUrl,
+          const jwtPayload = rawToken ? parseJwtPayload(rawToken) : null;
+          const cachedUser = jwtPayload?.sub
+            ? readCachedUserProfile(jwtPayload.sub)
+            : null;
+
+          if (rawToken && cachedUser) {
+            // Hydrate immediately from per-user cache and refresh profile in parallel
+            setUser(cachedUser);
+            if (mounted) {
+              setIsReady(true);
+            }
+            syncUserWithBackend(rawToken, {
+              displayName: jwtPayload?.name,
+              pictureUrl: jwtPayload?.picture,
+            })
+              .then(() => {
+                try {
+                  sessionStorage.removeItem(LIFF_REFRESH_TRIED_KEY);
+                } catch {
+                  /* ignore */
+                }
+              })
+              .catch((syncErr: any) => {
+                if (syncErr instanceof ApiError && syncErr.status === 401) {
+                  triggerSingleLiffRelogin(liff);
+                } else {
+                  console.warn('[useLiff] Background user sync failed:', syncErr);
+                }
               });
+          } else if (rawToken) {
+            const [profileRes, syncRes] = await Promise.allSettled([
+              liff.getProfile(),
+              syncUserWithBackend(rawToken, {
+                displayName: jwtPayload?.name,
+                pictureUrl: jwtPayload?.picture,
+              }),
+            ]);
+
+            if (syncRes.status === 'fulfilled') {
               try {
                 sessionStorage.removeItem(LIFF_REFRESH_TRIED_KEY);
               } catch {
                 /* ignore */
               }
-            } catch (syncErr: any) {
+            } else {
+              const syncErr = syncRes.reason;
               if (syncErr instanceof ApiError && syncErr.status === 401) {
                 if (triggerSingleLiffRelogin(liff)) return;
               }
               console.error('[useLiff] Failed to sync user with backend:', syncErr);
               if (mounted) {
-                setUser(EMPTY_USER);
-                setError(syncErr?.message || 'ไม่สามารถเชื่อมต่อข้อมูลผู้ใช้จากเซิร์ฟเวอร์ได้');
+                const fallbackProfile =
+                  profileRes.status === 'fulfilled' ? profileRes.value : null;
+                setUser(
+                  fallbackProfile
+                    ? {
+                        ...EMPTY_USER,
+                        lineUserId: fallbackProfile.userId,
+                        displayName:
+                          fallbackProfile.displayName || EMPTY_USER.displayName,
+                        pictureUrl: fallbackProfile.pictureUrl,
+                      }
+                    : EMPTY_USER
+                );
+                setError(
+                  syncErr?.message || 'ไม่สามารถเชื่อมต่อข้อมูลผู้ใช้จากเซิร์ฟเวอร์ได้'
+                );
               }
             }
           } else {
-            setUser({
-              ...EMPTY_USER,
-              lineUserId: profile.userId,
-              displayName: profile.displayName || EMPTY_USER.displayName,
-              pictureUrl: profile.pictureUrl,
-            });
+            const profile = await liff.getProfile().catch(() => null);
+            if (mounted) {
+              setUser(
+                profile
+                  ? {
+                      ...EMPTY_USER,
+                      lineUserId: profile.userId,
+                      displayName: profile.displayName || EMPTY_USER.displayName,
+                      pictureUrl: profile.pictureUrl,
+                    }
+                  : EMPTY_USER
+              );
+            }
           }
         }
 

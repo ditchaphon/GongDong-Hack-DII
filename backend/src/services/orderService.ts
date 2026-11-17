@@ -939,6 +939,7 @@ async function executeBatchOrders(
         message: `มีผู้สนใจสั่งซื้อหนังสือจำนวน ${created.bookCount} เล่ม (฿${created.result.totalPrice})`,
         badgeText: 'NEW ORDER REQUEST',
         linkPath: `/orders/${created.result.orderId}`,
+        forcePushLine: true,
       },
       db
     );
@@ -2659,7 +2660,8 @@ export async function verifyHandoverCode(
       title: 'นัดรับหนังสือสำเร็จ!',
       message: 'ผู้ขายยืนยันรหัสส่งมอบ 6 หลักเรียบร้อยแล้ว อย่าลืมให้คะแนนร้านค้านะครับ',
       badgeText: 'MEETUP COMPLETED',
-      pushLine: false,
+      linkPath: `/orders/${orderId}/review`,
+      forcePushLine: true,
     },
     db
   );

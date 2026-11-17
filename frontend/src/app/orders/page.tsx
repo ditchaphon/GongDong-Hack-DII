@@ -100,10 +100,19 @@ function OrderRow({
 
 export default function OrdersPage() {
   const router = useRouter();
-  const { user } = useLiff();
-  const { orders, loading, error, refreshOrders, isMineAsBuyer, isDryRunOrder, clearDryRunOrders } = useV4Orders();
+  const { user, isReady } = useLiff();
+  const {
+    orders,
+    loading,
+    hasResolved,
+    error,
+    refreshOrders,
+    isMineAsBuyer,
+    isDryRunOrder,
+    clearDryRunOrders,
+  } = useV4Orders();
   const { mode, setMode } = useAppMode();
-  const { isShopSetup } = useSeller();
+  const { isShopSetup, loading: sellerLoading } = useSeller();
   const [explicitTab, setExplicitTab] = useState<Tab | null>(null);
   const dryRunCount = user.isAdmin ? orders.filter((o) => isDryRunOrder(o.id)).length : 0;
 
@@ -147,6 +156,39 @@ export default function OrdersPage() {
     (a, b) =>
       new Date(b.updatedAtISO).getTime() - new Date(a.updatedAtISO).getTime()
   );
+
+  const isInitialLoading =
+    !isReady ||
+    !hasResolved ||
+    (loading && orders.length === 0) ||
+    (sellerLoading && orders.length === 0 && !isShopSetup);
+
+  if (isInitialLoading) {
+    return (
+      <div className="flex flex-col min-h-screen bg-slate-50 select-none pb-20 cursor-wait">
+        <TopBar
+          title={tab === 'BUYING' ? 'ออเดอร์ที่ซื้อ' : 'ออเดอร์ร้าน'}
+          subtitle="กำลังโหลด..."
+          showBack={false}
+        />
+
+        <div className="p-4 space-y-3 flex-1 pointer-events-none" aria-busy="true">
+          <div className="grid grid-cols-2 gap-1.5 p-1 rounded-2xl bg-slate-200/70 animate-pulse">
+            <div className="h-9 rounded-xl bg-white/80" />
+            <div className="h-9 rounded-xl bg-slate-200/60" />
+          </div>
+          <div className="h-14 rounded-2xl bg-slate-200/70 animate-pulse" />
+          <div className="h-32 rounded-2xl bg-slate-200 animate-pulse" />
+          <div className="h-32 rounded-2xl bg-slate-200 animate-pulse" />
+        </div>
+
+        <BottomTab
+          disabled
+          forceMode={tab === 'SELLING' ? 'SELLER' : 'BUYER'}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col min-h-screen bg-slate-50 select-none pb-20">

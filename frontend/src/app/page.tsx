@@ -1,236 +1,41 @@
-'use client';
+import React from 'react';
+import { HomeFeedClient } from '@/components/home/HomeFeedClient';
+import { BackendBookFeedItem, mapBackendBookToBook } from '@/lib/mappers';
+import type { Book } from '@/types';
 
-import React, { useEffect, useState } from 'react';
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { SearchBar, Chip, BookCard, EmptyState } from '@/components/ui';
-import { BottomTab } from '@/components/layout/BottomTab';
-import { api } from '@/lib/api';
-import { BackendBookFeedItem, BackendNotification, mapBackendBookToBook } from '@/lib/mappers';
-import { Book } from '@/types';
-import { Bell, Sparkles, ShoppingBag } from 'lucide-react';
-import { useCart } from '@/hooks/useCart';
-import { useAppMode } from '@/hooks/useAppMode';
-import { useLiff } from '@/hooks/useLiff';
-import { useV4Orders } from '@/hooks/useV4Orders';
-import { isTerminal } from '@/lib/orderStateMachine';
+export const revalidate = 30;
 
-export default function HomePage() {
-  const router = useRouter();
-  const { isReady, isLoggedIn, idToken, user } = useLiff();
-  const { mode, setMode } = useAppMode();
-  const { items: cartItems } = useCart();
-  const { orders, isMineAsBuyer } = useV4Orders();
+async function fetchInitialBooks(): Promise<Book[]> {
+  const configuredBackend = (
+    process.env.BACKEND_INTERNAL_URL ||
+    process.env.NEXT_PUBLIC_API_URL ||
+    ''
+  )
+    .trim()
+    .replace(/\/+$/, '');
 
-  // Opening the buyer marketplace (e.g. from LINE OA Rich Menu) switches back to BUYER mode.
-  useEffect(() => {
-    if (mode !== 'BUYER') setMode('BUYER');
-  }, [mode, setMode]);
-  const [books, setBooks] = useState<Book[]>([]);
-  const [unreadCount, setUnreadCount] = useState(0);
-  const [homeSearch, setHomeSearch] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [activeCategory, setActiveCategory] = useState<string>('all');
+  if (!configuredBackend) {
+    return [];
+  }
 
-  const loadFeed = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const feedRes = await api.get<{ books: BackendBookFeedItem[]; total: number }>(
-        '/api/books?limit=30'
-      );
-      setBooks((feedRes.books ?? []).map(mapBackendBookToBook));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'โหลดรายการหนังสือไม่สำเร็จ');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    loadFeed();
-  }, []);
-
-  useEffect(() => {
-    if (!isReady || !isLoggedIn || !idToken) {
-      setUnreadCount(0);
-      return;
-    }
-    let active = true;
-    api
-      .get<{ items: BackendNotification[]; unreadCount: number }>(
-        '/api/notifications?limit=1',
-        { token: idToken }
-      )
-      .then((res) => {
-        if (active) setUnreadCount(res.unreadCount ?? 0);
-      })
-      .catch(() => {
-        if (active) setUnreadCount(0);
-      });
-    return () => {
-      active = false;
+  try {
+    const response = await fetch(`${configuredBackend}/api/books?limit=30`, {
+      next: { revalidate: 30 },
+      signal: AbortSignal.timeout(2000),
+    });
+    if (!response.ok) return [];
+    const payload = (await response.json()) as {
+      data?: { books?: BackendBookFeedItem[] };
+      books?: BackendBookFeedItem[];
     };
-  }, [isReady, isLoggedIn, idToken]);
+    const rawBooks = payload?.data?.books ?? payload?.books ?? [];
+    return Array.isArray(rawBooks) ? rawBooks.map(mapBackendBookToBook) : [];
+  } catch {
+    return [];
+  }
+}
 
-  const categories = [
-    { id: 'all', label: 'ทั้งหมด' },
-    { id: 'นิยาย', label: 'นิยาย' },
-    { id: 'วิชาการ', label: 'วิชาการ' },
-    { id: 'การ์ตูน', label: 'การ์ตูน' },
-    { id: 'หนังสือเรียน', label: 'หนังสือเรียน' },
-  ];
-
-  const filteredBooks = books.filter(
-    (b) => activeCategory === 'all' || (b.categories ?? []).includes(activeCategory)
-  );
-
-  const handleHomeSearch = (rawQuery: string) => {
-    const trimmed = rawQuery.trim();
-    router.push(trimmed ? `/search?q=${encodeURIComponent(trimmed)}` : '/search');
-  };
-
-  const activeBuyerOrderCount = orders.filter(
-    (o) => isMineAsBuyer(o) && !isTerminal(o.status)
-  ).length;
-
-  return (
-    <div className="flex flex-col min-h-screen bg-slate-50 pb-20 select-none">
-      {/* Header */}
-      <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-100 px-4 py-2.5 flex items-center justify-between shadow-2xs">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-xl bg-[#8B5E3C] text-white flex items-center justify-center font-bold text-base shadow-xs">
-            ก
-          </div>
-          <div>
-            <h1 className="text-base font-extrabold text-slate-900 leading-none">
-              กองดอง
-            </h1>
-            <span className="text-[10px] text-slate-400 font-medium">
-              ตลาดหนังสือมือสอง
-            </span>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-1">
-          <Link
-            href="/notifications"
-            aria-label="การแจ้งเตือน"
-            className="p-2 text-slate-500 hover:text-slate-800 rounded-full hover:bg-slate-100 transition relative"
-          >
-            <Bell className="w-5 h-5" />
-            {unreadCount > 0 && (
-              <span className="absolute top-1 right-1 min-w-4 h-4 px-1 rounded-full bg-rose-500 text-white text-[10px] font-bold flex items-center justify-center ring-2 ring-white">
-                {unreadCount > 9 ? '9+' : unreadCount}
-              </span>
-            )}
-          </Link>
-
-          <Link
-            href="/cart"
-            aria-label="ตะกร้า"
-            className="p-2 text-slate-500 hover:text-slate-800 rounded-full hover:bg-slate-100 transition relative"
-          >
-            <ShoppingBag className="w-5 h-5" />
-            {cartItems.length > 0 && (
-              <span className="absolute top-1.5 right-1.5 min-w-4 h-4 px-1 rounded-full bg-[#8B5E3C] text-white text-[10px] font-bold flex items-center justify-center shadow-xs">
-                {cartItems.length}
-              </span>
-            )}
-          </Link>
-        </div>
-      </header>
-
-      {/* Search Bar */}
-      <div className="p-4 bg-white border-b border-slate-100">
-        <div className="flex items-center gap-2">
-          <div className="flex-1">
-            <SearchBar
-              value={homeSearch}
-              onChange={setHomeSearch}
-              onSearch={handleHomeSearch}
-              placeholder="ค้นชื่อหนังสือ ผู้แต่ง หรือ ISBN..."
-            />
-          </div>
-          <button
-            type="button"
-            onClick={() => handleHomeSearch(homeSearch)}
-            className="shrink-0 min-h-[44px] px-3.5 rounded-2xl bg-[#8B5E3C] text-white text-xs font-bold hover:bg-[#764e31] transition"
-          >
-            ค้นหา
-          </button>
-        </div>
-
-        {/* Filter Categories */}
-        <div className="flex flex-wrap items-center gap-1.5 pt-3 pb-1">
-          {categories.map((c) => (
-            <Chip
-              key={c.id}
-              label={c.label}
-              selected={activeCategory === c.id}
-              onClick={() => setActiveCategory(c.id)}
-              size="sm"
-            />
-          ))}
-        </div>
-      </div>
-
-      {/* Feed Content */}
-      <div className="p-4 space-y-6">
-        {/* Book Feed Grid */}
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
-              <Sparkles className="w-4 h-4 text-[#8B5E3C]" />
-              หนังสือแนะนำคุณภาพดี
-            </h2>
-            <span className="text-xs text-slate-400">
-              พบ {filteredBooks.length} เล่ม
-            </span>
-          </div>
-
-          {loading ? (
-            <div className="grid grid-cols-2 gap-3">
-              {[1, 2, 3, 4].map((idx) => (
-                <div key={idx} className="h-56 rounded-2xl bg-slate-200 animate-pulse" />
-              ))}
-            </div>
-          ) : error ? (
-            <div className="bg-white rounded-2xl border border-slate-200 p-6">
-              <EmptyState
-                title="โหลดรายการหนังสือไม่สำเร็จ"
-                description={error}
-                actionText="ลองใหม่"
-                onAction={loadFeed}
-              />
-            </div>
-          ) : filteredBooks.length > 0 ? (
-            <div className="grid grid-cols-2 gap-3">
-              {filteredBooks.map((book) => (
-                <BookCard
-                  key={book.id}
-                  book={book}
-                  isOwnBook={Boolean(user?.id && book.sellerId === user.id)}
-                  onClick={() => router.push(`/book/${book.id}`)}
-                />
-              ))}
-            </div>
-          ) : (
-            <div className="bg-white rounded-2xl border border-slate-200 p-6">
-              <EmptyState
-                title="ยังไม่มีหนังสือในหมวดนี้"
-                description="ลองเลือกหมวดอื่น หรือค้นหาหนังสือที่ต้องการ"
-                actionText="ค้นหาหนังสือ"
-                onAction={() => router.push('/search')}
-              />
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Fixed Bottom Navigation */}
-      <BottomTab forceMode="BUYER" orderBadge={activeBuyerOrderCount || undefined} />
-    </div>
-  );
+export default async function HomePage() {
+  const initialBooks = await fetchInitialBooks();
+  return <HomeFeedClient initialBooks={initialBooks} />;
 }

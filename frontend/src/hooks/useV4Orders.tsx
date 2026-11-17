@@ -5,9 +5,11 @@ import React, {
   useCallback,
   useContext,
   useEffect,
+  useRef,
   useState,
   ReactNode,
 } from 'react';
+import { usePathname } from 'next/navigation';
 import {
   ChatMessage,
   V4BookSnapshot,
@@ -54,7 +56,9 @@ export interface CreateOrderInput {
 
 export interface V4OrdersContextValue {
   orders: V4Order[];
+  activeBuyerCount: number;
   loading: boolean;
+  hasResolved: boolean;
   error: string | null;
   refreshOrders: () => Promise<void>;
   fetchOrder: (id: string) => Promise<V4Order | undefined>;
@@ -122,6 +126,51 @@ export interface V4OrdersContextValue {
 
 const OrdersContext = createContext<V4OrdersContextValue | null>(null);
 
+const ORDERS_CACHE_PREFIX = 'gongdong.ordersCache.v1.';
+
+interface OrdersCachePayload {
+  orders: V4Order[];
+}
+
+function readOrdersCache(userKey: string): OrdersCachePayload | null {
+  if (!userKey || typeof window === 'undefined') return null;
+  try {
+    const raw = window.localStorage.getItem(`${ORDERS_CACHE_PREFIX}${userKey}`);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as OrdersCachePayload;
+    if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.orders)) {
+      return null;
+    }
+    return { orders: parsed.orders };
+  } catch {
+    return null;
+  }
+}
+
+function writeOrdersCache(userKey: string, orders: V4Order[]): void {
+  if (!userKey || typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(
+      `${ORDERS_CACHE_PREFIX}${userKey}`,
+      JSON.stringify({ orders })
+    );
+  } catch {
+    // ignore storage quota errors
+  }
+}
+
+function isOrdersContextRoute(pathname: string | null): boolean {
+  if (!pathname) return false;
+  return (
+    pathname.startsWith('/orders') ||
+    pathname.startsWith('/seller') ||
+    pathname.startsWith('/cart') ||
+    pathname.startsWith('/notifications')
+  );
+}
+
+const TERMINAL_ORDER_STATUSES = new Set(['COMPLETED', 'CANCELLED', 'REJECTED', 'EXPIRED']);
+
 function extractErrorMessage(err: unknown, fallback: string): string {
   if (err instanceof ApiError || err instanceof Error) {
     return err.message || fallback;
@@ -132,8 +181,14 @@ function extractErrorMessage(err: unknown, fallback: string): string {
 export const V4OrdersProvider: React.FC<{ children: ReactNode }> = ({
   children,
 }) => {
+  const pathname = usePathname();
   const { user, isReady, isLoggedIn, idToken, refreshUser } = useLiff();
+  const userKey = user.id || user.lineUserId || '';
+  const hydratedCacheKeyRef = useRef<string | null>(null);
+  const loadedTokenRef = useRef<string | null>(null);
+  const loadedSummaryTokenRef = useRef<string | null>(null);
   const [orders, setOrders] = useState<V4Order[]>([]);
+  const [summaryBuyingActiveCount, setSummaryBuyingActiveCount] = useState<number | null>(null);
   const [messagesByOrder, setMessagesByOrder] = useState<
     Record<string, ChatMessage[]>
   >({});
@@ -143,7 +198,52 @@ export const V4OrdersProvider: React.FC<{ children: ReactNode }> = ({
     roleByOrder: {},
   });
   const [loading, setLoading] = useState(false);
+  const [hasResolved, setHasResolved] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Hydrate per-user cached orders immediately while fresh data fetches in background
+  useEffect(() => {
+    if (!isReady) return;
+    if (!isLoggedIn || !idToken) {
+      hydratedCacheKeyRef.current = null;
+      loadedTokenRef.current = null;
+      loadedSummaryTokenRef.current = null;
+      setOrders([]);
+      setSummaryBuyingActiveCount(null);
+      setError(
+        isLoggedIn && !idToken
+          ? 'เซสชัน LINE หมดอายุ กรุณากดลองใหม่หรือเปิดผ่านเมนูอีกครั้ง'
+          : null
+      );
+      setHasResolved(true);
+      return;
+    }
+    if (!userKey || hydratedCacheKeyRef.current === userKey) return;
+    hydratedCacheKeyRef.current = userKey;
+    const cached = readOrdersCache(userKey);
+    if (cached) {
+      setOrders(cached.orders);
+      setHasResolved(true);
+    } else {
+      setOrders([]);
+      setHasResolved(false);
+    }
+  }, [isReady, isLoggedIn, idToken, userKey]);
+
+  // Keep per-user cache synced after initial resolution (SWR across Rich Menu reloads)
+  useEffect(() => {
+    if (
+      !isReady ||
+      !isLoggedIn ||
+      !idToken ||
+      !userKey ||
+      !hasResolved ||
+      hydratedCacheKeyRef.current !== userKey
+    ) {
+      return;
+    }
+    writeOrdersCache(userKey, orders);
+  }, [isReady, isLoggedIn, idToken, userKey, hasResolved, orders]);
 
   useEffect(() => {
     if (!isReady) return;
@@ -246,6 +346,7 @@ export const V4OrdersProvider: React.FC<{ children: ReactNode }> = ({
 
   const refreshOrders = useCallback(async () => {
     if (!idToken) return;
+    loadedTokenRef.current = idToken;
     setLoading(true);
     setError(null);
     try {
@@ -288,13 +389,49 @@ export const V4OrdersProvider: React.FC<{ children: ReactNode }> = ({
       setError(extractErrorMessage(err, 'โหลดรายการออเดอร์ไม่สำเร็จ'));
     } finally {
       setLoading(false);
+      setHasResolved(true);
     }
   }, [idToken]);
 
   useEffect(() => {
-    if (!isReady || !isLoggedIn || !idToken) return;
-    refreshOrders();
-  }, [isReady, isLoggedIn, idToken, refreshOrders]);
+    if (!isReady || !isLoggedIn || !idToken) {
+      loadedTokenRef.current = null;
+      loadedSummaryTokenRef.current = null;
+      return;
+    }
+    if (isOrdersContextRoute(pathname)) {
+      if (loadedTokenRef.current === idToken) return;
+      refreshOrders();
+      return;
+    }
+    // On public browsing routes (/, /search, /book/[id]), fetch lightweight summary for badge only
+    if (
+      loadedTokenRef.current === idToken ||
+      loadedSummaryTokenRef.current === idToken
+    ) {
+      return;
+    }
+    loadedSummaryTokenRef.current = idToken;
+    api
+      .get<{ buying?: Array<{ id: string; status: string }> }>(
+        '/api/users/me/orders?role=buying',
+        { token: idToken }
+      )
+      .then((res) => {
+        const count = (res.buying ?? []).filter(
+          (o) => !TERMINAL_ORDER_STATUSES.has(o.status)
+        ).length;
+        setSummaryBuyingActiveCount(count);
+      })
+      .catch(() => {
+        // Keep cached count silently on transient network error
+      });
+  }, [isReady, isLoggedIn, idToken, pathname, refreshOrders]);
+
+  const needsOrdersContext = isOrdersContextRoute(pathname);
+  const isHydrating =
+    !isReady ||
+    (isLoggedIn && Boolean(idToken) && needsOrdersContext && !hasResolved);
 
   const getOrder = useCallback(
     (id: string) => allOrders.find((order) => order.id === id),
@@ -912,11 +1049,20 @@ export const V4OrdersProvider: React.FC<{ children: ReactNode }> = ({
     }
   };
 
+  const activeBuyerCount =
+    summaryBuyingActiveCount !== null && !needsOrdersContext
+      ? summaryBuyingActiveCount
+      : allOrders.filter(
+          (o) => isMineAsBuyer(o) && !TERMINAL_ORDER_STATUSES.has(o.status)
+        ).length;
+
   return (
     <OrdersContext.Provider
       value={{
         orders: allOrders,
-        loading,
+        activeBuyerCount,
+        loading: loading || isHydrating,
+        hasResolved,
         error,
         refreshOrders,
         fetchOrder,
