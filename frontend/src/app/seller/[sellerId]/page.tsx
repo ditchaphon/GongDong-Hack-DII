@@ -23,6 +23,7 @@ import {
   Flag,
   MessageCircle,
   Truck,
+  CalendarDays,
 } from 'lucide-react';
 
 export default function SellerShopPage({
@@ -39,6 +40,7 @@ export default function SellerShopPage({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isReportOpen, setIsReportOpen] = useState(false);
+  const [showFullDesc, setShowFullDesc] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   useEffect(() => {
@@ -105,6 +107,16 @@ export default function SellerShopPage({
   }
 
   const sellerInfo = sellerBooks[0];
+  const hasLongDescription = Boolean(
+    shop.description &&
+      (shop.description.length > 140 || shop.description.split('\n').length > 3)
+  );
+  const hasDeliverySchedule = Boolean(
+    shop.meetupPoints.length > 0 ||
+      shop.availableDays.length > 0 ||
+      shop.availableSlots.length > 0 ||
+      shop.supportsParcel
+  );
 
   return (
     <div className="flex flex-col min-h-screen bg-slate-50 select-none pb-12">
@@ -166,6 +178,27 @@ export default function SellerShopPage({
           </div>
         </div>
 
+        {shop.description && (
+          <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 space-y-1">
+            <p
+              className={`text-xs text-slate-700 leading-relaxed whitespace-pre-line ${
+                !showFullDesc ? 'line-clamp-3' : ''
+              }`}
+            >
+              {shop.description}
+            </p>
+            {hasLongDescription && (
+              <button
+                type="button"
+                onClick={() => setShowFullDesc((prev) => !prev)}
+                className="text-[11px] font-semibold text-teal-700 hover:underline"
+              >
+                {showFullDesc ? 'ย่อลง' : 'อ่านเพิ่มเติม'}
+              </button>
+            )}
+          </div>
+        )}
+
         <div className="flex flex-wrap gap-2 pt-1 border-t border-slate-100">
           {shop.payeeVerified ? (
             <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
@@ -191,6 +224,50 @@ export default function SellerShopPage({
             </span>
           )}
         </div>
+
+        {hasDeliverySchedule && (
+          <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 space-y-1.5 text-[11px] text-slate-600">
+            {shop.meetupPoints.length > 0 && (
+              <div className="flex items-start gap-1.5">
+                <MapPin className="w-3.5 h-3.5 text-teal-600 shrink-0 mt-0.5" />
+                <div className="min-w-0">
+                  <span className="font-semibold text-slate-700">จุดนัดรับ ({shop.province}): </span>
+                  <span>
+                    {shop.meetupPoints
+                      .map((p) => (p.note ? `${p.name} (${p.note})` : p.name))
+                      .join(' · ')}
+                  </span>
+                </div>
+              </div>
+            )}
+            {(shop.availableDays.length > 0 || shop.availableSlots.length > 0) && (
+              <div className="flex items-start gap-1.5">
+                <CalendarDays className="w-3.5 h-3.5 text-teal-600 shrink-0 mt-0.5" />
+                <div className="min-w-0">
+                  <span className="font-semibold text-slate-700">วัน-เวลาที่สะดวก: </span>
+                  <span>
+                    {shop.availableDays.length > 0 ? shop.availableDays.join(', ') : ''}
+                    {shop.availableDays.length > 0 && shop.availableSlots.length > 0 ? ' · ' : ''}
+                    {shop.availableSlots.length > 0 ? shop.availableSlots.join(', ') : ''}
+                  </span>
+                </div>
+              </div>
+            )}
+            {shop.supportsParcel && (
+              <div className="flex items-start gap-1.5">
+                <Truck className="w-3.5 h-3.5 text-teal-600 shrink-0 mt-0.5" />
+                <div className="min-w-0">
+                  <span className="font-semibold text-slate-700">รอบจัดส่งพัสดุ: </span>
+                  <span>
+                    {shop.shipMode === 'DAILY'
+                      ? 'ส่งทุกวัน'
+                      : `จัดส่งภายใน ${shop.shipWithinDays} วันหลังรับออเดอร์`}
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="p-3 bg-emerald-50/70 border border-emerald-200 rounded-xl text-xs text-emerald-800 flex items-center gap-2">
           <Sparkles className="w-4 h-4 text-[var(--color-primary)] shrink-0" />

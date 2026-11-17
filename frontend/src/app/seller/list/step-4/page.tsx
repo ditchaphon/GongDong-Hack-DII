@@ -10,6 +10,8 @@ import {
   Stepper,
   Toast,
 } from '@/components/ui';
+import { AdminDemoBanner } from '@/components/v4';
+import { useLiff } from '@/hooks/useLiff';
 import { useListing } from '@/hooks/useListing';
 import { useSeller } from '@/hooks/useSeller';
 import { calcParcelFee, countSetActualVolumes } from '@/lib/delivery';
@@ -24,8 +26,10 @@ import {
 
 export default function SellerListStep4Page() {
   const router = useRouter();
+  const { user } = useLiff();
   const { draft, grade, update, toggleDelivery, resetDraft } = useListing();
   const { publishListing, shop } = useSeller();
+  const isAdminDemoMode = Boolean(user.isAdmin && draft.isDemoDryRun);
 
   const isSet = draft.mode === 'SET';
   const actualVolumes = countSetActualVolumes({
@@ -34,7 +38,7 @@ export default function SellerListStep4Page() {
     missingVolumes: draft.missingVolumes,
   });
   const estimatedParcelFee = calcParcelFee(actualVolumes);
-  const canParcel = Boolean(shop?.payeeVerified && shop?.supportsParcel);
+  const canParcel = Boolean(isAdminDemoMode || (shop?.payeeVerified && shop?.supportsParcel));
   const hasMeetup = draft.deliveryMethods.includes('MEETUP');
   const hasParcel = draft.deliveryMethods.includes('PARCEL') && canParcel;
 
@@ -58,6 +62,14 @@ export default function SellerListStep4Page() {
     setError(null);
     setPublishing(true);
     try {
+      if (isAdminDemoMode) {
+        update({ price });
+        const sourceIdParam = draft.demoSourceBookId
+          ? `&id=${encodeURIComponent(draft.demoSourceBookId)}`
+          : '';
+        router.replace(`/seller/list/success?demo=1${sourceIdParam}`);
+        return;
+      }
       const created = await publishListing({ ...draft, price });
       resetDraft('SINGLE');
       router.replace(`/seller/list/success?id=${encodeURIComponent(created.id)}`);
@@ -73,6 +85,15 @@ export default function SellerListStep4Page() {
       <TopBar title="ตั้งราคาและวิธีรับ" onBack={() => router.push('/seller/list/step-3')} />
 
       <Stepper currentStep={5} />
+
+      {isAdminDemoMode && (
+        <div className="px-4 pt-3">
+          <AdminDemoBanner
+            title="Admin Relist Demo · Dry-run"
+            description="กด 'ลงประกาศขาย' เพื่อจำลองขั้นสุดท้ายได้ทันที ระบบจะไม่บันทึกประกาศซ้ำลง Database"
+          />
+        </div>
+      )}
 
       <div className="p-4 space-y-4">
         {/* Price */}

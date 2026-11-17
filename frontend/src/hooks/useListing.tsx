@@ -50,6 +50,8 @@ export const EMPTY_DRAFT: ListingDraft = {
   deliveryMethods: ['MEETUP'],
   parcelShippingFee: 40,
   codEnabled: false,
+  isDemoDryRun: false,
+  demoSourceBookId: undefined,
 };
 
 export interface ListingContextValue {
@@ -67,6 +69,7 @@ export interface ListingContextValue {
   toggleDelivery: (method: DeliveryMethod) => void;
   toggleMissingVolume: (volume: number) => void;
   resetDraft: (mode?: 'SINGLE' | 'SET') => void;
+  loadDemoDraft: (nextDraft: ListingDraft) => void;
 }
 
 const ListingContext = createContext<ListingContextValue | null>(null);
@@ -88,6 +91,8 @@ function createEmptyDraft(mode: 'SINGLE' | 'SET' = 'SINGLE'): ListingDraft {
     checklist: { ...EMPTY_CHECKLIST },
     defects: [],
     deliveryMethods: ['MEETUP'],
+    isDemoDryRun: false,
+    demoSourceBookId: undefined,
   };
 }
 
@@ -167,6 +172,13 @@ export const ListingProvider: React.FC<{ children: ReactNode }> = ({
     []
   );
 
+  const loadDemoDraft = useCallback((nextDraft: ListingDraft) => {
+    setDraft({
+      ...nextDraft,
+      isDemoDryRun: true,
+    });
+  }, []);
+
   return (
     <ListingContext.Provider
       value={{
@@ -181,6 +193,7 @@ export const ListingProvider: React.FC<{ children: ReactNode }> = ({
         toggleDelivery,
         toggleMissingVolume,
         resetDraft,
+        loadDemoDraft,
       }}
     >
       {children}

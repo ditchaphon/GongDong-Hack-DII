@@ -5,9 +5,11 @@ import clsx from 'clsx';
 import { useRouter } from 'next/navigation';
 import { TopBar } from '@/components/layout/TopBar';
 import { Button, Input, Toast } from '@/components/ui';
-import { MapPinPicker } from '@/components/v4';
+import { AdminDemoBanner, MapPinPicker } from '@/components/v4';
 import { useSeller } from '@/hooks/useSeller';
 import { useAppMode } from '@/hooks/useAppMode';
+import { useLiff } from '@/hooks/useLiff';
+import { ADMIN_DEMO_SHOP_FALLBACK, ADMIN_DEMO_THAI_ID } from '@/lib/adminDemo';
 import { safeDeleteUploadedImage, uploadImageFile } from '@/lib/api';
 import {
   MeetupPoint,
@@ -83,7 +85,12 @@ const STEP_HEADINGS: Record<number, { title: string; subtitle: string }> = {
 export default function ShopSetupWizardPage() {
   const router = useRouter();
   const { setMode } = useAppMode();
-  const { shop, saveShop, submitKyc } = useSeller();
+  const { user } = useLiff();
+  const { shop, loading: sellerLoading, saveShop, submitKyc } = useSeller();
+
+  const [adminDemoRequested, setAdminDemoRequested] = useState(false);
+  const [hydratedAdminDemo, setHydratedAdminDemo] = useState(false);
+  const isAdminDemoMode = Boolean(user.isAdmin && adminDemoRequested);
 
   const [step, setStep] = useState(2);
   const [error, setError] = useState<string | null>(null);
@@ -135,17 +142,43 @@ export default function ShopSetupWizardPage() {
     if (shop.kyc) {
       setFirstName(shop.kyc.firstName || '');
       setLastName(shop.kyc.lastName || '');
-      setEditKyc(false);
+      if (!isAdminDemoMode) setEditKyc(false);
     }
     setHydratedShop(true);
-  }, [shop, hydratedShop]);
+  }, [shop, hydratedShop, isAdminDemoMode]);
 
   useEffect(() => {
-    const requested = Number(new URLSearchParams(window.location.search).get('step'));
-    if (requested >= 1 && requested <= 4 && shop?.setupComplete) {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('adminDemo') === '1') {
+      setAdminDemoRequested(true);
+    }
+    const requested = Number(params.get('step'));
+    if (requested >= 1 && requested <= 4 && (shop?.setupComplete || (user.isAdmin && params.get('adminDemo') === '1'))) {
       setStep(Math.max(2, requested));
     }
-  }, [shop?.setupComplete]);
+  }, [shop?.setupComplete, user.isAdmin]);
+
+  useEffect(() => {
+    if (!isAdminDemoMode || sellerLoading || hydratedAdminDemo) return;
+    if (!shop?.setupComplete) {
+      setShopName(ADMIN_DEMO_SHOP_FALLBACK.shopName);
+      setDescription(ADMIN_DEMO_SHOP_FALLBACK.description);
+      setProvince(ADMIN_DEMO_SHOP_FALLBACK.province);
+      setNewPointProvince(ADMIN_DEMO_SHOP_FALLBACK.province);
+      setPoints(ADMIN_DEMO_SHOP_FALLBACK.meetupPoints);
+      setDays(ADMIN_DEMO_SHOP_FALLBACK.availableDays);
+      setSlots(ADMIN_DEMO_SHOP_FALLBACK.availableSlots);
+      setSupportsParcel(ADMIN_DEMO_SHOP_FALLBACK.supportsParcel);
+      setShipMode(ADMIN_DEMO_SHOP_FALLBACK.shipMode);
+      setShipWithinDays(ADMIN_DEMO_SHOP_FALLBACK.shipWithinDays);
+    }
+    setEditKyc(true);
+    setNationalId(ADMIN_DEMO_THAI_ID);
+    setFirstName(shop?.kyc?.firstName || ADMIN_DEMO_SHOP_FALLBACK.firstName);
+    setLastName(shop?.kyc?.lastName || ADMIN_DEMO_SHOP_FALLBACK.lastName);
+    setKycConsent(true);
+    setHydratedAdminDemo(true);
+  }, [isAdminDemoMode, sellerLoading, hydratedAdminDemo, shop]);
 
   const toggle = (list: string[], value: string) =>
     list.includes(value) ? list.filter((v) => v !== value) : [...list, value];
@@ -208,6 +241,13 @@ export default function ShopSetupWizardPage() {
     setIsSaving(true);
     setError(null);
     try {
+      if (isAdminDemoMode) {
+        setNationalId('');
+        if (shop?.setupComplete) setMode('SELLER');
+        setToastMessage('โหมดนำเสนอ (Dry-run): ตั้งร้านและ KYC สำเร็จ · ไม่ได้ทับข้อมูลจริง');
+        setTimeout(() => router.push('/seller'), 600);
+        return;
+      }
       await saveShop({
         shopName: shopName.trim(),
         description: description.trim(),
@@ -247,9 +287,24 @@ export default function ShopSetupWizardPage() {
   return (
     <div className="flex flex-col min-h-screen bg-slate-50 select-none pb-32">
       <TopBar
-        title={shop?.setupComplete ? 'แก้ไขข้อมูลร้าน' : 'เปิดร้าน'}
+        title={
+          isAdminDemoMode
+            ? 'เปิดร้าน (Admin Demo)'
+            : shop?.setupComplete
+              ? 'แก้ไขข้อมูลร้าน'
+              : 'เปิดร้าน'
+        }
         onBack={goBack}
       />
+
+      {isAdminDemoMode && (
+        <div className="px-4 pt-3">
+          <AdminDemoBanner
+            title="Admin Setup Demo · Dry-run"
+            description="เติมข้อมูลร้านและฟอร์ม KYC ตัวอย่างให้ครบแล้ว แก้ไขและกดถัดไปได้โดยไม่เขียนทับข้อมูลร้านจริง"
+          />
+        </div>
+      )}
 
       {/* Step indicator */}
       <ol className="flex items-start px-4 pt-4 pb-2">
@@ -368,7 +423,7 @@ export default function ShopSetupWizardPage() {
                           try {
                             const previousAvatar = shopAvatar;
                             const uploaded = await uploadImageFile(file, 'avatars');
-                            if (previousAvatar && previousAvatar !== uploaded.url) {
+                            if (!isAdminDemoMode && previousAvatar && previousAvatar !== uploaded.url) {
                               void safeDeleteUploadedImage(previousAvatar);
                             }
                             setShopAvatar(uploaded.url);
@@ -390,7 +445,7 @@ export default function ShopSetupWizardPage() {
                       key={url}
                       type="button"
                       onClick={() => {
-                        if (shopAvatar && shopAvatar !== url) {
+                        if (!isAdminDemoMode && shopAvatar && shopAvatar !== url) {
                           void safeDeleteUploadedImage(shopAvatar);
                         }
                         setShopAvatar(url);
@@ -776,6 +831,8 @@ export default function ShopSetupWizardPage() {
           <Button fullWidth size="lg" isLoading={isSaving} onClick={goNext}>
             {step < 4
               ? 'ถัดไป'
+              : isAdminDemoMode
+              ? 'ยืนยันตัวตนและเปิดร้าน'
               : shop?.setupComplete
               ? 'บันทึกการแก้ไข'
               : 'ยืนยันตัวตนและเปิดร้าน'}

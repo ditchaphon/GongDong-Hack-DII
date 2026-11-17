@@ -6,6 +6,7 @@ import {
   markNotificationRead,
 } from '../notificationService';
 import {
+  buildOrderFlexMessage,
   handleLineWebhookEvents,
   notifyOrderEvent,
 } from '../lineNotifyService';
@@ -213,5 +214,49 @@ describe('notificationService & lineNotifyService', () => {
     expect(result).toEqual({ pushed: false, reason: 'LINE_PUSH_DISABLED' });
     expect(findUser).not.toHaveBeenCalled();
     expect(mockPushClient.pushMessage).not.toHaveBeenCalled();
+  });
+
+  it('buildOrderFlexMessage ปรับสี header, ป้ายบทบาท และข้อความปุ่ม CTA ตาม badgeText ของสถานะ', () => {
+    const newOrderFlex = buildOrderFlexMessage({
+      title: 'มีคำขอสั่งซื้อหนังสือใหม่',
+      message: 'จำนวน 1 เล่ม (฿180)',
+      orderId: 'abcdef12-3456-7890-abcd-ef1234567890',
+      badgeText: 'NEW ORDER REQUEST',
+      role: 'SELLER',
+      linkUrl: 'https://liff.line.me/demo/orders/abcdef12',
+    });
+
+    const newBubble = newOrderFlex.contents as any;
+    expect(newBubble.header.backgroundColor).toBe('#8B5E3C');
+    expect(JSON.stringify(newBubble.header)).toContain('สำหรับผู้ขาย');
+    expect(newBubble.footer.contents[0].color).toBe('#8B5E3C');
+    expect(newBubble.footer.contents[0].action.label).toBe('ดูคำขอและตอบรับ');
+
+    const shippedFlex = buildOrderFlexMessage({
+      title: 'พัสดุถูกจัดส่งแล้ว!',
+      message: 'Flash Express เลขพัสดุ TH123456',
+      orderId: '12345678-0000-0000-0000-000000000000',
+      badgeText: 'SHIPPED',
+      role: 'BUYER',
+      linkUrl: 'https://liff.line.me/demo/orders/12345678',
+    });
+
+    const shippedBubble = shippedFlex.contents as any;
+    expect(shippedBubble.header.backgroundColor).toBe('#0369A1');
+    expect(JSON.stringify(shippedBubble.header)).toContain('สำหรับผู้ซื้อ');
+    expect(shippedBubble.footer.contents[0].action.label).toBe('ดูเลขพัสดุและติดตาม');
+
+    const disputeFlex = buildOrderFlexMessage({
+      title: 'คำสั่งซื้อถูกเปิดข้อพิพาท',
+      message: 'เหตุผล: สภาพไม่ตรงปก',
+      orderId: 'deadbeef-0000-0000-0000-000000000000',
+      badgeText: 'DISPUTED',
+      role: 'SELLER',
+      linkUrl: 'https://liff.line.me/demo/orders/deadbeef',
+    });
+
+    const disputeBubble = disputeFlex.contents as any;
+    expect(disputeBubble.header.backgroundColor).toBe('#B91C1C');
+    expect(disputeBubble.footer.contents[0].color).toBe('#DC2626');
   });
 });

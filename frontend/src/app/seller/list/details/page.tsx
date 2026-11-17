@@ -4,6 +4,8 @@ import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { TopBar } from '@/components/layout/TopBar';
 import { Button, Input, Stepper } from '@/components/ui';
+import { AdminDemoBanner } from '@/components/v4';
+import { useLiff } from '@/hooks/useLiff';
 import { useListing } from '@/hooks/useListing';
 import { BOOK_CATEGORIES } from '@/lib/catalog';
 import { countSetActualVolumes } from '@/lib/delivery';
@@ -13,7 +15,9 @@ import { BookOpen, ChevronRight, Info, Lock } from 'lucide-react';
 /** Step 2: book details + categories. ISBN metadata is locked once filled. */
 export default function SellerListDetailsPage() {
   const router = useRouter();
+  const { user } = useLiff();
   const { draft, update } = useListing();
+  const isAdminDemoMode = Boolean(user.isAdmin && draft.isDemoDryRun);
   const isSet = draft.mode === 'SET';
   const actualVolumes = countSetActualVolumes({
     isSet,
@@ -55,6 +59,15 @@ export default function SellerListDetailsPage() {
     <div className="flex flex-col min-h-screen bg-slate-50 select-none pb-32">
       <TopBar title="รายละเอียดหนังสือ" onBack={() => router.push('/seller/list')} />
       <Stepper currentStep={2} />
+
+      {isAdminDemoMode && (
+        <div className="px-4 pt-3">
+          <AdminDemoBanner
+            title="Admin Relist Demo · Dry-run"
+            description="ข้อมูลรายละเอียดหนังสือถูกเติมให้แล้ว แก้ไขเพื่อนำเสนอได้โดยไม่กระทบประกาศจริง"
+          />
+        </div>
+      )}
 
       <div className="p-4 space-y-4">
         <section className="bg-white rounded-2xl border border-slate-200 p-4 space-y-3">

@@ -6,10 +6,12 @@ import React, {
   useState,
   useEffect,
   useCallback,
+  useRef,
   ReactNode,
 } from 'react';
+import { useRouter } from 'next/navigation';
 import { UserProfile } from '@/types';
-import { api, setApiAuthToken } from '@/lib/api';
+import { ApiError, api, setApiAuthToken } from '@/lib/api';
 
 interface BackendUserProfile {
   id: string;
@@ -72,7 +74,41 @@ const MOCK_USER: UserProfile = {
 
 const LiffContext = createContext<LiffContextValue | null>(null);
 
+const LIFF_LOGIN_TRIED_KEY = 'gongdong.liffLoginTried';
+const LIFF_REFRESH_TRIED_KEY = 'gongdong.liffTokenRefreshTried';
+
+function isJwtExpired(token: string): boolean {
+  if (!token || token.startsWith('mock_')) return false;
+  const parts = token.split('.');
+  if (parts.length < 2) return false;
+  try {
+    const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4);
+    const payload = JSON.parse(atob(padded)) as { exp?: unknown };
+    if (typeof payload.exp !== 'number') return false;
+    return payload.exp * 1000 <= Date.now() + 15_000;
+  } catch {
+    return false;
+  }
+}
+
+function triggerSingleLiffRelogin(liff: { login: (cfg?: { redirectUri?: string }) => void }): boolean {
+  try {
+    if (sessionStorage.getItem(LIFF_REFRESH_TRIED_KEY) === '1') {
+      return false;
+    }
+    sessionStorage.setItem(LIFF_REFRESH_TRIED_KEY, '1');
+  } catch {
+    return false;
+  }
+  liff.login({ redirectUri: window.location.href });
+  return true;
+}
+
 export const LiffProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+  const router = useRouter();
+  const routerRef = useRef(router);
+  routerRef.current = router;
   const isMockEnv =
     process.env.NODE_ENV !== 'production' &&
     (process.env.NEXT_PUBLIC_LIFF_MOCK === 'true' ||
@@ -187,8 +223,8 @@ export const LiffProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           const params = new URLSearchParams(window.location.search);
           let tried = false;
           try {
-            tried = sessionStorage.getItem('gongdong.liffLoginTried') === '1';
-            if (!tried && !params.get('error')) sessionStorage.setItem('gongdong.liffLoginTried', '1');
+            tried = sessionStorage.getItem(LIFF_LOGIN_TRIED_KEY) === '1';
+            if (!tried && !params.get('error')) sessionStorage.setItem(LIFF_LOGIN_TRIED_KEY, '1');
           } catch {
             /* storage blocked */
           }
@@ -198,7 +234,7 @@ export const LiffProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           }
         } else {
           try {
-            sessionStorage.removeItem('gongdong.liffLoginTried');
+            sessionStorage.removeItem(LIFF_LOGIN_TRIED_KEY);
           } catch {
             /* ignore */
           }
@@ -207,6 +243,11 @@ export const LiffProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         if (loggedIn) {
           const profile = await liff.getProfile();
           const rawToken = liff.getIDToken();
+
+          if (!rawToken || isJwtExpired(rawToken)) {
+            if (triggerSingleLiffRelogin(liff)) return;
+          }
+
           setApiAuthToken(rawToken);
           setIdToken(rawToken);
 
@@ -224,7 +265,15 @@ export const LiffProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                 displayName: profile.displayName,
                 pictureUrl: profile.pictureUrl,
               });
+              try {
+                sessionStorage.removeItem(LIFF_REFRESH_TRIED_KEY);
+              } catch {
+                /* ignore */
+              }
             } catch (syncErr: any) {
+              if (syncErr instanceof ApiError && syncErr.status === 401) {
+                if (triggerSingleLiffRelogin(liff)) return;
+              }
               console.error('[useLiff] Failed to sync user with backend:', syncErr);
               if (mounted) {
                 setUser(EMPTY_USER);
@@ -245,12 +294,12 @@ export const LiffProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           setIsReady(true);
         }
 
-        // Handle liff.state deep-link redirect if LINE redirected to root with ?liff.state=/orders/...
+        // Handle liff.state deep-link redirect client-side so LIFF state stays warm
         if (typeof window !== 'undefined' && window.location.pathname === '/') {
           const searchParams = new URLSearchParams(window.location.search);
           const liffState = searchParams.get('liff.state');
           if (liffState && liffState.startsWith('/') && !liffState.startsWith('//')) {
-            window.location.replace(liffState);
+            routerRef.current.replace(liffState);
           }
         }
       } catch (err: any) {

@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import Link from 'next/link';
 import clsx from 'clsx';
 import { useRouter } from 'next/navigation';
@@ -8,8 +8,10 @@ import { TopBar } from '@/components/layout/TopBar';
 import { BottomTab } from '@/components/layout/BottomTab';
 import { useAppMode, AppMode } from '@/hooks/useAppMode';
 import { useLiff } from '@/hooks/useLiff';
+import { useListing } from '@/hooks/useListing';
 import { useProfile } from '@/hooks/useProfile';
 import { useSeller } from '@/hooks/useSeller';
+import { loadAdminRelistDraft } from '@/lib/adminDemo';
 import {
   ShoppingBag,
   Store,
@@ -22,6 +24,9 @@ import {
   ShieldCheck,
   ShieldAlert,
   Flag,
+  FlaskConical,
+  RotateCcw,
+  Loader2,
 } from 'lucide-react';
 
 const rowClass =
@@ -31,8 +36,16 @@ export default function ProfilePage() {
   const router = useRouter();
   const { mode, setMode } = useAppMode();
   const { user } = useLiff();
+  const { loadDemoDraft } = useListing();
   const { nickname, avatar } = useProfile();
-  const { shop, isShopSetup, credits } = useSeller();
+  const {
+    shop,
+    isShopSetup,
+    loading: sellerLoading,
+    credits,
+    listings,
+  } = useSeller();
+  const [loadingRelistDemo, setLoadingRelistDemo] = useState(false);
 
   const isSeller = mode === 'SELLER';
   const displayName = isSeller && shop?.shopName ? shop.shopName : nickname || user.displayName;
@@ -43,10 +56,17 @@ export default function ProfilePage() {
 
   const switchTo = (next: AppMode) => {
     if (next === mode) return;
-    if (next === 'SELLER' && !isShopSetup) {
-      // Mode flips once the shop wizard (incl. KYC) is finished.
-      router.push('/seller/setup');
-      return;
+    if (next === 'SELLER') {
+      if (sellerLoading && !shop) {
+        setMode('SELLER');
+        router.push('/seller');
+        return;
+      }
+      if (!isShopSetup) {
+        // Mode flips once the shop wizard (incl. KYC) is finished.
+        router.push('/seller/setup');
+        return;
+      }
     }
     setMode(next);
     router.push(next === 'SELLER' ? '/seller' : '/');
@@ -56,7 +76,12 @@ export default function ProfilePage() {
     { id: 'BUYER' as const, label: 'โหมดผู้ซื้อ', icon: ShoppingBag },
     {
       id: 'SELLER' as const,
-      label: isShopSetup ? 'โหมดผู้ขาย' : 'โหมดผู้ขาย · เปิดร้าน',
+      label:
+        sellerLoading && !shop
+          ? 'โหมดผู้ขาย · กำลังโหลด...'
+          : isShopSetup
+          ? 'โหมดผู้ขาย'
+          : 'โหมดผู้ขาย · เปิดร้าน',
       icon: Store,
     },
   ];
@@ -170,7 +195,7 @@ export default function ProfilePage() {
 
         {/* Admin Panel (visible only when Backend returns is_admin: true) */}
         {user.isAdmin && (
-          <div className="bg-white rounded-2xl border border-amber-200 overflow-hidden">
+          <div className="bg-white rounded-2xl border border-amber-200 divide-y divide-amber-100 overflow-hidden">
             <Link
               href="/admin"
               className="flex items-center gap-3 w-full px-4 py-3.5 text-sm font-bold text-amber-900 bg-amber-50/70 hover:bg-amber-50 transition"
@@ -179,6 +204,50 @@ export default function ProfilePage() {
               <span className="flex-1">จัดการข้อพิพาท (Admin)</span>
               <ChevronRight className="w-4 h-4 text-amber-500" />
             </Link>
+            <Link
+              href="/seller/setup?adminDemo=1"
+              className="flex items-center gap-3 w-full px-4 py-3 text-sm font-semibold text-amber-900 hover:bg-amber-50/50 transition"
+            >
+              <FlaskConical className="w-4 h-4 text-amber-700" />
+              <div className="flex-1 text-left">
+                <div>Admin Setup Demo</div>
+                <div className="text-[11px] font-normal text-amber-700/80">
+                  เปิดหน้าตั้งร้าน & KYC แบบ Prefilled (Dry-run)
+                </div>
+              </div>
+              <ChevronRight className="w-4 h-4 text-amber-500" />
+            </Link>
+            <button
+              type="button"
+              disabled={loadingRelistDemo}
+              onClick={async () => {
+                setLoadingRelistDemo(true);
+                try {
+                  const target =
+                    listings.find((l) => l.status === 'ACTIVE') ?? listings[0] ?? null;
+                  const demoDraft = await loadAdminRelistDraft(target?.id, target);
+                  loadDemoDraft(demoDraft);
+                  if (isShopSetup) setMode('SELLER');
+                  router.push('/seller/list');
+                } finally {
+                  setLoadingRelistDemo(false);
+                }
+              }}
+              className="flex items-center gap-3 w-full px-4 py-3 text-sm font-semibold text-amber-900 hover:bg-amber-50/50 transition disabled:opacity-60 text-left"
+            >
+              {loadingRelistDemo ? (
+                <Loader2 className="w-4 h-4 text-amber-700 animate-spin" />
+              ) : (
+                <RotateCcw className="w-4 h-4 text-amber-700" />
+              )}
+              <div className="flex-1">
+                <div>Admin Relist Demo</div>
+                <div className="text-[11px] font-normal text-amber-700/80">
+                  เปิดหน้าลงขายแบบ Prefilled จากประกาศล่าสุด (Dry-run)
+                </div>
+              </div>
+              <ChevronRight className="w-4 h-4 text-amber-500" />
+            </button>
           </div>
         )}
 

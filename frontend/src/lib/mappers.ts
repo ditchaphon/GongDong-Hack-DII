@@ -519,6 +519,7 @@ export function mapPublicShopToShopProfile(
   return {
     id: shop.seller_id || shop.id,
     shopName: shop.shop_name,
+    description: shop.description?.trim() || undefined,
     avatar: shop.avatar_url || undefined,
     rating: reviewsRes?.summary?.total_reviews
       ? reviewsRes.summary.average_rating

@@ -4,7 +4,8 @@ import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { TopBar } from '@/components/layout/TopBar';
 import { Button, Stepper } from '@/components/ui';
-import { CameraCapture } from '@/components/v4';
+import { AdminDemoBanner, CameraCapture } from '@/components/v4';
+import { useLiff } from '@/hooks/useLiff';
 import { useListing } from '@/hooks/useListing';
 import { safeDeleteUploadedImage } from '@/lib/api';
 import { Camera, Check, RefreshCcw, ChevronRight, ShieldCheck } from 'lucide-react';
@@ -21,7 +22,9 @@ const DEMO: Record<SlotKey, string> = {
 
 export default function SellerListStep2Page() {
   const router = useRouter();
+  const { user } = useLiff();
   const { draft, setPhoto } = useListing();
+  const isAdminDemoMode = Boolean(user.isAdmin && draft.isDemoDryRun);
   const isSet = draft.mode === 'SET';
 
   const slots: { key: SlotKey; label: string; hint: string }[] = isSet
@@ -56,6 +59,15 @@ export default function SellerListStep2Page() {
     <div className="flex flex-col min-h-screen bg-slate-50 select-none pb-32">
       <TopBar title="ถ่ายรูปหนังสือ" onBack={() => router.push('/seller/list/details')} />
       <Stepper currentStep={3} />
+
+      {isAdminDemoMode && (
+        <div className="px-4 pt-3">
+          <AdminDemoBanner
+            title="Admin Relist Demo · Dry-run"
+            description="รูปถ่าย 4 มุมถูกเติมไว้แล้ว กดเปลี่ยนรูปเพื่อสาธิตได้โดยไม่ลบรูปของประกาศจริง"
+          />
+        </div>
+      )}
 
       <div className="p-4 space-y-4">
         <section className="bg-white rounded-2xl border border-slate-200 p-4 space-y-3">
@@ -144,7 +156,7 @@ export default function SellerListStep2Page() {
         onCapture={(url) => {
           if (!camera) return;
           const prevUrl = photoOf(camera.key);
-          if (prevUrl && prevUrl !== url) {
+          if (!isAdminDemoMode && prevUrl && prevUrl !== url) {
             void safeDeleteUploadedImage(prevUrl);
           }
           setPhoto(camera.key, url);

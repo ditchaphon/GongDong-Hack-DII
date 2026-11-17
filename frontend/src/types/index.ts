@@ -116,6 +116,7 @@ export interface BookedPickupSlot {
 export interface ShopProfile {
   id: string;
   shopName: string;
+  description?: string;
   avatar?: string;
   rating: number;
   completedSales: number;
@@ -211,6 +212,9 @@ export interface ListingDraft {
   deliveryMethods: DeliveryMethod[];
   parcelShippingFee: number;
   codEnabled: boolean;
+  /** Admin Dry-run Demo mode (prefilled from an existing listing or fallback). */
+  isDemoDryRun?: boolean;
+  demoSourceBookId?: string;
 }
 
 export interface SellerReport {

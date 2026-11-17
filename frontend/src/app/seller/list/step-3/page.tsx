@@ -5,7 +5,8 @@ import { useRouter } from 'next/navigation';
 import clsx from 'clsx';
 import { TopBar } from '@/components/layout/TopBar';
 import { Button, BottomSheet, GradeBadge, Stepper } from '@/components/ui';
-import { CameraCapture, PhotoGallery } from '@/components/v4';
+import { AdminDemoBanner, CameraCapture, PhotoGallery } from '@/components/v4';
+import { useLiff } from '@/hooks/useLiff';
 import { useListing } from '@/hooks/useListing';
 import { safeDeleteUploadedImage } from '@/lib/api';
 import { GRADE_CRITERIA } from '@/lib/catalog';
@@ -100,7 +101,9 @@ function buildDefectNote(item: ConditionItemSpec, customNote: string): string {
 /** Step 3: Check 5 book condition criteria and require a photo for any defective item. */
 export default function SellerListStep3Page() {
   const router = useRouter();
+  const { user } = useLiff();
   const { draft, grade, update, setChecklist } = useListing();
+  const isAdminDemoMode = Boolean(user.isAdmin && draft.isDemoDryRun);
   const isSet = draft.mode === 'SET';
   const [isGradeSheetOpen, setIsGradeSheetOpen] = useState(false);
   const [activeCameraItem, setActiveCameraItem] = useState<ConditionItemSpec | null>(null);
@@ -142,7 +145,7 @@ export default function SellerListStep3Page() {
     if (isIntact) {
       // Remove defect record for this criterion when switched back to สมบูรณ์
       const existing = getDefectForItem(item.key);
-      if (existing?.photo) {
+      if (!isAdminDemoMode && existing?.photo) {
         void safeDeleteUploadedImage(existing.photo);
       }
       const remaining = draft.defects.filter((d) => d.id !== item.key);
@@ -166,7 +169,7 @@ export default function SellerListStep3Page() {
 
   const handleDefectPhotoCaptured = (item: ConditionItemSpec, photoUrl: string) => {
     const existing = getDefectForItem(item.key);
-    if (existing?.photo && existing.photo !== photoUrl) {
+    if (!isAdminDemoMode && existing?.photo && existing.photo !== photoUrl) {
       void safeDeleteUploadedImage(existing.photo);
     }
     const customNote = extractCustomNote(existing, item);
@@ -216,6 +219,15 @@ export default function SellerListStep3Page() {
     <div className="flex flex-col min-h-screen bg-slate-50 select-none pb-32">
       <TopBar title="เช็กจุดตำหนิ 5 ข้อ" onBack={() => router.push('/seller/list/step-2')} />
       <Stepper currentStep={4} />
+
+      {isAdminDemoMode && (
+        <div className="px-4 pt-3">
+          <AdminDemoBanner
+            title="Admin Relist Demo · Dry-run"
+            description="ผลเช็กสภาพ 5 จุดและรูปตำหนิถูกเติมให้แล้ว กดปรับให้เกรดเปลี่ยนโชว์ได้โดยไม่กระทบประกาศจริง"
+          />
+        </div>
+      )}
 
       <div className="p-4 space-y-4">
         {/* 4 Angle Photos Preview Strip */}

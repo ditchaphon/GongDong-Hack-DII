@@ -14,7 +14,8 @@ import {
 import { useListing } from '@/hooks/useListing';
 import { useSeller } from '@/hooks/useSeller';
 import { useAppMode } from '@/hooks/useAppMode';
-import { IsbnScanner } from '@/components/v4';
+import { useLiff } from '@/hooks/useLiff';
+import { AdminDemoBanner, IsbnScanner } from '@/components/v4';
 import { api } from '@/lib/api';
 import { mapApiCategoryToThaiCategories } from '@/lib/catalog';
 import { countSetActualVolumes } from '@/lib/delivery';
@@ -51,9 +52,17 @@ interface PreviousListingOption {
 
 export default function SellerListStep1Page() {
   const router = useRouter();
-  const { isShopSetup } = useSeller();
+  const {
+    shop,
+    isShopSetup,
+    loading: sellerLoading,
+    loadError: sellerLoadError,
+    refreshSellerData,
+  } = useSeller();
+  const { user, isReady } = useLiff();
   const { mode, setMode } = useAppMode();
   const { draft, update, toggleMissingVolume, resetDraft } = useListing();
+  const isAdminDemoMode = Boolean(user.isAdmin && draft.isDemoDryRun);
 
   useEffect(() => {
     if (isShopSetup && mode !== 'SELLER') setMode('SELLER');
@@ -259,7 +268,7 @@ export default function SellerListStep1Page() {
   };
 
   const handleNext = () => {
-    if (!isShopSetup) {
+    if (!isShopSetup && !isAdminDemoMode) {
       setError('ตั้งชื่อร้านก่อนลงขายหนังสือ');
       return;
     }
@@ -286,7 +295,47 @@ export default function SellerListStep1Page() {
     router.push('/seller/list/details');
   };
 
-  if (!isShopSetup) {
+  if (!isAdminDemoMode && (!isReady || (sellerLoading && !shop))) {
+    return (
+      <div className="flex flex-col min-h-screen bg-slate-50 select-none pb-24">
+        <TopBar title="ลงขายหนังสือ" onBack={() => router.push('/seller')} />
+        <Stepper currentStep={1} />
+        <div className="p-4 space-y-4">
+          <div className="bg-white rounded-2xl border border-slate-200 p-4 space-y-3 animate-pulse">
+            <div className="h-4 w-40 bg-slate-200 rounded" />
+            <div className="grid grid-cols-2 gap-2">
+              <div className="h-20 rounded-2xl bg-slate-100" />
+              <div className="h-20 rounded-2xl bg-slate-100" />
+            </div>
+            <div className="h-32 rounded-2xl bg-slate-100" />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAdminDemoMode && sellerLoadError && !shop) {
+    return (
+      <div className="flex flex-col min-h-screen bg-slate-50 select-none">
+        <TopBar title="ลงขายหนังสือ" onBack={() => router.push('/seller')} />
+        <div className="p-4 flex-1">
+          <div className="bg-white rounded-2xl border border-slate-200 mt-6">
+            <EmptyState
+              icon={<ShieldAlert className="w-8 h-8 text-amber-500" />}
+              title="โหลดข้อมูลร้านไม่สำเร็จ"
+              description={sellerLoadError}
+              actionText="ลองใหม่"
+              onAction={() => {
+                void refreshSellerData();
+              }}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isShopSetup && !isAdminDemoMode) {
     return (
       <div className="flex flex-col min-h-screen bg-slate-50 select-none">
         <TopBar title="ลงขายหนังสือ" />
@@ -311,6 +360,15 @@ export default function SellerListStep1Page() {
 
       <Stepper currentStep={1} />
 
+      {isAdminDemoMode && (
+        <div className="px-4 pt-3">
+          <AdminDemoBanner
+            title="Admin Relist Demo · Dry-run"
+            description="ดึงข้อมูลหนังสือปัจจุบันมาใส่ครบทุกขั้นแล้ว สามารถแก้ไข ทดลองกดถัดไปจนจบได้โดยไม่สร้างรายการซ้ำลงระบบ"
+          />
+        </div>
+      )}
+
       <div className="px-4 pt-3">
         <div className="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-slate-100 border border-slate-200 text-[11px] text-slate-600">
           <span className="inline-flex items-center gap-1.5">
@@ -326,7 +384,13 @@ export default function SellerListStep1Page() {
         <div className="grid grid-cols-2 gap-2">
           <button
             type="button"
-            onClick={() => resetDraft('SINGLE')}
+            onClick={() => {
+              if (isAdminDemoMode) {
+                update({ mode: 'SINGLE', totalVolumes: 1, missingVolumes: [] });
+              } else {
+                resetDraft('SINGLE');
+              }
+            }}
             className={`p-3 rounded-2xl border text-left transition ${
               !isSet
                 ? 'border-[#8B5E3C] bg-emerald-50/60 ring-2 ring-[#8B5E3C]/20'
@@ -343,7 +407,13 @@ export default function SellerListStep1Page() {
           <button
             type="button"
             onClick={() => {
-              if (!isSet) resetDraft('SET');
+              if (!isSet) {
+                if (isAdminDemoMode) {
+                  update({ mode: 'SET', totalVolumes: Math.max(2, draft.totalVolumes) });
+                } else {
+                  resetDraft('SET');
+                }
+              }
             }}
             className={`p-3 rounded-2xl border text-left transition ${
               isSet

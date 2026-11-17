@@ -14,7 +14,10 @@ import {
 } from '@/components/ui';
 import { useSeller } from '@/hooks/useSeller';
 import { useAppMode } from '@/hooks/useAppMode';
+import { useLiff } from '@/hooks/useLiff';
+import { useListing } from '@/hooks/useListing';
 import { useV4Orders } from '@/hooks/useV4Orders';
+import { loadAdminRelistDraft } from '@/lib/adminDemo';
 import { StatusBadgeV4, LineOaBanner } from '@/components/v4';
 import {
   Plus,
@@ -31,6 +34,8 @@ import {
   Pencil,
   EyeOff,
   Settings,
+  RotateCcw,
+  Loader2,
 } from 'lucide-react';
 
 type Tab = 'LISTINGS' | 'WAITING' | 'CLOSED';
@@ -40,12 +45,17 @@ export default function SellerShopPage() {
   const {
     shop,
     isShopSetup,
+    loading: sellerLoading,
+    loadError: sellerLoadError,
+    refreshSellerData,
     credits,
     listings,
     setListingStatus,
   } = useSeller();
 
   const { mode, setMode } = useAppMode();
+  const { user, isReady } = useLiff();
+  const { loadDemoDraft } = useListing();
   const { orders: allOrders, isMineAsBuyer } = useV4Orders();
   const sales = allOrders.filter((order) => !isMineAsBuyer(order));
 
@@ -56,6 +66,7 @@ export default function SellerShopPage() {
 
   const [tab, setTab] = useState<Tab>('LISTINGS');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [loadingRelistId, setLoadingRelistId] = useState<string | null>(null);
 
   const pendingRequestBookIds = new Set(
     sales
@@ -79,6 +90,55 @@ export default function SellerShopPage() {
     ['REQUESTED', 'ACCEPTED', 'PAID', 'SHIPPED', 'SCHEDULED'].includes(o.status)
   );
   const newOrderCount = sales.filter((o) => o.status === 'REQUESTED').length;
+
+  if (!isReady || (sellerLoading && !shop)) {
+    return (
+      <div className="flex flex-col min-h-screen bg-slate-50 select-none pb-24">
+        <TopBar title="ร้านของฉัน" showBack={false} />
+        <div className="p-4 space-y-4">
+          <div className="bg-white rounded-2xl border border-slate-200 p-4 space-y-3 animate-pulse">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-full bg-slate-200 shrink-0" />
+              <div className="flex-1 space-y-2">
+                <div className="h-4 w-36 bg-slate-200 rounded" />
+                <div className="h-3 w-24 bg-slate-100 rounded" />
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              <div className="h-14 rounded-xl bg-slate-100" />
+              <div className="h-14 rounded-xl bg-slate-100" />
+              <div className="h-14 rounded-xl bg-slate-100" />
+            </div>
+            <div className="h-9 rounded-xl bg-slate-100" />
+          </div>
+          <div className="h-28 rounded-2xl bg-slate-200/70 animate-pulse" />
+        </div>
+        <BottomTab />
+      </div>
+    );
+  }
+
+  if (sellerLoadError && !shop) {
+    return (
+      <div className="flex flex-col min-h-screen bg-slate-50 select-none pb-24">
+        <TopBar title="ร้านของฉัน" showBack={false} />
+        <div className="p-4">
+          <div className="bg-white rounded-2xl border border-slate-200 mt-4">
+            <EmptyState
+              icon={<ShieldAlert className="w-8 h-8 text-amber-500" />}
+              title="โหลดข้อมูลร้านไม่สำเร็จ"
+              description={sellerLoadError}
+              actionText="ลองใหม่"
+              onAction={() => {
+                void refreshSellerData();
+              }}
+            />
+          </div>
+        </div>
+        <BottomTab />
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col min-h-screen bg-slate-50 select-none pb-24">
@@ -287,7 +347,34 @@ export default function SellerShopPage() {
                         มีคนขอซื้อ · ล็อกการแก้ไข
                       </div>
                     )}
-                    <div className="flex items-center gap-2 pt-1">
+                    <div className="flex flex-wrap items-center gap-2 pt-1">
+                      {user.isAdmin && (
+                        <button
+                          type="button"
+                          disabled={loadingRelistId === listing.id}
+                          onClick={async () => {
+                            setLoadingRelistId(listing.id);
+                            try {
+                              const demoDraft = await loadAdminRelistDraft(
+                                listing.id,
+                                listing
+                              );
+                              loadDemoDraft(demoDraft);
+                              router.push('/seller/list');
+                            } finally {
+                              setLoadingRelistId(null);
+                            }
+                          }}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-amber-300 bg-amber-50 text-[11px] font-semibold text-amber-900 hover:bg-amber-100/80 disabled:opacity-50"
+                        >
+                          {loadingRelistId === listing.id ? (
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                          ) : (
+                            <RotateCcw className="w-3 h-3" />
+                          )}
+                          Admin Relist Demo
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={() => router.push(`/seller/listings/${listing.id}/edit`)}

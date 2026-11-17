@@ -20,3 +20,4 @@ export * from './CartAddedSheet';
 export * from './OrderSteps';
 export * from './CameraCapture';
 export * from './LineOaBanner';
+export * from './AdminDemoBanner';
