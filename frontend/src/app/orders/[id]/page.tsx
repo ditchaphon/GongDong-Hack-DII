@@ -119,6 +119,8 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
   const [acceptOpen, setAcceptOpen] = useState(false);
   const [rejectOpen, setRejectOpen] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
+  const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
+  const [cancelSubmitting, setCancelSubmitting] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
   const [disputeOpen, setDisputeOpen] = useState(false);
   const [handoverCodeInput, setHandoverCodeInput] = useState('');
@@ -602,7 +604,7 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
         }
         confirmLabel="ยืนยันยกเลิก"
         tone="danger"
-        onConfirm={async () => {
+        onConfirm={() => {
           const reasonToSend =
             cancelReason.trim() ||
             (order.status === 'REQUESTED' ? 'ผู้ซื้อยกเลิกคำขอ' : '');
@@ -610,10 +612,9 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
             setToast('กรุณาระบุเหตุผลการยกเลิกก่อน');
             return;
           }
-          const res = await cancelOrder(order.id, reasonToSend);
+          setCancelReason(reasonToSend);
           setCancelOpen(false);
-          setCancelReason('');
-          setToast(res.ok ? 'ยกเลิกออเดอร์เรียบร้อยแล้ว' : res.error || 'ยกเลิกไม่สำเร็จ');
+          setCancelConfirmOpen(true);
         }}
       >
         <div className="space-y-2.5">
@@ -654,6 +655,42 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
             </p>
           )}
         </div>
+      </ConfirmSheet>
+      <ConfirmSheet
+        isOpen={cancelConfirmOpen}
+        onClose={() => {
+          if (cancelSubmitting) return;
+          setCancelConfirmOpen(false);
+          setCancelOpen(true);
+        }}
+        title="ยืนยันอีกครั้งก่อนยกเลิก?"
+        description={
+          order.status === 'REQUESTED'
+            ? 'คำขอนี้จะถูกยกเลิกถาวร · ไม่สามารถกู้คืนได้'
+            : isBuyer
+              ? 'ออเดอร์จะถูกยกเลิกถาวร · หนังสือกลับไปวางขายต่อ และคืน 1 เครดิตให้ผู้ขาย'
+              : 'ออเดอร์จะถูกยกเลิกถาวร · หนังสือกลับไปวางขายต่อ และคุณจะไม่ได้รับเครดิตคืน'
+        }
+        confirmLabel="ยกเลิกออเดอร์ทันที"
+        cancelLabel="ย้อนกลับ"
+        tone="danger"
+        isLoading={cancelSubmitting}
+        onConfirm={async () => {
+          if (cancelSubmitting) return;
+          setCancelSubmitting(true);
+          const res = await cancelOrder(
+            order.id,
+            cancelReason.trim() || 'ยกเลิกคำสั่งซื้อ'
+          );
+          setCancelSubmitting(false);
+          setCancelConfirmOpen(false);
+          setCancelReason('');
+          setToast(res.ok ? 'ยกเลิกออเดอร์เรียบร้อยแล้ว' : res.error || 'ยกเลิกไม่สำเร็จ');
+        }}
+      >
+        <p className="text-[11px] text-slate-600 bg-slate-50 border border-slate-200 rounded-lg p-2.5">
+          เหตุผล: <span className="font-semibold text-slate-800">{cancelReason}</span>
+        </p>
       </ConfirmSheet>
       <ConfirmSheet
         isOpen={disputeOpen}
