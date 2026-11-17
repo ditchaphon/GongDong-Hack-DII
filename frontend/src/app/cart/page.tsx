@@ -6,9 +6,16 @@ import Link from 'next/link';
 import clsx from 'clsx';
 import { TopBar } from '@/components/layout/TopBar';
 import { Button, BottomSheet, EmptyState } from '@/components/ui';
+import { AdminDemoBanner } from '@/components/v4';
 import { CartShopGroup, useCart } from '@/hooks/useCart';
 import { useLiff } from '@/hooks/useLiff';
 import { CreateOrderInput, useV4Orders } from '@/hooks/useV4Orders';
+import {
+  DRY_RUN_DEFAULT_POINT,
+  DRY_RUN_FALLBACK_ADDRESS,
+  DRY_RUN_FALLBACK_BOOK,
+  DRY_RUN_FALLBACK_SHOP,
+} from '@/lib/adminOrderDryRun';
 import { api, ApiError } from '@/lib/api';
 import { toV4Grade } from '@/lib/catalog';
 import {
@@ -102,9 +109,16 @@ function evaluateShopGroup(
   config: ShopCheckoutConfig | undefined,
   missingBookIds: Set<string>,
   pendingOrderIdBySeller: Map<string, string>,
-  currentUserId?: string
+  currentUserId?: string,
+  allowAdminDemo: boolean = false
 ): ShopValidationResult {
-  const points = shop?.meetupPoints ?? [];
+  const shopPoints = shop?.meetupPoints ?? [];
+  const points =
+    shopPoints.length > 0
+      ? shopPoints
+      : allowAdminDemo
+      ? [DRY_RUN_DEFAULT_POINT]
+      : [];
   const availableDays = shop?.availableDays?.length ? shop.availableDays : ['จ', 'อ', 'พ', 'พฤ', 'ศ'];
   const slots = expandShopHourlySlots(shop?.availableSlots ?? []);
   const dates = upcomingDates(availableDays, 6, new Date());
@@ -114,18 +128,23 @@ function evaluateShopGroup(
 
   const unavailableBookIds = new Set<string>();
   const nonCodBookIds = new Set<string>();
-  for (const book of group.items) {
-    if (missingBookIds.has(book.id) || (book.status && book.status !== 'AVAILABLE')) {
-      unavailableBookIds.add(book.id);
-    }
-    if (book.codEnabled === false) {
-      nonCodBookIds.add(book.id);
+  if (!allowAdminDemo) {
+    for (const book of group.items) {
+      if (missingBookIds.has(book.id) || (book.status && book.status !== 'AVAILABLE')) {
+        unavailableBookIds.add(book.id);
+      }
+      if (book.codEnabled === false) {
+        nonCodBookIds.add(book.id);
+      }
     }
   }
 
-  const allMeetupAllowed = group.items.every((b) => b.deliveryMethods.includes('MEETUP'));
-  const allParcelAllowed = group.items.every((b) => b.deliveryMethods.includes('PARCEL'));
-  const shopSupportsParcel = Boolean(shop?.supportsParcel && shop?.payeeVerified);
+  const allMeetupAllowed =
+    allowAdminDemo || group.items.every((b) => b.deliveryMethods.includes('MEETUP'));
+  const allParcelAllowed =
+    allowAdminDemo || group.items.every((b) => b.deliveryMethods.includes('PARCEL'));
+  const shopSupportsParcel =
+    allowAdminDemo || Boolean(shop?.supportsParcel && shop?.payeeVerified);
   const canMeetup = !isShopLoading && group.items.length > 0 && allMeetupAllowed && points.length > 0;
   const canParcel = !isShopLoading && group.items.length > 0 && allParcelAllowed && shopSupportsParcel;
 
@@ -150,8 +169,8 @@ function evaluateShopGroup(
     delivery = 'PARCEL';
   }
 
-  const isOwnShop = Boolean(currentUserId && group.sellerId === currentUserId);
-  const existingPendingOrderId = pendingOrderIdBySeller.get(group.sellerId) ?? null;
+  const isOwnShop = !allowAdminDemo && Boolean(currentUserId && group.sellerId === currentUserId);
+  const existingPendingOrderId = allowAdminDemo ? null : pendingOrderIdBySeller.get(group.sellerId) ?? null;
   const issueMessages: string[] = [];
 
   if (isOwnShop) {
@@ -237,7 +256,10 @@ export default function CartPage() {
     syncCartBooks,
     clearCart,
   } = useCart();
-  const { orders, createBatchOrders, isMineAsBuyer } = useV4Orders();
+  const { orders, createBatchOrders, createDryRunBatchOrders, isMineAsBuyer } = useV4Orders();
+
+  const [adminDemoRequested, setAdminDemoRequested] = useState(false);
+  const isAdminDemoMode = Boolean(user?.isAdmin && adminDemoRequested);
 
   const [buyNowId, setBuyNowId] = useState<string | null>(null);
   const [buyNowBook, setBuyNowBook] = useState<Book | null>(null);
@@ -260,8 +282,9 @@ export default function CartPage() {
   const attemptKeyRef = useRef<string>(makeAttemptKey());
 
   useEffect(() => {
-    const param = new URLSearchParams(window.location.search).get('buyNow');
-    setBuyNowId(param);
+    const params = new URLSearchParams(window.location.search);
+    setBuyNowId(params.get('buyNow'));
+    setAdminDemoRequested(params.get('adminDemo') === '1');
   }, []);
 
   // Load standalone book for ?buyNow=<bookId> without altering saved cart
@@ -345,8 +368,18 @@ export default function CartPage() {
         },
       ];
     }
+    if (shopGroups.length > 0) return shopGroups;
+    if (isAdminDemoMode) {
+      return [
+        {
+          sellerId: DRY_RUN_FALLBACK_BOOK.sellerId,
+          sellerName: DRY_RUN_FALLBACK_BOOK.sellerName,
+          items: [DRY_RUN_FALLBACK_BOOK],
+        },
+      ];
+    }
     return shopGroups;
-  }, [buyNowId, buyNowBook, shopGroups]);
+  }, [buyNowId, buyNowBook, shopGroups, isAdminDemoMode]);
 
   const sellerIdsKey = displayGroups.map((g) => g.sellerId).join(',');
 
@@ -356,30 +389,49 @@ export default function CartPage() {
     const toFetch = sellerIds.filter((id) => !(id in shopsBySeller) && !loadingShops[id]);
     if (toFetch.length === 0) return;
 
+    const fallbackIds = toFetch.filter((id) => id === DRY_RUN_FALLBACK_SHOP.id);
+    const remoteIds = toFetch.filter((id) => id !== DRY_RUN_FALLBACK_SHOP.id);
+
+    if (fallbackIds.length > 0) {
+      setShopsBySeller((prev) => {
+        const next = { ...prev };
+        fallbackIds.forEach((id) => {
+          next[id] = DRY_RUN_FALLBACK_SHOP;
+        });
+        return next;
+      });
+    }
+    if (remoteIds.length === 0) return;
+
     let active = true;
     setLoadingShops((prev) => {
       const next = { ...prev };
-      toFetch.forEach((id) => {
+      remoteIds.forEach((id) => {
         next[id] = true;
       });
       return next;
     });
 
     Promise.allSettled(
-      toFetch.map((id) => api.get<BackendPublicShopResponse>(`/api/shops/${id}`))
+      remoteIds.map((id) => api.get<BackendPublicShopResponse>(`/api/shops/${id}`))
     ).then((results) => {
       if (!active) return;
       setShopsBySeller((prev) => {
         const next = { ...prev };
         results.forEach((res, idx) => {
-          const id = toFetch[idx];
-          next[id] = res.status === 'fulfilled' ? mapPublicShopToShopProfile(res.value) : null;
+          const id = remoteIds[idx];
+          next[id] =
+            res.status === 'fulfilled'
+              ? mapPublicShopToShopProfile(res.value)
+              : isAdminDemoMode
+              ? DRY_RUN_FALLBACK_SHOP
+              : null;
         });
         return next;
       });
       setLoadingShops((prev) => {
         const next = { ...prev };
-        toFetch.forEach((id) => {
+        remoteIds.forEach((id) => {
           next[id] = false;
         });
         return next;
@@ -390,7 +442,7 @@ export default function CartPage() {
       active = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sellerIdsKey]);
+  }, [sellerIdsKey, isAdminDemoMode]);
 
   const myPendingOrders = useMemo(
     () => orders.filter((o) => isMineAsBuyer(o) && o.status === 'REQUESTED'),
@@ -497,11 +549,12 @@ export default function CartPage() {
         configsBySeller[group.sellerId],
         missingBookIds,
         pendingOrderIdBySeller,
-        user?.id
+        user?.id,
+        isAdminDemoMode
       );
     }
     return out;
-  }, [displayGroups, shopsBySeller, loadingShops, configsBySeller, missingBookIds, pendingOrderIdBySeller, user?.id]);
+  }, [displayGroups, shopsBySeller, loadingShops, configsBySeller, missingBookIds, pendingOrderIdBySeller, user?.id, isAdminDemoMode]);
 
   const selectedGroups = useMemo(
     () =>
@@ -511,24 +564,26 @@ export default function CartPage() {
     [displayGroups, buyNowId, configsBySeller]
   );
 
+  const effectiveAddress = selectedAddress ?? (isAdminDemoMode ? DRY_RUN_FALLBACK_ADDRESS : null);
+
   // Reset idempotency key if checked-out book IDs or address change
   const selectionSignature = selectedGroups
     .map((g) => `${g.sellerId}:${g.items.map((i) => `${i.id}@${i.price}`).join(',')}`)
     .join('|');
   useEffect(() => {
     attemptKeyRef.current = makeAttemptKey();
-  }, [selectionSignature, selectedAddress?.id]);
+  }, [selectionSignature, effectiveAddress?.id]);
 
   const anySelectedUsesParcel = selectedGroups.some(
     (g) => validationsBySeller[g.sellerId]?.delivery === 'PARCEL'
   );
-  const missingParcelAddress = anySelectedUsesParcel && !selectedAddress;
+  const missingParcelAddress = anySelectedUsesParcel && !effectiveAddress;
 
   const hasAnySelectedBlockingIssue = selectedGroups.some(
     (g) => validationsBySeller[g.sellerId]?.isBlockingIssue
   );
 
-  const exceedsQuota = myPendingOrders.length + selectedGroups.length > MAX_PENDING_ORDERS;
+  const exceedsQuota = !isAdminDemoMode && myPendingOrders.length + selectedGroups.length > MAX_PENDING_ORDERS;
 
   const totals = useMemo(() => {
     let bookSubtotal = 0;
@@ -540,7 +595,7 @@ export default function CartPage() {
       const groupBookSum = group.items.reduce((s, b) => s + b.price, 0);
       const fee =
         validation?.delivery === 'PARCEL'
-          ? calcParcelFee(countOrderBookUnits(group.items), shop?.province, selectedAddress?.province)
+          ? calcParcelFee(countOrderBookUnits(group.items), shop?.province, effectiveAddress?.province)
           : 0;
       bookSubtotal += groupBookSum;
       shippingSubtotal += fee;
@@ -552,7 +607,7 @@ export default function CartPage() {
       grandTotal: bookSubtotal + shippingSubtotal,
       totalBooks,
     };
-  }, [selectedGroups, validationsBySeller, shopsBySeller, selectedAddress?.province]);
+  }, [selectedGroups, validationsBySeller, shopsBySeller, effectiveAddress?.province]);
 
   const handleSubmit = async () => {
     if (selectedGroups.length === 0 || hasAnySelectedBlockingIssue) return;
@@ -581,7 +636,7 @@ export default function CartPage() {
         const groupBookTotal = group.items.reduce((s, b) => s + b.price, 0);
         const shippingFee =
           delivery === 'PARCEL'
-            ? calcParcelFee(countOrderBookUnits(group.items), shop?.province, selectedAddress?.province)
+            ? calcParcelFee(countOrderBookUnits(group.items), shop?.province, effectiveAddress?.province)
             : 0;
         const point = validation.points.find((p) => p.id === cfg?.pointId) ?? validation.points[0];
 
@@ -618,16 +673,22 @@ export default function CartPage() {
                 }
               : undefined,
           shipping:
-            delivery === 'PARCEL' && selectedAddress
+            delivery === 'PARCEL' && effectiveAddress
               ? {
-                  province: selectedAddress.province,
-                  receiverName: selectedAddress.fullName,
-                  receiverAddress: `${selectedAddress.detail} ${selectedAddress.subdistrict} ${selectedAddress.district} ${selectedAddress.province} ${selectedAddress.postalCode}`,
+                  province: effectiveAddress.province,
+                  receiverName: effectiveAddress.fullName,
+                  receiverAddress: `${effectiveAddress.detail} ${effectiveAddress.subdistrict} ${effectiveAddress.district} ${effectiveAddress.province} ${effectiveAddress.postalCode}`,
                 }
               : undefined,
           shipWithinDays: shop ? shipDeadlineDays(shop.shipMode, shop.shipWithinDays) : 2,
         };
       });
+
+      if (isAdminDemoMode) {
+        const dryRunIds = await createDryRunBatchOrders(payloads);
+        router.push(`/cart/success?demo=1&ids=${encodeURIComponent(dryRunIds.join(','))}`);
+        return;
+      }
 
       const createdIds = await createBatchOrders(payloads, attemptKeyRef.current);
 
@@ -690,7 +751,7 @@ export default function CartPage() {
     );
   }
 
-  if (buyNowId && buyNowBook && user?.id && buyNowBook.sellerId === user.id) {
+  if (buyNowId && buyNowBook && !isAdminDemoMode && user?.id && buyNowBook.sellerId === user.id) {
     return (
       <div className="flex flex-col min-h-screen bg-slate-50 select-none">
         <TopBar title="สั่งซื้อทันที" />
@@ -742,7 +803,7 @@ export default function CartPage() {
         subtitle={
           buyNowId
             ? 'สั่งซื้อเฉพาะเล่มนี้ (ไม่ปนกับตะกร้าเดิม)'
-            : `${displayGroups.length} ร้านค้า · ${items.length} เล่ม`
+            : `${displayGroups.length} ร้านค้า · ${displayGroups.reduce((sum, g) => sum + g.items.length, 0)} เล่ม`
         }
         rightAction={
           !buyNowId && items.length > 0 ? (
@@ -758,6 +819,23 @@ export default function CartPage() {
       />
 
       <div className="p-4 space-y-4">
+        {isAdminDemoMode && (
+          <AdminDemoBanner
+            title="Admin Order Dry-Run · จำลองการสั่งซื้อ"
+            description="เลือกได้ทั้งนัดรับและส่งพัสดุ COD (สั่งหนังสือของร้านตัวเองได้) เมื่อกดส่งคำขอจะไม่บันทึกลง DB จริง"
+          />
+        )}
+        {user?.isAdmin && !isAdminDemoMode && (
+          <div className="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-[11px] text-amber-900">
+            <span>ต้องการทดลองสั่งซื้อโดยไม่สร้างออเดอร์จริง?</span>
+            <Link
+              href={buyNowId ? `/cart?buyNow=${encodeURIComponent(buyNowId)}&adminDemo=1` : '/cart?adminDemo=1'}
+              className="px-2.5 py-1 rounded-lg bg-white border border-amber-300 font-bold text-amber-900 hover:bg-amber-100 shrink-0"
+            >
+              สลับเป็น Dry-Run
+            </Link>
+          </div>
+        )}
         {/* Quota & price notices */}
         {myPendingOrders.length > 0 && (
           <div
@@ -801,7 +879,7 @@ export default function CartPage() {
           const parcelFee = calcParcelFee(
             countOrderBookUnits(group.items),
             shop?.province,
-            selectedAddress?.province
+            effectiveAddress?.province
           );
           const groupBookSum = group.items.reduce((s, b) => s + b.price, 0);
           const groupTotal =
@@ -1209,19 +1287,25 @@ export default function CartPage() {
                 ที่อยู่จัดส่งพัสดุ (ใช้ร่วมกันสำหรับร้านที่เลือกส่งพัสดุ)
               </h3>
             </div>
-            {selectedAddress ? (
+            {effectiveAddress ? (
               <button
                 type="button"
-                onClick={() => setIsAddressSheetOpen(true)}
+                onClick={() => {
+                  if (addresses.length > 0) setIsAddressSheetOpen(true);
+                }}
                 className="w-full p-3 rounded-xl bg-slate-50 hover:bg-slate-100 text-left text-xs space-y-1"
               >
                 <span className="flex items-center justify-between">
-                  <span className="font-bold text-slate-800">ส่งถึง: {selectedAddress.fullName}</span>
-                  <span className="text-[var(--color-primary)] font-semibold">เปลี่ยน</span>
+                  <span className="font-bold text-slate-800">
+                    ส่งถึง: {effectiveAddress.fullName}
+                  </span>
+                  {addresses.length > 0 && (
+                    <span className="text-[var(--color-primary)] font-semibold">เปลี่ยน</span>
+                  )}
                 </span>
                 <span className="block text-slate-500 leading-snug">
-                  {selectedAddress.detail} {selectedAddress.subdistrict} {selectedAddress.district}{' '}
-                  {selectedAddress.province} {selectedAddress.postalCode}
+                  {effectiveAddress.detail} {effectiveAddress.subdistrict} {effectiveAddress.district}{' '}
+                  {effectiveAddress.province} {effectiveAddress.postalCode}
                 </span>
               </button>
             ) : (

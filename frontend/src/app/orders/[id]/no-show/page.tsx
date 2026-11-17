@@ -4,7 +4,7 @@ import React, { useEffect, useState, use } from 'react';
 import { useRouter } from 'next/navigation';
 import { TopBar } from '@/components/layout/TopBar';
 import { Button, Toast } from '@/components/ui';
-import { ConfirmSheet } from '@/components/v4';
+import { ConfirmSheet, AdminOrderDryRunBar } from '@/components/v4';
 import { useV4Orders } from '@/hooks/useV4Orders';
 import { ViewRole } from '@/types/v4';
 import { MapPin, Clock, AlertTriangle, ShieldCheck, MessageCircle, Lock } from 'lucide-react';
@@ -23,9 +23,11 @@ export default function NoShowPage({
     reportMissedMeeting,
     disputeMissedMeeting,
     isMineAsBuyer,
+    isDryRunOrder,
   } = useV4Orders();
 
   const order = getOrder(resolvedParams.id);
+  const isDryRun = isDryRunOrder(resolvedParams.id);
 
   useEffect(() => {
     if (!order) fetchOrder(resolvedParams.id);
@@ -61,7 +63,7 @@ export default function NoShowPage({
 
   // ตรวจสอบเงื่อนไขว่าเลยเวลานัดหมายมาแล้วอย่างน้อย 15 นาทีหรือไม่
   const checkCanReport = () => {
-    if (devBypass) return { canReport: true, reportTimeStr: '' };
+    if (isDryRun || devBypass) return { canReport: true, reportTimeStr: '' };
     if (!order.schedule) return { canReport: true, reportTimeStr: '' };
 
     try {
@@ -123,6 +125,7 @@ export default function NoShowPage({
       />
 
       <div className="p-4 space-y-4">
+        <AdminOrderDryRunBar orderId={order.id} delivery={order.delivery} status={order.status} />
         {order.schedule && (
           <div className="bg-white rounded-2xl border border-slate-200 p-4 space-y-1.5">
             <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800">

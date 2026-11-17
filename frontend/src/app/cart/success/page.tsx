@@ -4,18 +4,22 @@ import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Button } from '@/components/ui';
-import { LineOaBanner } from '@/components/v4';
+import { AdminDemoBanner, LineOaBanner } from '@/components/v4';
 import { Hourglass, MapPin, Truck, ChevronRight, Store } from 'lucide-react';
+import { useLiff } from '@/hooks/useLiff';
 import { useV4Orders } from '@/hooks/useV4Orders';
 import { formatThaiDate } from '@/lib/delivery';
 
 export default function CartSuccessPage() {
   const router = useRouter();
-  const { getOrder, fetchOrder } = useV4Orders();
+  const { user } = useLiff();
+  const { getOrder, fetchOrder, isDryRunOrder } = useV4Orders();
   const [orderIds, setOrderIds] = useState<string[]>([]);
+  const [isDemoParam, setIsDemoParam] = useState(false);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
+    setIsDemoParam(params.get('demo') === '1');
     const idsParam = params.get('ids');
     const idParam = params.get('id');
     const parsedIds = idsParam
@@ -38,10 +42,19 @@ export default function CartSuccessPage() {
 
   const isMulti = orderIds.length > 1;
   const grandTotal = createdOrders.reduce((sum, o) => sum + o.total, 0);
+  const isDryRun =
+    Boolean(user.isAdmin) &&
+    (isDemoParam || orderIds.some((id) => isDryRunOrder(id)));
 
   return (
     <div className="flex flex-col min-h-screen bg-white select-none justify-between p-6">
       <div className="flex-1 flex flex-col items-center justify-center text-center space-y-4 pt-6">
+        {isDryRun && (
+          <AdminDemoBanner
+            title="Admin Order Dry-Run · จำลองคำขอซื้อสำเร็จ"
+            description="สร้างคำขอซื้อจำลองเรียบร้อย กดดูออเดอร์ด้านล่างเพื่อสลับมุมมอง ผู้ซื้อ ↔ ผู้ขาย ทดสอบต่อได้เลย"
+          />
+        )}
         <div className="w-20 h-20 rounded-full bg-amber-50 text-amber-600 flex items-center justify-center animate-pop">
           <Hourglass className="w-10 h-10" />
         </div>

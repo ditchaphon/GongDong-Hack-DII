@@ -941,46 +941,59 @@ export default function BookDetailPage({
 
       {/* Bottom actions */}
       <div className="fixed bottom-0 left-0 right-0 z-30 flex justify-center pointer-events-none">
-        <div className="w-full max-w-[430px] bg-white border-t border-slate-200 p-3 flex items-center gap-2.5 pointer-events-auto safe-area-bottom shadow-lg">
-          {isOwnBook ? (
-            <>
-              <div className="flex-1 min-w-0">
-                <p className="text-xs font-bold text-slate-800 flex items-center gap-1">
-                  <Store className="w-3.5 h-3.5 text-[var(--color-primary)] shrink-0" />
-                  นี่คือหนังสือของคุณ
-                </p>
-                <p className="text-[10px] text-slate-500 truncate">
-                  ไม่สามารถซื้อหรือใส่ตะกร้ารายการของตัวเองได้
-                </p>
-              </div>
-              <Button
-                onClick={() => router.push('/seller')}
-                className="shrink-0"
-              >
-                จัดการรายการขาย
-              </Button>
-            </>
-          ) : (
-            <>
-              <Button
-                variant="outline"
-                fullWidth
-                disabled={!isBookAvailable}
-                onClick={handleAddToCart}
-                className="flex-1"
-              >
-                {isBookAvailable ? 'ใส่ตะกร้า' : 'ไม่พร้อมขาย'}
-              </Button>
-              <Button
-                fullWidth
-                disabled={!isBookAvailable}
-                onClick={handleBuyNow}
-                className="flex-1"
-              >
-                {isBookAvailable ? 'ส่งคำขอซื้อ' : 'ถูกจอง/ขายแล้ว'}
-              </Button>
-            </>
+        <div className="w-full max-w-[430px] bg-white border-t border-slate-200 p-3 flex flex-col gap-2 pointer-events-auto safe-area-bottom shadow-lg">
+          {user?.isAdmin && (
+            <button
+              type="button"
+              onClick={() =>
+                router.push(`/cart?buyNow=${encodeURIComponent(book.id)}&adminDemo=1`)
+              }
+              className="w-full py-1.5 px-3 rounded-xl border border-amber-300 bg-amber-50 text-[11px] font-bold text-amber-900 hover:bg-amber-100 transition"
+            >
+              🧪 ทดลองสั่งซื้อ Dry-Run เล่มนี้ (Admin)
+            </button>
           )}
+          <div className="flex items-center gap-2.5">
+            {isOwnBook ? (
+              <>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-bold text-slate-800 flex items-center gap-1">
+                    <Store className="w-3.5 h-3.5 text-[var(--color-primary)] shrink-0" />
+                    นี่คือหนังสือของคุณ
+                  </p>
+                  <p className="text-[10px] text-slate-500 truncate">
+                    ไม่สามารถซื้อหรือใส่ตะกร้ารายการของตัวเองได้
+                  </p>
+                </div>
+                <Button
+                  onClick={() => router.push('/seller')}
+                  className="shrink-0"
+                >
+                  จัดการรายการขาย
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button
+                  variant="outline"
+                  fullWidth
+                  disabled={!isBookAvailable}
+                  onClick={handleAddToCart}
+                  className="flex-1"
+                >
+                  {isBookAvailable ? 'ใส่ตะกร้า' : 'ไม่พร้อมขาย'}
+                </Button>
+                <Button
+                  fullWidth
+                  disabled={!isBookAvailable}
+                  onClick={handleBuyNow}
+                  className="flex-1"
+                >
+                  {isBookAvailable ? 'ส่งคำขอซื้อ' : 'ถูกจอง/ขายแล้ว'}
+                </Button>
+              </>
+            )}
+          </div>
         </div>
       </div>
 

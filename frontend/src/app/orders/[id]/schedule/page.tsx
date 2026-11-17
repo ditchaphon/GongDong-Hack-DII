@@ -5,7 +5,9 @@ import { useRouter } from 'next/navigation';
 import clsx from 'clsx';
 import { TopBar } from '@/components/layout/TopBar';
 import { Button, Toast } from '@/components/ui';
+import { AdminOrderDryRunBar } from '@/components/v4';
 import { useV4Orders } from '@/hooks/useV4Orders';
+import { DRY_RUN_FALLBACK_SHOP } from '@/lib/adminOrderDryRun';
 import { api } from '@/lib/api';
 import {
   expandShopHourlySlots,
@@ -26,9 +28,10 @@ export default function OrderSchedulePage({
 }) {
   const resolvedParams = use(params);
   const router = useRouter();
-  const { getOrder, fetchOrder, loading, proposeSchedule } = useV4Orders();
+  const { getOrder, fetchOrder, loading, proposeSchedule, isDryRunOrder } = useV4Orders();
 
   const order = getOrder(resolvedParams.id);
+  const isDryRun = isDryRunOrder(resolvedParams.id);
   const [shop, setShop] = useState<ShopProfile | null>(null);
   const [loadingShop, setLoadingShop] = useState(false);
 
@@ -45,6 +48,10 @@ export default function OrderSchedulePage({
 
   useEffect(() => {
     if (!order?.shopId || order.status !== 'ACCEPTED') return;
+    if (isDryRun && order.shopId === DRY_RUN_FALLBACK_SHOP.id) {
+      setShop(DRY_RUN_FALLBACK_SHOP);
+      return;
+    }
     let active = true;
     setLoadingShop(true);
     api
@@ -52,10 +59,14 @@ export default function OrderSchedulePage({
       .then((res) => {
         if (!active) return;
         const mapped = mapPublicShopToShopProfile(res);
-        setShop(mapped);
+        setShop(
+          isDryRun && mapped.meetupPoints.length === 0
+            ? { ...mapped, meetupPoints: DRY_RUN_FALLBACK_SHOP.meetupPoints }
+            : mapped
+        );
       })
       .catch(() => {
-        if (active) setShop(null);
+        if (active) setShop(isDryRun ? DRY_RUN_FALLBACK_SHOP : null);
       })
       .finally(() => {
         if (active) setLoadingShop(false);
@@ -63,7 +74,7 @@ export default function OrderSchedulePage({
     return () => {
       active = false;
     };
-  }, [order?.shopId, order?.status]);
+  }, [order?.shopId, order?.status, isDryRun]);
 
   const points = shop?.meetupPoints ?? [];
   const dates = useMemo(() => {
@@ -157,6 +168,7 @@ export default function OrderSchedulePage({
       />
 
       <div className="p-4 space-y-4">
+        <AdminOrderDryRunBar orderId={order.id} delivery={order.delivery} status={order.status} />
         {isLocked ? (
           <div className="bg-white rounded-2xl border border-slate-200 p-4 space-y-3">
             <div className="flex items-start gap-2.5 p-3 rounded-xl bg-teal-50 border border-teal-200 text-xs text-teal-900 leading-relaxed">

@@ -11,6 +11,7 @@ import { useLiff } from '@/hooks/useLiff';
 import { useListing } from '@/hooks/useListing';
 import { useProfile } from '@/hooks/useProfile';
 import { useSeller } from '@/hooks/useSeller';
+import { useV4Orders } from '@/hooks/useV4Orders';
 import { loadAdminRelistDraft } from '@/lib/adminDemo';
 import {
   ShoppingBag,
@@ -27,6 +28,8 @@ import {
   FlaskConical,
   RotateCcw,
   Loader2,
+  Truck,
+  PackageCheck,
 } from 'lucide-react';
 
 const rowClass =
@@ -37,6 +40,7 @@ export default function ProfilePage() {
   const { mode, setMode } = useAppMode();
   const { user } = useLiff();
   const { loadDemoDraft } = useListing();
+  const { spawnDryRunPresetOrder } = useV4Orders();
   const { nickname, avatar } = useProfile();
   const {
     shop,
@@ -244,6 +248,57 @@ export default function ProfilePage() {
                 <div>Admin Relist Demo</div>
                 <div className="text-[11px] font-normal text-amber-700/80">
                   เปิดหน้าลงขายแบบ Prefilled จากประกาศล่าสุด (Dry-run)
+                </div>
+              </div>
+              <ChevronRight className="w-4 h-4 text-amber-500" />
+            </button>
+            <Link
+              href="/cart?adminDemo=1"
+              className="flex items-center gap-3 w-full px-4 py-3 text-sm font-semibold text-amber-900 hover:bg-amber-50/50 transition"
+            >
+              <ShoppingBag className="w-4 h-4 text-amber-700" />
+              <div className="flex-1 text-left">
+                <div>Admin Order Demo · เริ่มจากตะกร้า</div>
+                <div className="text-[11px] font-normal text-amber-700/80">
+                  จำลองสั่งซื้อหนังสือ (เลือกนัดรับ / COD) ครบวงจร (Dry-run)
+                </div>
+              </div>
+              <ChevronRight className="w-4 h-4 text-amber-500" />
+            </Link>
+            <button
+              type="button"
+              onClick={() => {
+                const target =
+                  listings.find((l) => l.status === 'ACTIVE') ?? listings[0] ?? null;
+                const id = spawnDryRunPresetOrder('MEETUP', target);
+                router.push(`/orders/${encodeURIComponent(id)}`);
+              }}
+              className="flex items-center gap-3 w-full px-4 py-3 text-sm font-semibold text-amber-900 hover:bg-amber-50/50 transition text-left"
+            >
+              <PackageCheck className="w-4 h-4 text-amber-700" />
+              <div className="flex-1">
+                <div>Admin Order Demo · นัดรับ 6 หลัก</div>
+                <div className="text-[11px] font-normal text-amber-700/80">
+                  เปิดออเดอร์นัดรับพร้อมสลับผู้ซื้อ ↔ ผู้ขายทันที (Dry-run)
+                </div>
+              </div>
+              <ChevronRight className="w-4 h-4 text-amber-500" />
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const target =
+                  listings.find((l) => l.status === 'ACTIVE') ?? listings[0] ?? null;
+                const id = spawnDryRunPresetOrder('PARCEL', target);
+                router.push(`/orders/${encodeURIComponent(id)}`);
+              }}
+              className="flex items-center gap-3 w-full px-4 py-3 text-sm font-semibold text-amber-900 hover:bg-amber-50/50 transition text-left"
+            >
+              <Truck className="w-4 h-4 text-amber-700" />
+              <div className="flex-1">
+                <div>Admin Order Demo · ส่งพัสดุ COD</div>
+                <div className="text-[11px] font-normal text-amber-700/80">
+                  เปิดออเดอร์ส่งพัสดุพร้อมสลับผู้ซื้อ ↔ ผู้ขายทันที (Dry-run)
                 </div>
               </div>
               <ChevronRight className="w-4 h-4 text-amber-500" />

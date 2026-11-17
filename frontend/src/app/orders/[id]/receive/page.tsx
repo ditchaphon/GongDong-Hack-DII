@@ -5,8 +5,9 @@ import { useRouter } from 'next/navigation';
 import clsx from 'clsx';
 import { TopBar } from '@/components/layout/TopBar';
 import { Button, Toast } from '@/components/ui';
-import { CameraCapture } from '@/components/v4';
+import { AdminOrderDryRunBar, CameraCapture } from '@/components/v4';
 import { useV4Orders } from '@/hooks/useV4Orders';
+import { DRY_RUN_RECEIVE_PHOTO } from '@/lib/adminOrderDryRun';
 import { safeDeleteUploadedImage, uploadDeferredImageIfNeeded } from '@/lib/api';
 import { Camera, Star, RefreshCcw, ShieldCheck } from 'lucide-react';
 
@@ -17,8 +18,9 @@ const DEMO_PHOTO = 'https://images.unsplash.com/photo-1544947950-fa07a98d237f?w=
 export default function ReceiveParcelPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
-  const { getOrder, fetchOrder, loading, confirmReceived } = useV4Orders();
+  const { getOrder, fetchOrder, loading, confirmReceived, isDryRunOrder } = useV4Orders();
   const order = getOrder(id);
+  const isDryRun = isDryRunOrder(id);
 
   useEffect(() => {
     if (!order) fetchOrder(id);
@@ -66,9 +68,11 @@ export default function ReceiveParcelPage({ params }: { params: Promise<{ id: st
     let uploadedUrl = photo;
     let uploadedNow = false;
     try {
-      const uploaded = await uploadDeferredImageIfNeeded(photo, 'order-receives');
-      uploadedUrl = uploaded.url;
-      uploadedNow = uploaded.uploadedNow;
+      if (!isDryRun) {
+        const uploaded = await uploadDeferredImageIfNeeded(photo, 'order-receives');
+        uploadedUrl = uploaded.url;
+        uploadedNow = uploaded.uploadedNow;
+      }
 
       const res = await confirmReceived(order.id, uploadedUrl, {
         rating,
@@ -77,7 +81,7 @@ export default function ReceiveParcelPage({ params }: { params: Promise<{ id: st
         comment: comment.trim(),
       });
       if (!res.ok) {
-        if (uploadedNow) void safeDeleteUploadedImage(uploadedUrl);
+        if (!isDryRun && uploadedNow) void safeDeleteUploadedImage(uploadedUrl);
         setError(res.error || 'ยืนยันรับของไม่สำเร็จ');
         return;
       }
@@ -85,7 +89,7 @@ export default function ReceiveParcelPage({ params }: { params: Promise<{ id: st
       setToast('ยืนยันรับของแล้ว · ชำระเงินปลายทางเรียบร้อย');
       setTimeout(() => router.push(`/orders/${order.id}`), 900);
     } catch (err) {
-      if (uploadedNow) void safeDeleteUploadedImage(uploadedUrl);
+      if (!isDryRun && uploadedNow) void safeDeleteUploadedImage(uploadedUrl);
       setError(err instanceof Error ? err.message : 'อัปโหลดรูปหรือยืนยันรับของไม่สำเร็จ');
     } finally {
       setSubmitting(false);
@@ -97,8 +101,23 @@ export default function ReceiveParcelPage({ params }: { params: Promise<{ id: st
       <TopBar title="ได้รับของแล้ว" onBack={() => router.push(`/orders/${order.id}`)} />
 
       <div className="p-4 space-y-4">
+        <AdminOrderDryRunBar orderId={order.id} delivery={order.delivery} status={order.status} />
         <section className="bg-white rounded-2xl border border-slate-200 p-4 space-y-3">
-          <h2 className="text-sm font-bold text-slate-900">1. ถ่ายรูปหนังสือที่ได้รับ</h2>
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="text-sm font-bold text-slate-900">1. ถ่ายรูปหนังสือที่ได้รับ</h2>
+            {isDryRun && (
+              <button
+                type="button"
+                onClick={() => {
+                  setPhoto(DRY_RUN_RECEIVE_PHOTO);
+                  setError(null);
+                }}
+                className="px-2.5 py-1 rounded-lg bg-amber-50 border border-amber-300 text-[10px] font-bold text-amber-900 hover:bg-amber-100"
+              >
+                ใช้รูปตัวอย่าง
+              </button>
+            )}
+          </div>
           <p className="text-[11px] text-slate-500">ใช้เป็นหลักฐานว่าได้รับของในคุณภาพไหน · ถ่ายจากกล้องหรือเลือกจากแกลอรี่</p>
           {photo ? (
             <div className="relative">
@@ -204,7 +223,7 @@ export default function ReceiveParcelPage({ params }: { params: Promise<{ id: st
         deferUpload
         onClose={() => setCameraOpen(false)}
         onCapture={(url) => {
-          if (photo && photo !== url) {
+          if (!isDryRun && photo && photo !== url) {
             void safeDeleteUploadedImage(photo);
           }
           setPhoto(url);

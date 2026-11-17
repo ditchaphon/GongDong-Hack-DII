@@ -4,6 +4,7 @@ import React, { useRef, useState } from 'react';
 import clsx from 'clsx';
 import { Camera, X, Check, Loader2 } from 'lucide-react';
 import { safeDeleteUploadedImage, uploadImageFile, UploadBucket } from '@/lib/api';
+import { compressImageToDataUrl } from '@/lib/imageCompression';
 
 export interface PhotoUploaderProps {
   label: string;
@@ -11,6 +12,7 @@ export interface PhotoUploaderProps {
   isRequired?: boolean;
   isNameTag?: boolean;
   bucket?: UploadBucket;
+  deferUpload?: boolean;
   previewUrl?: string;
   onChange?: (url: string) => void;
   onRemove?: () => void;
@@ -24,6 +26,7 @@ export const PhotoUploader: React.FC<PhotoUploaderProps> = ({
   isRequired = false,
   isNameTag = false,
   bucket = 'book-listings',
+  deferUpload = false,
   previewUrl,
   onChange,
   onRemove,
@@ -42,6 +45,11 @@ export const PhotoUploader: React.FC<PhotoUploaderProps> = ({
     setUploadError(null);
     setIsUploading(true);
     try {
+      if (deferUpload) {
+        const dataUrl = await compressImageToDataUrl(file);
+        onChange?.(dataUrl);
+        return;
+      }
       const previousUrl = previewUrl;
       const uploaded = await uploadImageFile(file, bucket);
       if (previousUrl && previousUrl !== uploaded.url) {
@@ -110,7 +118,7 @@ export const PhotoUploader: React.FC<PhotoUploaderProps> = ({
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
-                  if (previewUrl) {
+                  if (!deferUpload && previewUrl) {
                     void safeDeleteUploadedImage(previewUrl);
                   }
                   onRemove?.();

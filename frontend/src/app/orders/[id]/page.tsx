@@ -6,6 +6,7 @@ import clsx from 'clsx';
 import { TopBar } from '@/components/layout/TopBar';
 import { Button, Toast } from '@/components/ui';
 import {
+  AdminOrderDryRunBar,
   StatusBadgeV4,
   ChatRoom,
   ConfirmSheet,
@@ -79,18 +80,20 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
     verifyHandover,
     openDispute,
     isMineAsBuyer,
+    isDryRunOrder,
   } = useV4Orders();
   const { credits } = useSeller();
   const { isReady, idToken } = useLiff();
   const [fetchingDetail, setFetchingDetail] = useState(true);
 
   const order = getOrder(id);
+  const isDryRun = isDryRunOrder(id);
   const orderStatus = order?.status;
   const chatOpen = !!orderStatus && !['REQUESTED', 'REJECTED', 'EXPIRED'].includes(orderStatus);
 
   useEffect(() => {
     if (!isReady) return;
-    if (!idToken) {
+    if (isDryRun || !idToken) {
       setFetchingDetail(false);
       return;
     }
@@ -102,18 +105,18 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
     return () => {
       active = false;
     };
-  }, [id, isReady, idToken, fetchOrder]);
+  }, [id, isReady, idToken, isDryRun, fetchOrder]);
 
   useEffect(() => {
     if (!orderStatus || !chatOpen) return;
     fetchMessages(id);
-    if (isTerminal(orderStatus)) return;
+    if (isDryRun || isTerminal(orderStatus)) return;
     const timer = setInterval(() => {
       fetchMessages(id);
       fetchOrder(id);
     }, 8000);
     return () => clearInterval(timer);
-  }, [id, orderStatus, chatOpen, fetchMessages, fetchOrder]);
+  }, [id, orderStatus, chatOpen, isDryRun, fetchMessages, fetchOrder]);
 
   const [toast, setToast] = useState<string | null>(null);
   const [acceptOpen, setAcceptOpen] = useState(false);
@@ -248,6 +251,12 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
       <TopBar title={`ออเดอร์ #${order.id}`} subtitle={isBuyer ? 'ฝั่งผู้ซื้อ' : 'ฝั่งร้านค้า'} onBack={() => router.push('/orders')} />
 
       <div className="p-4 space-y-4">
+        <AdminOrderDryRunBar
+          orderId={order.id}
+          delivery={order.delivery}
+          status={order.status}
+          handoverCode={order.handoverCode}
+        />
         <LineOaBanner />
         {/* Header + steps */}
         <section className="bg-white rounded-2xl border border-slate-200 p-4 space-y-4">
@@ -415,8 +424,8 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
             </div>
             <div className="grid grid-cols-2 gap-2">
               <Button variant="outline" onClick={() => setRejectOpen(true)}>ปฏิเสธ</Button>
-              <Button onClick={() => (credits < 1 ? router.push('/seller/credits') : setAcceptOpen(true))}>
-                {credits < 1 ? 'เติมเครดิต' : 'รับออเดอร์'}
+              <Button onClick={() => (!isDryRun && credits < 1 ? router.push('/seller/credits') : setAcceptOpen(true))}>
+                {!isDryRun && credits < 1 ? 'เติมเครดิต' : 'รับออเดอร์'}
               </Button>
             </div>
           </Panel>
@@ -572,8 +581,12 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
         isOpen={acceptOpen}
         onClose={() => setAcceptOpen(false)}
         title="รับออเดอร์นี้?"
-        description={`ใช้ 1 เครดิต (เหลือ ${Math.max(0, credits - 1)}) · หนังสือจะถูกล็อก คำขออื่นของเล่มนี้ถูกปฏิเสธอัตโนมัติ`}
-        confirmLabel="ใช้ 1 เครดิตและรับออเดอร์"
+        description={
+          isDryRun
+            ? 'โหมด Dry-run · จำลองการรับออเดอร์โดยไม่หักเครดิตและไม่ล็อกหนังสือจริง'
+            : `ใช้ 1 เครดิต (เหลือ ${Math.max(0, credits - 1)}) · หนังสือจะถูกล็อก คำขออื่นของเล่มนี้ถูกปฏิเสธอัตโนมัติ`
+        }
+        confirmLabel={isDryRun ? 'ยืนยันรับออเดอร์ (Dry-run)' : 'ใช้ 1 เครดิตและรับออเดอร์'}
         onConfirm={handleAccept}
       />
       <ConfirmSheet

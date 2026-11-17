@@ -18,6 +18,7 @@ export interface TrackingFormProps {
   onChange: (patch: Partial<TrackingValue>) => void;
   onSubmit: () => void;
   isLoading?: boolean;
+  deferUpload?: boolean;
   error?: string;
   deadlineISO?: string;
   className?: string;
@@ -36,6 +37,7 @@ export const TrackingForm: React.FC<TrackingFormProps> = ({
   onChange,
   onSubmit,
   isLoading = false,
+  deferUpload = false,
   error,
   deadlineISO,
   className,
@@ -87,6 +89,7 @@ export const TrackingForm: React.FC<TrackingFormProps> = ({
       <PhotoUploader
         label="รูปกล่องพัสดุ"
         bucket="order-receives"
+        deferUpload={deferUpload}
         isRequired
         previewUrl={value.boxPhoto}
         onChange={(url) => onChange({ boxPhoto: url })}

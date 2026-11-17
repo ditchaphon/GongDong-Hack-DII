@@ -9,19 +9,22 @@ import { StatusBadgeV4, LineOaBanner } from '@/components/v4';
 import { useV4Orders } from '@/hooks/useV4Orders';
 import { useAppMode } from '@/hooks/useAppMode';
 import { useSeller } from '@/hooks/useSeller';
+import { useLiff } from '@/hooks/useLiff';
 import { getNextAction, getTimerInfo, isTerminal } from '@/lib/orderStateMachine';
 import { V4Order, ViewRole } from '@/types/v4';
-import { Package, Clock, ChevronRight, ShoppingBag, Store } from 'lucide-react';
+import { Package, Clock, ChevronRight, ShoppingBag, Store, FlaskConical, Trash2 } from 'lucide-react';
 
 type Tab = 'BUYING' | 'SELLING';
 
 function OrderRow({
   order,
   role,
+  isDryRun,
   onOpen,
 }: {
   order: V4Order;
   role: ViewRole;
+  isDryRun?: boolean;
   onOpen: () => void;
 }) {
   const action = getNextAction(order, role);
@@ -35,10 +38,22 @@ function OrderRow({
     <button
       type="button"
       onClick={onOpen}
-      className="w-full text-left bg-white rounded-2xl border border-slate-200 p-3.5 space-y-2.5 hover:border-slate-300 transition"
+      className={`w-full text-left bg-white rounded-2xl border p-3.5 space-y-2.5 transition ${
+        isDryRun
+          ? 'border-amber-300 bg-amber-50/20 hover:border-amber-400'
+          : 'border-slate-200 hover:border-slate-300'
+      }`}
     >
       <div className="flex items-start justify-between gap-2">
-        <span className="text-[10px] font-medium text-slate-400">#{order.id}</span>
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span className="text-[10px] font-medium text-slate-400 truncate">#{order.id}</span>
+          {isDryRun && (
+            <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-amber-800 bg-amber-100 border border-amber-300 px-1.5 py-0.5 rounded-full shrink-0">
+              <FlaskConical className="w-2.5 h-2.5" />
+              Dry-Run
+            </span>
+          )}
+        </div>
         <StatusBadgeV4 status={order.status} size="sm" />
       </div>
 
@@ -85,10 +100,12 @@ function OrderRow({
 
 export default function OrdersPage() {
   const router = useRouter();
-  const { orders, loading, error, refreshOrders, isMineAsBuyer } = useV4Orders();
+  const { user } = useLiff();
+  const { orders, loading, error, refreshOrders, isMineAsBuyer, isDryRunOrder, clearDryRunOrders } = useV4Orders();
   const { mode, setMode } = useAppMode();
   const { isShopSetup } = useSeller();
   const [explicitTab, setExplicitTab] = useState<Tab | null>(null);
+  const dryRunCount = user.isAdmin ? orders.filter((o) => isDryRunOrder(o.id)).length : 0;
 
   useEffect(() => {
     try {
@@ -186,6 +203,22 @@ export default function OrdersPage() {
         </div>
 
         <LineOaBanner />
+        {dryRunCount > 0 && (
+          <div className="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-[11px] text-amber-900">
+            <span className="inline-flex items-center gap-1.5 font-semibold">
+              <FlaskConical className="w-3.5 h-3.5 text-amber-700" />
+              มีออเดอร์ Dry-Run อยู่ {dryRunCount} รายการ
+            </span>
+            <button
+              type="button"
+              onClick={clearDryRunOrders}
+              className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-white border border-amber-300 text-[10px] font-bold text-rose-700 hover:bg-rose-50"
+            >
+              <Trash2 className="w-3 h-3" />
+              ล้าง Dry-Run
+            </button>
+          </div>
+        )}
         {loading && orders.length === 0 ? (
           <div className="space-y-3">
             <div className="h-32 rounded-2xl bg-slate-200 animate-pulse" />
@@ -223,6 +256,7 @@ export default function OrdersPage() {
               key={order.id}
               order={order}
               role={role}
+              isDryRun={isDryRunOrder(order.id)}
               onOpen={() =>
                 router.push(
                   `/orders/${order.id}${role === 'SELLER' ? '?role=seller' : ''}`
