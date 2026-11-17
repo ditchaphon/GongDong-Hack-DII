@@ -110,8 +110,28 @@ function mapBookFeedItem(item: any): BookListingItem {
   };
 }
 
-const FEED_BOOK_INCLUDE = {
-  bookCatalog: true,
+const FEED_BOOK_SELECT = {
+  id: true,
+  category: true,
+  categories: true,
+  isSet: true,
+  totalVolumes: true,
+  missingVolumes: true,
+  price: true,
+  grade: true,
+  allowPickup: true,
+  pickupLocationName: true,
+  allowDelivery: true,
+  codEnabled: true,
+  photoChecks: true,
+  bookCatalog: {
+    select: {
+      title: true,
+      author: true,
+      coverUrl: true,
+      originalPrice: true,
+    },
+  },
   seller: {
     select: {
       id: true,
@@ -126,6 +146,9 @@ const FEED_BOOK_INCLUDE = {
   images: {
     orderBy: [{ isCover: 'desc' as const }, { displayOrder: 'asc' as const }],
     take: 1,
+    select: {
+      imageUrl: true,
+    },
   },
 };
 
@@ -175,16 +198,19 @@ export async function getBookListings(
 
   const where = andConditions.length === 1 ? andConditions[0] : { AND: andConditions };
 
-  const [listings, total] = await Promise.all([
-    db.bookListing.findMany({
-      where,
-      take: limit,
-      skip: offset,
-      orderBy: { createdAt: 'desc' },
-      include: FEED_BOOK_INCLUDE,
-    }),
-    db.bookListing.count({ where }),
-  ]);
+  const listings = await db.bookListing.findMany({
+    where,
+    take: limit,
+    skip: offset,
+    orderBy: { createdAt: 'desc' },
+    select: FEED_BOOK_SELECT,
+  });
+
+  // Skip COUNT(*) query when the first page already contains all matching listings.
+  const total =
+    offset === 0 && listings.length < limit
+      ? listings.length
+      : await db.bookListing.count({ where });
 
   return {
     books: listings.map(mapBookFeedItem),
@@ -206,7 +232,7 @@ export async function getRecommendedBooks(
     where: { status: 'AVAILABLE' },
     take: safeLimit,
     orderBy: [{ seller: { isVerifiedSeller: 'desc' } }, { createdAt: 'desc' }],
-    include: FEED_BOOK_INCLUDE,
+    select: FEED_BOOK_SELECT,
   });
 
   return { books: listings.map(mapBookFeedItem) };
@@ -683,6 +709,9 @@ export async function getUserBookListings(
         orderBy: [{ isCover: 'desc' }, { displayOrder: 'asc' }],
         take: 1,
       },
+      _count: {
+        select: { orderItems: true },
+      },
     },
   });
 
@@ -708,6 +737,7 @@ export async function getUserBookListings(
     allowDelivery: Boolean(item.allowDelivery ?? false),
     codEnabled: Boolean(item.codEnabled ?? true),
     status: item.status,
+    hasOrders: Boolean((item._count?.orderItems ?? 0) > 0),
     createdAt: item.createdAt,
   }));
 
@@ -748,6 +778,45 @@ export async function deleteBookListing(
       'ไม่สามารถลบหนังสือที่ติดจองหรือขายสำเร็จแล้วได้',
       400,
       'CANNOT_DELETE_ACTIVE_BOOK'
+    );
+  }
+
+  const existingOrderItems: Array<{ order?: { status?: string } }> = Array.isArray(
+    listing.orderItems
+  )
+    ? listing.orderItems
+    : typeof db.orderItem?.findMany === 'function'
+    ? await db.orderItem.findMany({
+        where: { bookListingId: id },
+        select: { order: { select: { status: true } } },
+        take: 10,
+      })
+    : [];
+
+  if (existingOrderItems.length > 0) {
+    const activeOrderStatuses = new Set([
+      'REQUESTED',
+      'ACCEPTED',
+      'SCHEDULED',
+      'PAID',
+      'SHIPPED',
+      'COMPLETED',
+      'DISPUTED',
+    ]);
+    const hasActiveOrCompletedOrder = existingOrderItems.some((item) =>
+      activeOrderStatuses.has(String(item.order?.status || '').toUpperCase())
+    );
+    if (hasActiveOrCompletedOrder) {
+      throw new AppError(
+        'ไม่สามารถลบหนังสือที่มีคำสั่งซื้อแล้วได้',
+        400,
+        'CANNOT_DELETE_ORDERED_BOOK'
+      );
+    }
+    throw new AppError(
+      'หนังสือเล่มนี้เคยมีประวัติคำสั่งซื้อแล้ว จึงไม่สามารถลบถาวรได้ กรุณาใช้ปุ่ม "ซ่อน" แทน',
+      400,
+      'CANNOT_DELETE_BOOK_WITH_ORDER_HISTORY'
     );
   }
 

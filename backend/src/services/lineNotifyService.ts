@@ -16,6 +16,8 @@ export interface LineOrderNotificationParams {
   linkPath?: string;
   /** Set false for in-app-only events (e.g. order chat, reviews, completion/expiry). */
   pushLine?: boolean;
+  /** Force LINE Push even when the recipient was active in LIFF within the last 2 minutes. */
+  forcePushLine?: boolean;
 }
 
 function getLineMessagingClient(): messagingApi.MessagingApiClient | null {
@@ -58,6 +60,17 @@ function resolveOrderFlexTheme(badgeText?: string): OrderFlexTheme {
       buttonBg: '#0284C7',
       statusLabel: '📦 จัดส่งพัสดุแล้ว',
       ctaLabel: 'ดูเลขพัสดุและติดตาม',
+    };
+  }
+
+  if (normalized.includes('MEETUP COMPLETED')) {
+    return {
+      headerBg: '#15803D',
+      softBg: '#F0FDF4',
+      accentColor: '#15803D',
+      buttonBg: '#16A34A',
+      statusLabel: '⭐ นัดรับสำเร็จ · อย่าลืมรีวิว',
+      ctaLabel: 'ให้คะแนนและรีวิวร้าน',
     };
   }
 
@@ -404,7 +417,7 @@ export async function notifyOrderEvent(
       prismaClient
     );
 
-  if (isRecentlyActiveInLiff) {
+  if (isRecentlyActiveInLiff && !params.forcePushLine) {
     return { pushed: false, reason: 'USER_ACTIVE_IN_LIFF' };
   }
 

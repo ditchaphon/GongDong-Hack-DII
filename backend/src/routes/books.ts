@@ -199,6 +199,10 @@ bookRouter.get(
       const id = String(req.params.id);
       const result = await getBookIsbnComparison(id);
 
+      res.setHeader(
+        'Cache-Control',
+        'public, max-age=0, s-maxage=15, stale-while-revalidate=60'
+      );
       res.status(200).json({
         success: true,
         data: result,
@@ -220,6 +224,10 @@ bookRouter.get(
       const id = String(req.params.id);
       const bookDetail = await getBookListingDetail(id);
 
+      res.setHeader(
+        'Cache-Control',
+        'public, max-age=0, s-maxage=15, stale-while-revalidate=60'
+      );
       res.status(200).json({
         success: true,
         data: bookDetail,

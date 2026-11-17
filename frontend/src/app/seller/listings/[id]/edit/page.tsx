@@ -4,6 +4,7 @@ import React, { useEffect, useState, use } from 'react';
 import { useRouter } from 'next/navigation';
 import { TopBar } from '@/components/layout/TopBar';
 import { Button, GradeBadge, Toast } from '@/components/ui';
+import { ConfirmSheet } from '@/components/v4';
 import { useSeller } from '@/hooks/useSeller';
 import { useV4Orders } from '@/hooks/useV4Orders';
 import {
@@ -13,6 +14,7 @@ import {
   EyeOff,
   Eye,
   Info,
+  Trash2,
 } from 'lucide-react';
 
 export default function EditListingPage({
@@ -22,17 +24,32 @@ export default function EditListingPage({
 }) {
   const resolvedParams = use(params);
   const router = useRouter();
-  const { listings, shop, updateListing, setListingStatus } = useSeller();
-  const { orders, isMineAsBuyer } = useV4Orders();
+  const { listings, shop, updateListing, setListingStatus, deleteListing } = useSeller();
+  const { orders, isMineAsBuyer, isDryRunOrder } = useV4Orders();
 
   const listing = listings.find((item) => item.id === resolvedParams.id);
   const canParcel = Boolean(shop?.payeeVerified && shop?.supportsParcel);
   const hasActiveOrder = listing
     ? orders.some(
         (order) =>
+          !isDryRunOrder(order.id) &&
           !isMineAsBuyer(order) &&
           ['REQUESTED', 'ACCEPTED', 'PAID', 'SHIPPED', 'SCHEDULED'].includes(order.status) &&
           order.books.some((book) => book.id === listing.id)
+      )
+    : false;
+  const hasOrderHistory = listing
+    ? Boolean(
+        listing.hasOrders ||
+          listing.status === 'WAITING_PAYMENT' ||
+          listing.status === 'CLOSED' ||
+          hasActiveOrder ||
+          orders.some(
+            (order) =>
+              !isDryRunOrder(order.id) &&
+              !isMineAsBuyer(order) &&
+              order.books.some((book) => book.id === listing.id)
+          )
       )
     : false;
 
@@ -41,6 +58,8 @@ export default function EditListingPage({
   const [meetup, setMeetup] = useState(listing?.deliveryMethods.includes('MEETUP') ?? true);
   const [parcel, setParcel] = useState(listing?.deliveryMethods.includes('PARCEL') ?? false);
   const [saving, setSaving] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -262,7 +281,51 @@ export default function EditListingPage({
             ซ่อนประกาศชั่วคราว
           </Button>
         )}
+
+        <div className="space-y-1.5">
+          <Button
+            variant="outline"
+            fullWidth
+            disabled={hasOrderHistory}
+            leftIcon={<Trash2 className="w-4 h-4 text-rose-600" />}
+            onClick={() => setDeleteOpen(true)}
+            className="border-rose-200 text-rose-600 hover:bg-rose-50"
+          >
+            {hasOrderHistory ? 'ลบประกาศไม่ได้ (มีคำสั่งซื้อแล้ว)' : 'ลบประกาศถาวร'}
+          </Button>
+          {hasOrderHistory && !locked && (
+            <p className="text-[11px] text-slate-400 text-center">
+              หนังสือเล่มนี้เคยมีประวัติคำสั่งซื้อแล้ว จึงไม่สามารถลบถาวรได้ (ใช้ปุ่มซ่อนประกาศแทน)
+            </p>
+          )}
+        </div>
       </div>
+
+      <ConfirmSheet
+        isOpen={deleteOpen}
+        onClose={() => {
+          if (!deleting) setDeleteOpen(false);
+        }}
+        title="ลบประกาศขายหนังสือ?"
+        description={`ต้องการลบ “${listing.title}” ถาวรใช่ไหม (ข้อมูลและรูปที่ไม่ถูกใช้งานจะถูกลบออก ไม่สามารถกู้คืนได้)`}
+        confirmLabel={deleting ? 'กำลังลบ...' : 'ยืนยันลบประกาศ'}
+        tone="danger"
+        onConfirm={async () => {
+          if (deleting) return;
+          setDeleting(true);
+          try {
+            await deleteListing(listing.id);
+            setDeleteOpen(false);
+            setToastMessage('ลบประกาศหนังสือเรียบร้อยแล้ว');
+            setTimeout(() => router.push('/seller'), 500);
+          } catch (err) {
+            setDeleteOpen(false);
+            setError(err instanceof Error ? err.message : 'ลบประกาศไม่สำเร็จ');
+          } finally {
+            setDeleting(false);
+          }
+        }}
+      />
 
       <div className="fixed bottom-0 left-0 right-0 z-30 flex justify-center pointer-events-none">
         <div className="w-full max-w-[430px] bg-white border-t border-slate-200 p-3 pointer-events-auto safe-area-bottom shadow-lg">

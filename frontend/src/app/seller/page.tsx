@@ -18,7 +18,8 @@ import { useLiff } from '@/hooks/useLiff';
 import { useListing } from '@/hooks/useListing';
 import { useV4Orders } from '@/hooks/useV4Orders';
 import { loadAdminRelistDraft } from '@/lib/adminDemo';
-import { StatusBadgeV4, LineOaBanner } from '@/components/v4';
+import { StatusBadgeV4, LineOaBanner, ConfirmSheet } from '@/components/v4';
+import type { SellerListing } from '@/types';
 import {
   Plus,
   BookOpen,
@@ -36,6 +37,7 @@ import {
   Settings,
   RotateCcw,
   Loader2,
+  Trash2,
 } from 'lucide-react';
 
 type Tab = 'LISTINGS' | 'WAITING' | 'CLOSED';
@@ -51,13 +53,14 @@ export default function SellerShopPage() {
     credits,
     listings,
     setListingStatus,
+    deleteListing,
   } = useSeller();
 
   const { mode, setMode } = useAppMode();
   const { user, isReady } = useLiff();
   const { loadDemoDraft } = useListing();
-  const { orders: allOrders, isMineAsBuyer } = useV4Orders();
-  const sales = allOrders.filter((order) => !isMineAsBuyer(order));
+  const { orders: allOrders, isMineAsBuyer, isDryRunOrder } = useV4Orders();
+  const sales = allOrders.filter((order) => !isDryRunOrder(order.id) && !isMineAsBuyer(order));
 
   // Landing on the dashboard with a ready shop means the seller hat is on.
   useEffect(() => {
@@ -67,6 +70,16 @@ export default function SellerShopPage() {
   const [tab, setTab] = useState<Tab>('LISTINGS');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [loadingRelistId, setLoadingRelistId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<SellerListing | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  const hasOrderHistory = (listing: SellerListing) =>
+    Boolean(
+      listing.hasOrders ||
+        listing.status === 'WAITING_PAYMENT' ||
+        listing.status === 'CLOSED' ||
+        sales.some((order) => order.books.some((book) => book.id === listing.id))
+    );
 
   const pendingRequestBookIds = new Set(
     sales
@@ -404,6 +417,20 @@ export default function SellerShopPage() {
                         <EyeOff className="w-3 h-3" />
                         ซ่อน
                       </button>
+                      <button
+                        type="button"
+                        disabled={hasOrderHistory(listing)}
+                        onClick={() => setDeleteTarget(listing)}
+                        title={
+                          hasOrderHistory(listing)
+                            ? 'ไม่สามารถลบได้ เนื่องจากมีคำสั่งซื้อแล้ว'
+                            : 'ลบประกาศถาวร'
+                        }
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-rose-200 text-[11px] font-semibold text-rose-600 hover:bg-rose-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                        ลบ
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -472,20 +499,36 @@ export default function SellerShopPage() {
                         ไม่แสดงให้ผู้ซื้อเห็น
                       </p>
                     </div>
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        try {
-                          await setListingStatus(listing.id, 'ACTIVE');
-                          setToastMessage('แสดงประกาศอีกครั้งแล้ว');
-                        } catch (err) {
-                          setToastMessage(err instanceof Error ? err.message : 'อัปเดตไม่สำเร็จ');
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            await setListingStatus(listing.id, 'ACTIVE');
+                            setToastMessage('แสดงประกาศอีกครั้งแล้ว');
+                          } catch (err) {
+                            setToastMessage(err instanceof Error ? err.message : 'อัปเดตไม่สำเร็จ');
+                          }
+                        }}
+                        className="px-2.5 py-1 rounded-lg border border-emerald-200 bg-emerald-50 text-[11px] font-semibold text-emerald-700"
+                      >
+                        แสดงอีกครั้ง
+                      </button>
+                      <button
+                        type="button"
+                        disabled={hasOrderHistory(listing)}
+                        onClick={() => setDeleteTarget(listing)}
+                        title={
+                          hasOrderHistory(listing)
+                            ? 'ไม่สามารถลบได้ เนื่องจากเคยมีคำสั่งซื้อแล้ว'
+                            : 'ลบประกาศถาวร'
                         }
-                      }}
-                      className="px-2.5 py-1 rounded-lg border border-emerald-200 bg-emerald-50 text-[11px] font-semibold text-emerald-700"
-                    >
-                      แสดงอีกครั้ง
-                    </button>
+                        className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-rose-200 text-[11px] font-semibold text-rose-600 hover:bg-rose-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                        ลบ
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -603,6 +646,35 @@ export default function SellerShopPage() {
       </div>
 
       <BottomTab orderBadge={newOrderCount} />
+
+      <ConfirmSheet
+        isOpen={Boolean(deleteTarget)}
+        onClose={() => {
+          if (!deleting) setDeleteTarget(null);
+        }}
+        title="ลบประกาศขายหนังสือ?"
+        description={
+          deleteTarget
+            ? `ต้องการลบ “${deleteTarget.title}” ถาวรใช่ไหม (ข้อมูลและรูปที่ไม่ถูกใช้งานจะถูกลบออก ไม่สามารถกู้คืนได้)`
+            : ''
+        }
+        confirmLabel={deleting ? 'กำลังลบ...' : 'ยืนยันลบประกาศ'}
+        tone="danger"
+        onConfirm={async () => {
+          if (!deleteTarget || deleting) return;
+          setDeleting(true);
+          try {
+            await deleteListing(deleteTarget.id);
+            setToastMessage('ลบประกาศหนังสือเรียบร้อยแล้ว');
+            setDeleteTarget(null);
+          } catch (err) {
+            setToastMessage(err instanceof Error ? err.message : 'ลบประกาศไม่สำเร็จ');
+            setDeleteTarget(null);
+          } finally {
+            setDeleting(false);
+          }
+        }}
+      />
 
       <Toast
         isOpen={!!toastMessage}

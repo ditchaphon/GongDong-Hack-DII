@@ -138,6 +138,7 @@ export interface ShopProfile {
 
 export interface SellerListing extends Book {
   status: ListingStatus;
+  hasOrders?: boolean;
   views: number;
   savedCount: number;
 }

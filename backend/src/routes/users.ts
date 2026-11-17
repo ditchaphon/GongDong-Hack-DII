@@ -35,7 +35,7 @@ userRouter.get(
   async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const userId = getUserIdFromRequest(req);
-      const profile = await getUserProfile(userId);
+      const profile = await getUserProfile(userId, undefined, req.user);
 
       res.status(200).json({
         success: true,

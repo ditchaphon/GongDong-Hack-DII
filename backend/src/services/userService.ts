@@ -120,13 +120,17 @@ export async function getTopupPaymentQr(options: {
  */
 export async function getUserProfile(
   userId: string,
-  prismaClient?: any
+  prismaClient?: any,
+  preloadedUser?: any
 ): Promise<UserProfileResponse> {
   const db = prismaClient || defaultPrisma;
 
-  const user = await db.user.findUnique({
-    where: { id: userId },
-  });
+  const user =
+    preloadedUser && preloadedUser.id === userId
+      ? preloadedUser
+      : await db.user.findUnique({
+          where: { id: userId },
+        });
 
   if (!user) {
     throw new AppError('ไม่พบข้อมูลผู้ใช้ในระบบ', 404, 'USER_NOT_FOUND');

@@ -335,6 +335,7 @@ export interface UserBookListingItem {
   allowDelivery: boolean;
   codEnabled: boolean;
   status: string;
+  hasOrders?: boolean;
   createdAt: Date;
 }
 

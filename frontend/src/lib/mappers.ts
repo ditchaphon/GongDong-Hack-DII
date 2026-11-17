@@ -83,6 +83,7 @@ export interface BackendUserBookItem {
   allowDelivery?: boolean;
   codEnabled?: boolean;
   status: string;
+  hasOrders?: boolean;
   createdAt: string;
 }
 
@@ -463,6 +464,7 @@ export function mapBackendUserBookToSellerListing(
       month: 'short',
     }),
     status: mapBackendStatusToListingStatus(item.status),
+    hasOrders: Boolean(item.hasOrders),
     views: 0,
     savedCount: 0,
   };

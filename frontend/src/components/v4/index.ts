@@ -22,3 +22,4 @@ export * from './CameraCapture';
 export * from './LineOaBanner';
 export * from './AdminDemoBanner';
 export * from './AdminOrderDryRunBar';
+export * from './InAppNotificationBanner';
