@@ -34,13 +34,14 @@ export const Stepper: React.FC<StepperProps> = ({
     <div className={clsx('w-full py-3 px-2 select-none', className)}>
       <div className="flex items-center justify-between relative">
         {/* Track Line behind steps */}
-        <div className="absolute left-6 right-6 top-3.5 h-0.5 bg-slate-200 -z-0" />
-        <div
-          className="absolute left-6 top-3.5 h-0.5 bg-[#8B5E3C] -z-0 transition-all duration-300"
-          style={{
-            width: `${Math.max(0, Math.min(100, ((currentStep - 1) / (steps.length - 1)) * 100))}%`,
-          }}
-        />
+        <div className="absolute left-6 right-6 top-3.5 h-0.5 bg-slate-200 -z-0 overflow-hidden">
+          <div
+            className="h-full bg-[#8B5E3C] transition-all duration-300"
+            style={{
+              width: `${Math.max(0, Math.min(100, ((currentStep - 1) / (steps.length - 1)) * 100))}%`,
+            }}
+          />
+        </div>
 
         {steps.map((s) => {
           const isCompleted = s.step < currentStep;
