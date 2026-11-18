@@ -28,9 +28,11 @@ export default function OrderSchedulePage({
 }) {
   const resolvedParams = use(params);
   const router = useRouter();
-  const { getOrder, fetchOrder, loading, proposeSchedule, isDryRunOrder } = useV4Orders();
+  const { getOrder, fetchOrder, loading, proposeSchedule, isMineAsBuyer, isDryRunOrder } =
+    useV4Orders();
 
   const order = getOrder(resolvedParams.id);
+  const isBuyer = order ? isMineAsBuyer(order) : true;
   const isDryRun = isDryRunOrder(resolvedParams.id);
   const [shop, setShop] = useState<ShopProfile | null>(null);
   const [loadingShop, setLoadingShop] = useState(false);
@@ -146,8 +148,8 @@ export default function OrderSchedulePage({
       lat: selectedPoint.lat,
       lng: selectedPoint.lng,
       landmark: selectedPoint.name,
-      proposedBy: 'BUYER',
-      confirmedByBuyer: true,
+      proposedBy: isBuyer ? 'BUYER' : 'SELLER',
+      confirmedByBuyer: isBuyer,
     });
     setSubmitting(false);
 
@@ -156,7 +158,9 @@ export default function OrderSchedulePage({
       return;
     }
 
-    setToastMessage('ล็อกนัดรับเรียบร้อยแล้ว');
+    setToastMessage(
+      isBuyer ? 'ล็อกนัดรับเรียบร้อยแล้ว' : 'ส่งข้อเสนอเวลานัดรับให้ผู้ซื้อยืนยันแล้ว'
+    );
     setTimeout(() => router.push(`/orders/${order.id}`), 700);
   };
 

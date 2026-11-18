@@ -4,6 +4,7 @@ import {
   createAuthMiddleware,
   verifyLineToken,
 } from '../auth';
+import { getUserIdFromRequest } from '../../utils/requestUser';
 
 const mockFindUnique = vi.fn();
 const mockTransaction = vi.fn();
@@ -272,5 +273,41 @@ describe('verifyLineToken helper', () => {
       global.fetch = originalFetch;
       clearVerifiedLineTokenCacheForTest();
     }
+  });
+
+  it('HIGH-3: ปฏิเสธ x-user-id และ Bearer mock_ เมื่อ NODE_ENV=development แต่ไม่ได้เปิด ENABLE_MOCK_AUTH=true', async () => {
+    const prevNodeEnv = process.env.NODE_ENV;
+    const prevMockFlag = process.env.ENABLE_MOCK_AUTH;
+    process.env.NODE_ENV = 'development';
+    delete process.env.ENABLE_MOCK_AUTH;
+
+    try {
+      const mockVerifier = vi.fn().mockRejectedValue(new Error('should verify real token'));
+      const middleware = createAuthMiddleware({ tokenVerifier: mockVerifier });
+
+      const nextHeaderOnly = vi.fn();
+      await middleware({ headers: { 'x-user-id': 'usr-1' } } as any, {} as any, nextHeaderOnly);
+      expect(nextHeaderOnly).toHaveBeenCalledWith(
+        expect.objectContaining({ statusCode: 401, code: 'UNAUTHORIZED' })
+      );
+
+      const nextMockBearer = vi.fn();
+      await middleware(
+        { headers: { authorization: 'Bearer mock_usr-1' } } as any,
+        {} as any,
+        nextMockBearer
+      );
+      expect(mockVerifier).toHaveBeenCalledWith('mock_usr-1');
+    } finally {
+      process.env.NODE_ENV = prevNodeEnv;
+      if (prevMockFlag === undefined) delete process.env.ENABLE_MOCK_AUTH;
+      else process.env.ENABLE_MOCK_AUTH = prevMockFlag;
+    }
+  });
+
+  it('HIGH-3: getUserIdFromRequest ต้องไม่ใช้ header x-user-id เมื่อ req.userId ว่าง', () => {
+    expect(() =>
+      getUserIdFromRequest({ headers: { 'x-user-id': 'usr-spoofed' } } as any)
+    ).toThrowError(expect.objectContaining({ statusCode: 401, code: 'UNAUTHORIZED' }));
   });
 });

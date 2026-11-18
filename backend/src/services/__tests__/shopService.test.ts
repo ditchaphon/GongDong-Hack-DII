@@ -387,5 +387,33 @@ describe('shopService', () => {
         { date_iso: futureDate1, time_label: '16:00 - 17:00' },
       ]);
     });
+
+    it('HIGH-2: upsertMyShop และ submitSellerKyc ปฏิเสธ 403 ACCOUNT_BLACKLISTED หากบัญชีติด Blacklist', async () => {
+      const blacklistedDb = {
+        user: { findUnique: vi.fn().mockResolvedValue({ id: 'usr-blk', isBlacklisted: true }) },
+      };
+
+      await expect(
+        upsertMyShop(
+          'usr-blk',
+          {
+            shopName: 'ร้านทดสอบ',
+            province: 'เชียงใหม่',
+            availableDays: [],
+            availableSlots: [],
+            supportsParcel: false,
+          },
+          blacklistedDb
+        )
+      ).rejects.toMatchObject({ statusCode: 403, code: 'ACCOUNT_BLACKLISTED' });
+
+      await expect(
+        submitSellerKyc(
+          'usr-blk',
+          { firstName: 'สมชาย', lastName: 'ใจดี', nationalId: VALID_THAI_ID },
+          blacklistedDb
+        )
+      ).rejects.toMatchObject({ statusCode: 403, code: 'ACCOUNT_BLACKLISTED' });
+    });
   });
 });

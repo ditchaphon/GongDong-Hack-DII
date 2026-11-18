@@ -720,6 +720,48 @@ describe('OrderService - Delivery Flow & PDPA Protection', () => {
         )
       ).rejects.toThrow('ชื่อผู้รับเงินในสลิปไม่ตรงกับชื่อยืนยันของผู้ขาย');
     });
+
+    it('CRITICAL-1: เมื่อใช้ SlipOK verifier ต้อง Fail-Closed หากสลิปไม่มี receiverName หรือผู้ขายไม่มี verifiedName', async () => {
+      mockDb.order.findUnique.mockResolvedValue(mockOrder);
+      mockDb.paymentSlip.findUnique.mockResolvedValue(null);
+
+      const noReceiverVerifier = vi.fn().mockResolvedValue({
+        transRef: 'SLIPOK_NO_RCV',
+        amount: 215,
+        receiverName: undefined,
+      });
+
+      await expect(
+        verifyOrderPaymentSlip(
+          'ord_delivery_01',
+          'usr_buyer_1',
+          { slipImageUrl: 'https://storage/slip.webp' },
+          mockDb,
+          noReceiverVerifier
+        )
+      ).rejects.toMatchObject({ statusCode: 400, code: 'SLIP_RECEIVER_MISMATCH' });
+
+      mockDb.order.findUnique.mockResolvedValue({
+        ...mockOrder,
+        seller: { verifiedName: null },
+      });
+
+      const validVerifier = vi.fn().mockResolvedValue({
+        transRef: 'SLIPOK_OK',
+        amount: 215,
+        receiverName: 'นาย นนทภัทร สุขใจ',
+      });
+
+      await expect(
+        verifyOrderPaymentSlip(
+          'ord_delivery_01',
+          'usr_buyer_1',
+          { slipImageUrl: 'https://storage/slip.webp' },
+          mockDb,
+          validVerifier
+        )
+      ).rejects.toMatchObject({ statusCode: 400, code: 'SELLER_NOT_VERIFIED' });
+    });
   });
 
   describe('shipOrder & completeDeliveryOrder (Delivery Fulfillment)', () => {

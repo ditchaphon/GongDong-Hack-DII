@@ -145,7 +145,7 @@ export interface SchedulePickupInput {
  */
 export interface SchedulePickupResult {
   orderId: string;
-  status: 'SCHEDULED';
+  status: 'ACCEPTED' | 'SCHEDULED';
   scheduledAt: Date;
   handoverCode: string | null;
 }

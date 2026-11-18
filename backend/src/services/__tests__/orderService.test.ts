@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   acceptOrder,
+  cancelOrder,
   clearHandoverAttemptsForTest,
   clearUserMaintenanceCooldownForTest,
   createBatchOrders,
@@ -9,6 +10,7 @@ import {
   generateHandoverCode,
   getAdminOrders,
   getUserOrders,
+  openDispute,
   resolveDisputedOrder,
   schedulePickupOrder,
   verifyHandoverCode,
@@ -1275,6 +1277,133 @@ describe('OrderService - State Machine & Core Transactions', () => {
 
       expect(res.shippingFee).toBe(80);
       expect(res.totalPrice).toBe(530);
+    });
+  });
+
+  describe('Security & Logic Fixes (CRITICAL-2, HIGH-2, HIGH-4)', () => {
+    it('CRITICAL-2: เมื่อผู้ขายเรียก schedulePickupOrder ต้องคง status=ACCEPTED, scheduleConfirmedByBuyer=false และไม่ออก handoverCode จนกว่าผู้ซื้อจะยืนยัน', async () => {
+      const mockDb = {
+        order: {
+          findUnique: vi.fn().mockResolvedValue({
+            id: 'ord_sched_sec',
+            buyerId: 'usr_buyer_1',
+            sellerId: 'usr_seller_1',
+            shippingMethod: 'PICKUP',
+            status: 'ACCEPTED',
+            handoverCode: null,
+          }),
+          update: vi.fn().mockResolvedValue({}),
+        },
+      };
+
+      const futureIso = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+      const sellerRes = await schedulePickupOrder(
+        'ord_sched_sec',
+        'usr_seller_1',
+        { scheduledAt: futureIso, pickupLat: 18.79, pickupLng: 98.95, pickupLocationName: 'หน้าหอสมุด มช.' },
+        mockDb
+      );
+
+      expect(sellerRes.status).toBe('ACCEPTED');
+      expect(sellerRes.handoverCode).toBeNull();
+      expect(mockDb.order.update).toHaveBeenCalledWith({
+        where: { id: 'ord_sched_sec' },
+        data: expect.objectContaining({
+          status: 'ACCEPTED',
+          scheduleProposedBy: 'SELLER',
+          scheduleConfirmedByBuyer: false,
+          handoverCode: null,
+        }),
+      });
+
+      // ปฏิเสธเวลานัดย้อนหลังแม้เพียง 1 นาที
+      const pastOneMin = new Date(Date.now() - 60 * 1000).toISOString();
+      await expect(
+        schedulePickupOrder(
+          'ord_sched_sec',
+          'usr_seller_1',
+          { scheduledAt: pastOneMin, pickupLat: 18.79, pickupLng: 98.95 },
+          mockDb
+        )
+      ).rejects.toMatchObject({ statusCode: 400, code: 'SCHEDULE_IN_THE_PAST' });
+    });
+
+    it('HIGH-2: acceptOrder ปฏิเสธ 403 ACCOUNT_BLACKLISTED หากผู้ขายติดบัญชีดำ', async () => {
+      const mockTx = {
+        order: {
+          findUnique: vi.fn().mockResolvedValue({
+            id: 'ord_blk_1',
+            sellerId: 'usr_seller_blk',
+            buyerId: 'usr_buyer_1',
+            status: 'REQUESTED',
+            shippingMethod: 'PICKUP',
+            seller: {
+              id: 'usr_seller_blk',
+              isVerifiedSeller: false,
+              isBlacklisted: true,
+              credits: 2,
+            },
+            orderItems: [{ bookListingId: 'bok_1', bookListing: { id: 'bok_1', status: 'AVAILABLE' } }],
+          }),
+        },
+      };
+
+      await expect(
+        acceptOrder('ord_blk_1', 'usr_seller_blk', {
+          $transaction: vi.fn(async (cb: any) => await cb(mockTx)),
+        })
+      ).rejects.toMatchObject({ statusCode: 403, code: 'ACCOUNT_BLACKLISTED' });
+    });
+
+    it('HIGH-4: cancelOrder และ openDispute เซ็นเซอร์เบอร์โทร/LINE ID ในเหตุผลอัตโนมัติ', async () => {
+      const updateManyMock = vi.fn().mockResolvedValue({ count: 1 });
+      const msgCreateMock = vi.fn().mockResolvedValue({});
+      const mockDb: any = {
+        $transaction: vi.fn(async (cb: any) => await cb(mockDb)),
+        order: {
+          findUnique: vi.fn().mockResolvedValue({
+            id: 'ord_mask_1',
+            buyerId: 'usr_buyer_1',
+            sellerId: 'usr_seller_1',
+            status: 'REQUESTED',
+            orderItems: [],
+          }),
+          updateMany: updateManyMock,
+        },
+        orderMessage: { create: msgCreateMock },
+      };
+
+      await cancelOrder('ord_mask_1', 'usr_buyer_1', 'ติดต่อไลน์ @secret99 เบอร์ 0812345678', mockDb);
+      expect(updateManyMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            cancelReason: expect.not.stringContaining('0812345678'),
+          }),
+        })
+      );
+      expect(updateManyMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            cancelReason: expect.not.stringContaining('@secret99'),
+          }),
+        })
+      );
+
+      mockDb.order.findUnique.mockResolvedValue({
+        id: 'ord_mask_1',
+        buyerId: 'usr_buyer_1',
+        sellerId: 'usr_seller_1',
+        status: 'ACCEPTED',
+        orderItems: [],
+      });
+      const disputeRes = await openDispute(
+        'ord_mask_1',
+        'usr_buyer_1',
+        'ขอคุยต่อที่ 0891112222',
+        mockDb
+      );
+      expect(disputeRes.disputeReason).not.toContain('0891112222');
+      expect(disputeRes.disputeReason).toContain('•••');
     });
   });
 });

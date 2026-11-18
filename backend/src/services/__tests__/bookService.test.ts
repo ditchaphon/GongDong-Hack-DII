@@ -900,5 +900,59 @@ describe('BookService - Marketplace & Listings Management', () => {
         code: 'INVALID_SET_VOLUMES',
       });
     });
+
+    it('HIGH-2 & HIGH-4: createBookListing และ updateBookListing ปฏิเสธบัญชีติด Blacklist และปฏิเสธข้อมูลติดต่อใน description/pickupLocationName', async () => {
+      const validImages: CreateBookListingInput['images'] = [
+        { imageUrl: 'https://img/1.webp', imageType: 'FRONT_COVER', displayOrder: 1, isCover: true },
+        { imageUrl: 'https://img/2.webp', imageType: 'BACK_COVER', displayOrder: 2 },
+        { imageUrl: 'https://img/3.webp', imageType: 'SPINE', displayOrder: 3 },
+        { imageUrl: 'https://img/4.webp', imageType: 'INNER', displayOrder: 4 },
+      ];
+
+      await expect(
+        createBookListing(
+          'usr_seller_1',
+          {
+            isbn: '9786161845678',
+            title: 'หนังสือทดสอบ',
+            description: 'สนใจทักไลน์ @bookshop99 หรือโทร 0812345678',
+            price: 150,
+            conditionAnswers: { spine: false, stains: false, markings: false, covers: false, pages: false },
+            images: validImages,
+          },
+          mockDb
+        )
+      ).rejects.toMatchObject({ statusCode: 400, code: 'CONTACT_INFO_NOT_ALLOWED' });
+
+      mockDb.user.findUnique.mockResolvedValue({
+        id: 'usr_seller_1',
+        isVerifiedSeller: false,
+        isBlacklisted: true,
+        shopProfile: null,
+      });
+
+      await expect(
+        createBookListing(
+          'usr_seller_1',
+          {
+            isbn: '9786161845678',
+            title: 'หนังสือทดสอบ',
+            price: 150,
+            conditionAnswers: { spine: false, stains: false, markings: false, covers: false, pages: false },
+            images: validImages,
+          },
+          mockDb
+        )
+      ).rejects.toMatchObject({ statusCode: 403, code: 'ACCOUNT_BLACKLISTED' });
+
+      mockDb.bookListing.findUnique.mockResolvedValue({
+        id: 'bok_1',
+        sellerId: 'usr_seller_1',
+        status: 'AVAILABLE',
+      });
+      await expect(
+        updateBookListing('bok_1', 'usr_seller_1', { description: 'ปกติ' }, mockDb)
+      ).rejects.toMatchObject({ statusCode: 403, code: 'ACCOUNT_BLACKLISTED' });
+    });
   });
 });

@@ -31,8 +31,10 @@ const envSchema = z.object({
   SLIPOK_BRANCH_ID: z.string().optional(),
   PLATFORM_PROMPTPAY_ID: z.string().optional(),
   PLATFORM_RECIPIENT_NAME: z.string().default('กองดอง · บัญชีรับชำระ'),
+  PLATFORM_SLIP_RECEIVER_NAME: z.string().optional(),
 
   // Security & KYC Hashing & Blacklist Check
+  ENABLE_MOCK_AUTH: z.string().optional(),
   KYC_HASH_PEPPER: z.string().optional(),
   BLACKLISTSELLER_API_KEY: z.string().optional(),
   BLACKLISTSELLER_API_URL: z

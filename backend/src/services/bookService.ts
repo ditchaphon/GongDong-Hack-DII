@@ -1,5 +1,6 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 import { prisma as defaultPrisma } from '../config/prisma';
+import { maskSensitiveData } from './dataMaskingService';
 import { calculateBookGrade } from './gradingService';
 import { sanitizeIsbn } from './googleBooksService';
 import { removeUnreferencedStorageUrls } from './uploadService';
@@ -238,19 +239,45 @@ export async function getRecommendedBooks(
   return { books: listings.map(mapBookFeedItem) };
 }
 
-async function getSellerParcelCapability(db: any, sellerId: string): Promise<boolean> {
-  if (!db?.user?.findUnique) return true;
+async function getSellerListingCapability(
+  db: any,
+  sellerId: string
+): Promise<{ canParcel: boolean }> {
+  if (!db?.user?.findUnique) return { canParcel: true };
   const seller = await db.user.findUnique({
     where: { id: sellerId },
     select: {
       isVerifiedSeller: true,
+      isBlacklisted: true,
       shopProfile: { select: { supportsParcel: true } },
     },
   });
   if (!seller) {
     throw new AppError('ไม่พบบัญชีผู้ขาย', 404, 'SELLER_NOT_FOUND');
   }
-  return Boolean(seller.isVerifiedSeller && seller.shopProfile?.supportsParcel);
+  if (seller.isBlacklisted) {
+    throw new AppError(
+      'บัญชีของคุณถูกระงับสิทธิ์การขายชั่วคราวเนื่องจากพบประวัติในฐานข้อมูล Blacklistseller',
+      403,
+      'ACCOUNT_BLACKLISTED'
+    );
+  }
+  return {
+    canParcel: Boolean(seller.isVerifiedSeller && seller.shopProfile?.supportsParcel),
+  };
+}
+
+function assertNoListingContactLeak(value: string | null | undefined, fieldLabel: string): void {
+  if (!value) return;
+  const trimmed = value.trim();
+  if (!trimmed) return;
+  if (maskSensitiveData(trimmed).hasMaskedData) {
+    throw new AppError(
+      `${fieldLabel}ห้ามมีเบอร์โทรศัพท์ ไลน์ไอดี เลขบัญชี หรือช่องทางติดต่อภายนอก`,
+      400,
+      'CONTACT_INFO_NOT_ALLOWED'
+    );
+  }
 }
 
 /**
@@ -359,6 +386,9 @@ export async function createBookListing(
     throw new AppError('กรุณาระบุชื่อหนังสือ', 400, 'INVALID_TITLE');
   }
 
+  assertNoListingContactLeak(input.description, 'รายละเอียดหนังสือ');
+  assertNoListingContactLeak(input.pickupLocationName, 'ชื่อจุดนัดรับ');
+
   // 1. ตรวจสอบรูปภาพ 4 มุมบังคับ
   if (!input.images || !Array.isArray(input.images)) {
     throw new AppError('กรุณาแนบรูปภาพถ่ายหนังสือ', 400, 'MISSING_IMAGES');
@@ -425,8 +455,8 @@ export async function createBookListing(
     normalizedMissingVolumes = uniqueMissing;
   }
 
-  // 3. ตรวจสอบสิทธิ์ส่งพัสดุและช่องทางการส่งมอบ
-  const canParcel = await getSellerParcelCapability(db, sellerId);
+  // 3. ตรวจสอบสิทธิ์บัญชีดำ สิทธิ์ส่งพัสดุ และช่องทางการส่งมอบ
+  const { canParcel } = await getSellerListingCapability(db, sellerId);
   const allowPickup = input.allowPickup ?? true;
   const allowDelivery = input.allowDelivery ?? canParcel;
 
@@ -641,15 +671,16 @@ export async function updateBookListing(
     }
   }
 
-  if (input.allowDelivery === true) {
-    const canParcel = await getSellerParcelCapability(db, sellerId);
-    if (!canParcel) {
-      throw new AppError(
-        'ร้านค้าต้องยืนยันตัวตนและเปิดรับส่งพัสดุในตั้งค่าร้านก่อน จึงจะเปิดส่งพัสดุได้',
-        403,
-        'PARCEL_NOT_ALLOWED'
-      );
-    }
+  assertNoListingContactLeak(input.description, 'รายละเอียดหนังสือ');
+  assertNoListingContactLeak(input.pickupLocationName, 'ชื่อจุดนัดรับ');
+
+  const { canParcel } = await getSellerListingCapability(db, sellerId);
+  if (input.allowDelivery === true && !canParcel) {
+    throw new AppError(
+      'ร้านค้าต้องยืนยันตัวตนและเปิดรับส่งพัสดุในตั้งค่าร้านก่อน จึงจะเปิดส่งพัสดุได้',
+      403,
+      'PARCEL_NOT_ALLOWED'
+    );
   }
 
   const updateData: any = {};

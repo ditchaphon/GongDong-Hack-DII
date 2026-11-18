@@ -14,6 +14,7 @@ import { uploadRouter } from './routes/upload';
 import { userRouter } from './routes/users';
 import { webhookRouter } from './routes/webhooks';
 import { errorHandler } from './middlewares/errorHandler';
+import { createRateLimitMiddleware } from './middlewares/rateLimit';
 
 const app = express();
 
@@ -42,6 +43,18 @@ app.use('/api/webhooks', webhookRouter);
 // Body Parser Middleware
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Global API Rate Limiter (protects against bursts; skips health & webhooks)
+app.use(
+  '/api',
+  createRateLimitMiddleware({
+    name: 'global-api',
+    windowMs: 60 * 1000,
+    maxRequests: 120,
+    keyBy: 'ip',
+    skip: (req) => req.path.startsWith('/health') || req.path.startsWith('/webhooks'),
+  })
+);
 
 // API Routes
 app.use('/api/health', healthRouter);

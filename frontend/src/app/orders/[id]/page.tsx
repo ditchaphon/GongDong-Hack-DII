@@ -78,6 +78,7 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
     acceptOrder,
     rejectOrder,
     cancelOrder,
+    confirmSchedule,
     verifyHandover,
     openDispute,
     isMineAsBuyer,
@@ -128,6 +129,7 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
   const [handoverCodeInput, setHandoverCodeInput] = useState('');
   const [verifyingHandover, setVerifyingHandover] = useState(false);
   const [handoverError, setHandoverError] = useState<string | null>(null);
+  const [confirmingSchedule, setConfirmingSchedule] = useState(false);
 
   const isInitialLoading =
     !isReady || (!order && (!hasResolved || loading || fetchingDetail));
@@ -368,13 +370,49 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 
         {isBuyer && order.status === 'ACCEPTED' && order.delivery === 'MEETUP' && (
           <Panel icon={<CalendarDays className="w-4 h-4 text-teal-600" />} title="ยืนยันวันและจุดนัดรับ">
-            <p className="text-[11px] text-slate-500 leading-relaxed">
-              ผู้ขายรับออเดอร์แล้ว · ยืนยันหรือปรับเปลี่ยนวันเวลาและจุดนัดรับ เพื่อให้ระบบสร้างรหัสยืนยันส่งมอบ
-            </p>
-            {meetupCard}
-            <Button fullWidth onClick={() => router.push(`/orders/${order.id}/schedule`)}>
-              จัดการเวลานัดรับ / ยืนยันนัดหมาย
-            </Button>
+            {order.schedule && order.schedule.proposedBy === 'SELLER' && !order.schedule.confirmedByBuyer ? (
+              <>
+                <p className="text-[11px] text-slate-500 leading-relaxed">
+                  ผู้ขายเสนอเวลานัดรับมาให้แล้ว · กดยืนยันเพื่อล็อกนัดหมายและรับรหัสส่งมอบ 6 หลัก หรือเลือกเปลี่ยนวันเวลาใหม่
+                </p>
+                {meetupCard}
+                <div className="space-y-2">
+                  <Button
+                    fullWidth
+                    isLoading={confirmingSchedule}
+                    onClick={async () => {
+                      setConfirmingSchedule(true);
+                      const res = await confirmSchedule(order.id);
+                      setConfirmingSchedule(false);
+                      if (res.ok) {
+                        setToast('ยืนยันนัดรับและสร้างรหัสส่งมอบ 6 หลักแล้ว');
+                      } else {
+                        setToast(res.error || 'ยืนยันนัดรับไม่สำเร็จ');
+                      }
+                    }}
+                  >
+                    ยืนยันเวลานัดรับที่ร้านเสนอ
+                  </Button>
+                  <Button
+                    fullWidth
+                    variant="secondary"
+                    onClick={() => router.push(`/orders/${order.id}/schedule`)}
+                  >
+                    ขอเปลี่ยนวัน / เวลานัดรับ
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <>
+                <p className="text-[11px] text-slate-500 leading-relaxed">
+                  ผู้ขายรับออเดอร์แล้ว · ยืนยันหรือปรับเปลี่ยนวันเวลาและจุดนัดรับ เพื่อให้ระบบสร้างรหัสยืนยันส่งมอบ
+                </p>
+                {meetupCard}
+                <Button fullWidth onClick={() => router.push(`/orders/${order.id}/schedule`)}>
+                  จัดการเวลานัดรับ / ยืนยันนัดหมาย
+                </Button>
+              </>
+            )}
           </Panel>
         )}
 
@@ -501,12 +539,20 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 
         {!isBuyer && order.status === 'ACCEPTED' && order.delivery === 'MEETUP' && (
           <Panel icon={<CalendarDays className="w-4 h-4 text-teal-600" />} title="กำหนด / ยืนยันเวลานัดรับ">
-            <p className="text-[11px] text-slate-500 leading-relaxed">
-              ออเดอร์นี้เป็นแบบนัดรับ · กดยืนยันหรือเสนอเวลานัดหมายใหม่กับผู้ซื้อก่อนเจอกัน (จ่ายเงินสดหน้างาน)
-            </p>
+            {order.schedule && order.schedule.proposedBy === 'SELLER' && !order.schedule.confirmedByBuyer ? (
+              <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-xl p-2.5 leading-relaxed">
+                ส่งข้อเสนอเวลานัดรับแล้ว · รอผู้ซื้อกดยืนยันเพื่อให้ระบบออกรหัสส่งมอบ 6 หลัก (สามารถแก้ไขข้อเสนอได้จนกว่าผู้ซื้อจะยืนยัน)
+              </p>
+            ) : (
+              <p className="text-[11px] text-slate-500 leading-relaxed">
+                ออเดอร์นี้เป็นแบบนัดรับ · เสนอเวลานัดหมายให้ผู้ซื้อกดยืนยันก่อนเจอกัน (จ่ายเงินสดหน้างาน)
+              </p>
+            )}
             {meetupCard}
             <Button fullWidth onClick={() => router.push(`/orders/${order.id}/schedule`)}>
-              กำหนด / ยืนยันนัดหมาย
+              {order.schedule && order.schedule.proposedBy === 'SELLER' && !order.schedule.confirmedByBuyer
+                ? 'แก้ไขข้อเสนอเวลานัดรับ'
+                : 'เสนอเวลานัดหมายให้ผู้ซื้อ'}
             </Button>
           </Panel>
         )}

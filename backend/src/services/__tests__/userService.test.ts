@@ -460,6 +460,49 @@ describe('userService', () => {
         )
       ).rejects.toMatchObject({ statusCode: 400, code: 'DUPLICATE_SLIP' });
     });
+    it('CRITICAL-1: processTopupSlip ปฏิเสธ 400 SLIP_RECEIVER_MISMATCH เมื่อตั้ง PLATFORM_SLIP_RECEIVER_NAME แล้วชื่อผู้รับไม่ตรงหรือว่าง', async () => {
+      const prevReceiver = process.env.PLATFORM_SLIP_RECEIVER_NAME;
+      process.env.PLATFORM_SLIP_RECEIVER_NAME = 'บจก. กองดอง';
+      try {
+        const mockPrisma = {
+          user: { findUnique: vi.fn().mockResolvedValue({ id: 'usr-1', displayName: 'A' }) },
+        };
+
+        const wrongReceiverVerifier = vi.fn().mockResolvedValue({
+          transRef: 'REF_WRONG_RCV',
+          amount: 50,
+          senderName: 'ผู้โอน',
+          receiverName: 'นาย เพื่อน โอนเล่น',
+        });
+
+        await expect(
+          processTopupSlip(
+            'usr-1',
+            { slip_image_url: 'https://example.com/slip.webp', pack_id: 'bookworm' },
+            mockPrisma,
+            wrongReceiverVerifier
+          )
+        ).rejects.toMatchObject({ statusCode: 400, code: 'SLIP_RECEIVER_MISMATCH' });
+
+        const missingReceiverVerifier = vi.fn().mockResolvedValue({
+          transRef: 'REF_NO_RCV',
+          amount: 50,
+          senderName: 'ผู้โอน',
+        });
+
+        await expect(
+          processTopupSlip(
+            'usr-1',
+            { slip_image_url: 'https://example.com/slip.webp', pack_id: 'bookworm' },
+            mockPrisma,
+            missingReceiverVerifier
+          )
+        ).rejects.toMatchObject({ statusCode: 400, code: 'SLIP_RECEIVER_MISMATCH' });
+      } finally {
+        if (prevReceiver === undefined) delete process.env.PLATFORM_SLIP_RECEIVER_NAME;
+        else process.env.PLATFORM_SLIP_RECEIVER_NAME = prevReceiver;
+      }
+    });
   });
 
   describe('getTopupPaymentQr', () => {

@@ -1,6 +1,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import multer from 'multer';
 import { authMiddleware } from '../middlewares/auth';
+import { createRateLimitMiddleware } from '../middlewares/rateLimit';
 import { MAX_UPLOAD_BYTES, deleteUploadedImage, uploadImage } from '../services/uploadService';
 import { getUserIdFromRequest } from '../utils/requestUser';
 
@@ -15,12 +16,20 @@ const upload = multer({
 
 uploadRouter.use(authMiddleware);
 
+const uploadRateLimiter = createRateLimitMiddleware({
+  name: 'upload-image',
+  windowMs: 5 * 60 * 1000,
+  maxRequests: 30,
+  message: 'อัปโหลดรูปภาพถี่เกินไป กรุณารอสักครู่แล้วลองใหม่อีกครั้ง',
+});
+
 /**
  * POST /api/upload
  * อัปโหลดรูปภาพไปยัง Supabase Storage (book-listings, avatars, order-receives, slips, disputes)
  */
 uploadRouter.post(
   '/',
+  uploadRateLimiter,
   upload.single('file'),
   async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {

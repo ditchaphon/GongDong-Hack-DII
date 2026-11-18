@@ -1,5 +1,6 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { authMiddleware } from '../middlewares/auth';
+import { createRateLimitMiddleware } from '../middlewares/rateLimit';
 import { isSlipOkConfigured, verifySlipWithSlipOk } from '../services/slipokService';
 import { maskAccountHolderName } from '../services/dataMaskingService';
 import { getOrderMessages, sendOrderMessage } from '../services/messageService';
@@ -30,6 +31,20 @@ import { getUserIdFromRequest } from '../utils/requestUser';
 export const orderRouter = Router();
 
 orderRouter.use(authMiddleware);
+
+const handoverRateLimiter = createRateLimitMiddleware({
+  name: 'order-handover',
+  windowMs: 15 * 60 * 1000,
+  maxRequests: 10,
+  message: 'กรอกรหัสส่งมอบบ่อยเกินกำหนด กรุณารอ 15 นาทีแล้วลองใหม่อีกครั้ง',
+});
+
+const orderSlipRateLimiter = createRateLimitMiddleware({
+  name: 'order-payment-slip',
+  windowMs: 15 * 60 * 1000,
+  maxRequests: 10,
+  message: 'ส่งตรวจสอบสลิปชำระเงินถี่เกินไป กรุณารอสักครู่แล้วลองใหม่อีกครั้ง',
+});
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -421,7 +436,10 @@ orderRouter.patch(
           scheduled_at: result.scheduledAt.toISOString(),
           handover_code: result.handoverCode,
         },
-        message: 'ยืนยันการนัดหมายสำเร็จ รหัสส่งมอบ 6 หลักถูกสร้างให้ผู้ซื้อแล้ว',
+        message:
+          result.status === 'SCHEDULED'
+            ? 'ยืนยันการนัดหมายสำเร็จ รหัสส่งมอบ 6 หลักถูกสร้างให้ผู้ซื้อแล้ว'
+            : 'บันทึกข้อเสนอเวลานัดรับแล้ว รอผู้ซื้อกดยืนยัน',
       });
     } catch (error) {
       next(error);
@@ -435,6 +453,7 @@ orderRouter.patch(
  */
 orderRouter.post(
   '/:id/handover',
+  handoverRateLimiter,
   async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const orderId = String(req.params.id);
@@ -496,6 +515,7 @@ orderRouter.get(
  */
 orderRouter.post(
   '/:id/payment-slip',
+  orderSlipRateLimiter,
   async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const orderId = String(req.params.id);

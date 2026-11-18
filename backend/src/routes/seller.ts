@@ -1,5 +1,6 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { authMiddleware } from '../middlewares/auth';
+import { createRateLimitMiddleware } from '../middlewares/rateLimit';
 import {
   addMeetupPoint,
   deleteMeetupPoint,
@@ -99,12 +100,20 @@ sellerRouter.delete(
   }
 );
 
+const kycRateLimiter = createRateLimitMiddleware({
+  name: 'seller-kyc',
+  windowMs: 15 * 60 * 1000,
+  maxRequests: 5,
+  message: 'ส่งคำขอยืนยันตัวตนบ่อยเกินกำหนด กรุณารอ 15 นาทีแล้วลองใหม่อีกครั้ง',
+});
+
 /**
  * POST /api/seller/kyc
  * ยืนยันตัวตนผู้ขายสำหรับจัดส่งพัสดุ (Selective KYC - เก็บเลขบัตรประชาชนแบบ Masked เท่านั้น)
  */
 sellerRouter.post(
   '/kyc',
+  kycRateLimiter,
   async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const userId = getUserIdFromRequest(req);

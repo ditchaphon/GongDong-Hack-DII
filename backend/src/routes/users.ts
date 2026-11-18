@@ -1,6 +1,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { prisma } from '../config/prisma';
 import { authMiddleware } from '../middlewares/auth';
+import { createRateLimitMiddleware } from '../middlewares/rateLimit';
 import {
   createUserAddress,
   deleteUserAddress,
@@ -130,12 +131,20 @@ userRouter.get(
   }
 );
 
+const topupSlipRateLimiter = createRateLimitMiddleware({
+  name: 'topup-slip',
+  windowMs: 15 * 60 * 1000,
+  maxRequests: 10,
+  message: 'ส่งตรวจสอบสลิปเติมเครดิตถี่เกินไป กรุณารอสักครู่แล้วลองใหม่อีกครั้ง',
+});
+
 /**
  * POST /api/users/me/topup-slip
  * แนบสลิปเติมเครดิต ➔ เพิ่มเครดิตและปลดล็อกเป็นผู้ขายยืนยันตัวตน (is_verified_seller = true)
  */
 userRouter.post(
   '/me/topup-slip',
+  topupSlipRateLimiter,
   async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const userId = getUserIdFromRequest(req);
@@ -146,11 +155,15 @@ userRouter.post(
         undefined,
         isSlipOkConfigured()
           ? async (url, options) => {
-              const verified = await verifySlipWithSlipOk(url, { log: options?.log ?? true });
+              const verified = await verifySlipWithSlipOk(url, {
+                ...(options?.amount !== undefined ? { amount: options.amount } : {}),
+                log: options?.log ?? true,
+              });
               return {
                 transRef: verified.transRef,
                 amount: verified.amount,
                 senderName: verified.senderName,
+                receiverName: verified.receiverName,
               };
             }
           : undefined
