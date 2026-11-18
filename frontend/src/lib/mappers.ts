@@ -30,6 +30,7 @@ export interface BackendBookFeedItem {
   categories?: string[];
   isSet?: boolean;
   totalVolumes?: number | null;
+  missingVolumes?: number[];
   coverImageUrl: string;
   price: number;
   originalPrice: number | null;
@@ -74,6 +75,7 @@ export interface BackendUserBookItem {
   categories?: string[];
   isSet?: boolean;
   totalVolumes?: number | null;
+  missingVolumes?: number[];
   price: number;
   grade: string;
   coverImageUrl: string;
@@ -81,6 +83,7 @@ export interface BackendUserBookItem {
   allowDelivery?: boolean;
   codEnabled?: boolean;
   status: string;
+  hasOrders?: boolean;
   createdAt: string;
 }
 
@@ -319,6 +322,10 @@ export function mapBackendBookToBook(item: BackendBookFeedItem): Book {
     categories: item.categories?.length ? item.categories : item.category ? [item.category] : [],
     isSet: Boolean(item.isSet),
     totalVolumes: item.totalVolumes ?? undefined,
+    missingVolumes:
+      Boolean(item.isSet) && Array.isArray(item.missingVolumes)
+        ? item.missingVolumes
+        : [],
     price: Number(item.price),
     originalPrice: item.originalPrice ?? undefined,
     grade: toUiBookGrade(item.grade),
@@ -381,6 +388,10 @@ export function mapBackendBookDetailToBook(detail: BackendBookDetail): Book {
     isbn: detail.isbn,
     publisher: detail.publisher || undefined,
     description: detail.description || undefined,
+    missingVolumes:
+      Boolean(detail.isSet) && Array.isArray(detail.missingVolumes)
+        ? detail.missingVolumes
+        : [],
     checklist: conditionAnswersToChecklist(detail.conditionAnswers),
     photos: {
       cover,
@@ -428,6 +439,10 @@ export function mapBackendUserBookToSellerListing(
     categories: item.categories?.length ? item.categories : item.category ? [item.category] : [],
     isSet: Boolean(item.isSet),
     totalVolumes: item.totalVolumes ?? undefined,
+    missingVolumes:
+      Boolean(item.isSet) && Array.isArray(item.missingVolumes)
+        ? item.missingVolumes
+        : [],
     price: Number(item.price),
     grade: toUiBookGrade(item.grade),
     checklist: conditionAnswersToChecklist(null),
@@ -449,6 +464,7 @@ export function mapBackendUserBookToSellerListing(
       month: 'short',
     }),
     status: mapBackendStatusToListingStatus(item.status),
+    hasOrders: Boolean(item.hasOrders),
     views: 0,
     savedCount: 0,
   };
@@ -505,6 +521,7 @@ export function mapPublicShopToShopProfile(
   return {
     id: shop.seller_id || shop.id,
     shopName: shop.shop_name,
+    description: shop.description?.trim() || undefined,
     avatar: shop.avatar_url || undefined,
     rating: reviewsRes?.summary?.total_reviews
       ? reviewsRes.summary.average_rating

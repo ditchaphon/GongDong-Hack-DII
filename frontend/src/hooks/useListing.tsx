@@ -2,6 +2,7 @@
 
 import React, {
   createContext,
+  useCallback,
   useContext,
   useMemo,
   useState,
@@ -49,6 +50,8 @@ export const EMPTY_DRAFT: ListingDraft = {
   deliveryMethods: ['MEETUP'],
   parcelShippingFee: 40,
   codEnabled: false,
+  isDemoDryRun: false,
+  demoSourceBookId: undefined,
 };
 
 export interface ListingContextValue {
@@ -66,14 +69,37 @@ export interface ListingContextValue {
   toggleDelivery: (method: DeliveryMethod) => void;
   toggleMissingVolume: (volume: number) => void;
   resetDraft: (mode?: 'SINGLE' | 'SET') => void;
+  loadDemoDraft: (nextDraft: ListingDraft) => void;
 }
 
 const ListingContext = createContext<ListingContextValue | null>(null);
 
+function createEmptyDraft(mode: 'SINGLE' | 'SET' = 'SINGLE'): ListingDraft {
+  return {
+    ...EMPTY_DRAFT,
+    mode,
+    totalVolumes: mode === 'SET' ? 2 : 1,
+    categories: [],
+    missingVolumes: [],
+    photos: {
+      cover: '',
+      back: '',
+      spine: '',
+      nameTag: '',
+      defects: [],
+    },
+    checklist: { ...EMPTY_CHECKLIST },
+    defects: [],
+    deliveryMethods: ['MEETUP'],
+    isDemoDryRun: false,
+    demoSourceBookId: undefined,
+  };
+}
+
 export const ListingProvider: React.FC<{ children: ReactNode }> = ({
   children,
 }) => {
-  const [draft, setDraft] = useState<ListingDraft>(EMPTY_DRAFT);
+  const [draft, setDraft] = useState<ListingDraft>(() => createEmptyDraft('SINGLE'));
 
   const grade = useMemo(() => calculateGrade(draft.checklist), [draft.checklist]);
 
@@ -141,8 +167,17 @@ export const ListingProvider: React.FC<{ children: ReactNode }> = ({
         : [...prev.missingVolumes, volume].sort((a, b) => a - b),
     }));
 
-  const resetDraft = (mode: 'SINGLE' | 'SET' = 'SINGLE') =>
-    setDraft({ ...EMPTY_DRAFT, mode, totalVolumes: mode === 'SET' ? 2 : 1 });
+  const resetDraft = useCallback(
+    (mode: 'SINGLE' | 'SET' = 'SINGLE') => setDraft(createEmptyDraft(mode)),
+    []
+  );
+
+  const loadDemoDraft = useCallback((nextDraft: ListingDraft) => {
+    setDraft({
+      ...nextDraft,
+      isDemoDryRun: true,
+    });
+  }, []);
 
   return (
     <ListingContext.Provider
@@ -158,6 +193,7 @@ export const ListingProvider: React.FC<{ children: ReactNode }> = ({
         toggleDelivery,
         toggleMissingVolume,
         resetDraft,
+        loadDemoDraft,
       }}
     >
       {children}

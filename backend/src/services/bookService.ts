@@ -1,5 +1,6 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 import { prisma as defaultPrisma } from '../config/prisma';
+import { maskSensitiveData } from './dataMaskingService';
 import { calculateBookGrade } from './gradingService';
 import { sanitizeIsbn } from './googleBooksService';
 import { removeUnreferencedStorageUrls } from './uploadService';
@@ -94,6 +95,10 @@ function mapBookFeedItem(item: any): BookListingItem {
     categories,
     isSet: Boolean(item.isSet),
     totalVolumes: item.totalVolumes ?? null,
+    missingVolumes:
+      Boolean(item.isSet) && Array.isArray(item.missingVolumes)
+        ? item.missingVolumes
+        : [],
     coverImageUrl: item.images[0]?.imageUrl || item.bookCatalog.coverUrl || '',
     price: Number(item.price),
     originalPrice: resolvedOriginalPrice,
@@ -106,8 +111,28 @@ function mapBookFeedItem(item: any): BookListingItem {
   };
 }
 
-const FEED_BOOK_INCLUDE = {
-  bookCatalog: true,
+const FEED_BOOK_SELECT = {
+  id: true,
+  category: true,
+  categories: true,
+  isSet: true,
+  totalVolumes: true,
+  missingVolumes: true,
+  price: true,
+  grade: true,
+  allowPickup: true,
+  pickupLocationName: true,
+  allowDelivery: true,
+  codEnabled: true,
+  photoChecks: true,
+  bookCatalog: {
+    select: {
+      title: true,
+      author: true,
+      coverUrl: true,
+      originalPrice: true,
+    },
+  },
   seller: {
     select: {
       id: true,
@@ -122,6 +147,9 @@ const FEED_BOOK_INCLUDE = {
   images: {
     orderBy: [{ isCover: 'desc' as const }, { displayOrder: 'asc' as const }],
     take: 1,
+    select: {
+      imageUrl: true,
+    },
   },
 };
 
@@ -171,16 +199,19 @@ export async function getBookListings(
 
   const where = andConditions.length === 1 ? andConditions[0] : { AND: andConditions };
 
-  const [listings, total] = await Promise.all([
-    db.bookListing.findMany({
-      where,
-      take: limit,
-      skip: offset,
-      orderBy: { createdAt: 'desc' },
-      include: FEED_BOOK_INCLUDE,
-    }),
-    db.bookListing.count({ where }),
-  ]);
+  const listings = await db.bookListing.findMany({
+    where,
+    take: limit,
+    skip: offset,
+    orderBy: { createdAt: 'desc' },
+    select: FEED_BOOK_SELECT,
+  });
+
+  // Skip COUNT(*) query when the first page already contains all matching listings.
+  const total =
+    offset === 0 && listings.length < limit
+      ? listings.length
+      : await db.bookListing.count({ where });
 
   return {
     books: listings.map(mapBookFeedItem),
@@ -202,25 +233,51 @@ export async function getRecommendedBooks(
     where: { status: 'AVAILABLE' },
     take: safeLimit,
     orderBy: [{ seller: { isVerifiedSeller: 'desc' } }, { createdAt: 'desc' }],
-    include: FEED_BOOK_INCLUDE,
+    select: FEED_BOOK_SELECT,
   });
 
   return { books: listings.map(mapBookFeedItem) };
 }
 
-async function getSellerParcelCapability(db: any, sellerId: string): Promise<boolean> {
-  if (!db?.user?.findUnique) return true;
+async function getSellerListingCapability(
+  db: any,
+  sellerId: string
+): Promise<{ canParcel: boolean }> {
+  if (!db?.user?.findUnique) return { canParcel: true };
   const seller = await db.user.findUnique({
     where: { id: sellerId },
     select: {
       isVerifiedSeller: true,
+      isBlacklisted: true,
       shopProfile: { select: { supportsParcel: true } },
     },
   });
   if (!seller) {
     throw new AppError('ไม่พบบัญชีผู้ขาย', 404, 'SELLER_NOT_FOUND');
   }
-  return Boolean(seller.isVerifiedSeller && seller.shopProfile?.supportsParcel);
+  if (seller.isBlacklisted) {
+    throw new AppError(
+      'บัญชีของคุณถูกระงับสิทธิ์การขายชั่วคราวเนื่องจากพบประวัติในฐานข้อมูล Blacklistseller',
+      403,
+      'ACCOUNT_BLACKLISTED'
+    );
+  }
+  return {
+    canParcel: Boolean(seller.isVerifiedSeller && seller.shopProfile?.supportsParcel),
+  };
+}
+
+function assertNoListingContactLeak(value: string | null | undefined, fieldLabel: string): void {
+  if (!value) return;
+  const trimmed = value.trim();
+  if (!trimmed) return;
+  if (maskSensitiveData(trimmed).hasMaskedData) {
+    throw new AppError(
+      `${fieldLabel}ห้ามมีเบอร์โทรศัพท์ ไลน์ไอดี เลขบัญชี หรือช่องทางติดต่อภายนอก`,
+      400,
+      'CONTACT_INFO_NOT_ALLOWED'
+    );
+  }
 }
 
 /**
@@ -329,6 +386,9 @@ export async function createBookListing(
     throw new AppError('กรุณาระบุชื่อหนังสือ', 400, 'INVALID_TITLE');
   }
 
+  assertNoListingContactLeak(input.description, 'รายละเอียดหนังสือ');
+  assertNoListingContactLeak(input.pickupLocationName, 'ชื่อจุดนัดรับ');
+
   // 1. ตรวจสอบรูปภาพ 4 มุมบังคับ
   if (!input.images || !Array.isArray(input.images)) {
     throw new AppError('กรุณาแนบรูปภาพถ่ายหนังสือ', 400, 'MISSING_IMAGES');
@@ -364,8 +424,39 @@ export async function createBookListing(
     throw new AppError('กรุณาระบุข้อมูลสภาพหนังสือ', 400, 'INVALID_CONDITION_ANSWERS');
   }
 
-  // 3. ตรวจสอบสิทธิ์ส่งพัสดุและช่องทางการส่งมอบ
-  const canParcel = await getSellerParcelCapability(db, sellerId);
+  let normalizedTotalVolumes: number | null = null;
+  let normalizedMissingVolumes: number[] = [];
+  if (input.isSet) {
+    const total = Number(input.totalVolumes);
+    if (!Number.isInteger(total) || total < 2 || total > 99) {
+      throw new AppError(
+        'การขายยกชุดต้องระบุจำนวนเล่มทั้งหมดตั้งแต่ 2 ถึง 99 เล่ม',
+        400,
+        'INVALID_SET_VOLUMES'
+      );
+    }
+    const rawMissing = Array.isArray(input.missingVolumes) ? input.missingVolumes : [];
+    const uniqueMissing = Array.from(
+      new Set(
+        rawMissing
+          .map((v) => Number(v))
+          .filter((v) => Number.isInteger(v) && v >= 1 && v <= total)
+      )
+    ).sort((a, b) => a - b);
+    const actualCount = total - uniqueMissing.length;
+    if (actualCount < 2) {
+      throw new AppError(
+        'การขายยกชุดต้องมีหนังสือที่ขายจริงอย่างน้อย 2 เล่ม',
+        400,
+        'INVALID_SET_VOLUMES'
+      );
+    }
+    normalizedTotalVolumes = total;
+    normalizedMissingVolumes = uniqueMissing;
+  }
+
+  // 3. ตรวจสอบสิทธิ์บัญชีดำ สิทธิ์ส่งพัสดุ และช่องทางการส่งมอบ
+  const { canParcel } = await getSellerListingCapability(db, sellerId);
   const allowPickup = input.allowPickup ?? true;
   const allowDelivery = input.allowDelivery ?? canParcel;
 
@@ -494,11 +585,8 @@ export async function createBookListing(
         categories,
         description: input.description ?? null,
         isSet: Boolean(input.isSet),
-        totalVolumes: input.isSet ? input.totalVolumes ?? null : null,
-        missingVolumes:
-          input.isSet && Array.isArray(input.missingVolumes)
-            ? input.missingVolumes
-            : [],
+        totalVolumes: input.isSet ? normalizedTotalVolumes : null,
+        missingVolumes: input.isSet ? normalizedMissingVolumes : [],
         defects: (input.defects ?? []) as any,
         photoChecks: photoChecksWithSnapshot as any,
         allowPickup,
@@ -583,15 +671,16 @@ export async function updateBookListing(
     }
   }
 
-  if (input.allowDelivery === true) {
-    const canParcel = await getSellerParcelCapability(db, sellerId);
-    if (!canParcel) {
-      throw new AppError(
-        'ร้านค้าต้องยืนยันตัวตนและเปิดรับส่งพัสดุในตั้งค่าร้านก่อน จึงจะเปิดส่งพัสดุได้',
-        403,
-        'PARCEL_NOT_ALLOWED'
-      );
-    }
+  assertNoListingContactLeak(input.description, 'รายละเอียดหนังสือ');
+  assertNoListingContactLeak(input.pickupLocationName, 'ชื่อจุดนัดรับ');
+
+  const { canParcel } = await getSellerListingCapability(db, sellerId);
+  if (input.allowDelivery === true && !canParcel) {
+    throw new AppError(
+      'ร้านค้าต้องยืนยันตัวตนและเปิดรับส่งพัสดุในตั้งค่าร้านก่อน จึงจะเปิดส่งพัสดุได้',
+      403,
+      'PARCEL_NOT_ALLOWED'
+    );
   }
 
   const updateData: any = {};
@@ -651,6 +740,9 @@ export async function getUserBookListings(
         orderBy: [{ isCover: 'desc' }, { displayOrder: 'asc' }],
         take: 1,
       },
+      _count: {
+        select: { orderItems: true },
+      },
     },
   });
 
@@ -665,6 +757,10 @@ export async function getUserBookListings(
         : [item.category],
     isSet: Boolean(item.isSet),
     totalVolumes: item.totalVolumes ?? null,
+    missingVolumes:
+      Boolean(item.isSet) && Array.isArray(item.missingVolumes)
+        ? item.missingVolumes
+        : [],
     price: Number(item.price),
     grade: item.grade as BookGrade,
     coverImageUrl: item.images[0]?.imageUrl || item.bookCatalog.coverUrl || '',
@@ -672,6 +768,7 @@ export async function getUserBookListings(
     allowDelivery: Boolean(item.allowDelivery ?? false),
     codEnabled: Boolean(item.codEnabled ?? true),
     status: item.status,
+    hasOrders: Boolean((item._count?.orderItems ?? 0) > 0),
     createdAt: item.createdAt,
   }));
 
@@ -712,6 +809,45 @@ export async function deleteBookListing(
       'ไม่สามารถลบหนังสือที่ติดจองหรือขายสำเร็จแล้วได้',
       400,
       'CANNOT_DELETE_ACTIVE_BOOK'
+    );
+  }
+
+  const existingOrderItems: Array<{ order?: { status?: string } }> = Array.isArray(
+    listing.orderItems
+  )
+    ? listing.orderItems
+    : typeof db.orderItem?.findMany === 'function'
+    ? await db.orderItem.findMany({
+        where: { bookListingId: id },
+        select: { order: { select: { status: true } } },
+        take: 10,
+      })
+    : [];
+
+  if (existingOrderItems.length > 0) {
+    const activeOrderStatuses = new Set([
+      'REQUESTED',
+      'ACCEPTED',
+      'SCHEDULED',
+      'PAID',
+      'SHIPPED',
+      'COMPLETED',
+      'DISPUTED',
+    ]);
+    const hasActiveOrCompletedOrder = existingOrderItems.some((item) =>
+      activeOrderStatuses.has(String(item.order?.status || '').toUpperCase())
+    );
+    if (hasActiveOrCompletedOrder) {
+      throw new AppError(
+        'ไม่สามารถลบหนังสือที่มีคำสั่งซื้อแล้วได้',
+        400,
+        'CANNOT_DELETE_ORDERED_BOOK'
+      );
+    }
+    throw new AppError(
+      'หนังสือเล่มนี้เคยมีประวัติคำสั่งซื้อแล้ว จึงไม่สามารถลบถาวรได้ กรุณาใช้ปุ่ม "ซ่อน" แทน',
+      400,
+      'CANNOT_DELETE_BOOK_WITH_ORDER_HISTORY'
     );
   }
 
@@ -881,6 +1017,7 @@ export interface IsbnCompareOffer {
   defectCount: number;
   isSet: boolean;
   totalVolumes: number | null;
+  missingVolumes: number[];
   allowPickup: boolean;
   pickupLocationName: string | null;
   allowDelivery: boolean;
@@ -944,6 +1081,7 @@ export async function getBookIsbnComparison(
       sellerId: true,
       price: true,
       grade: true,
+      isSet: true,
       status: true,
     },
   });
@@ -975,6 +1113,7 @@ export async function getBookIsbnComparison(
     where: {
       isbn: current.isbn,
       id: { not: current.id },
+      isSet: Boolean(current.isSet),
       status: 'AVAILABLE',
     },
     orderBy: [{ price: 'asc' }, { createdAt: 'desc' }],
@@ -1067,6 +1206,10 @@ export async function getBookIsbnComparison(
       defectCount: countDefectsFromListing(item),
       isSet: Boolean(item.isSet),
       totalVolumes: item.totalVolumes ?? null,
+      missingVolumes:
+        Boolean(item.isSet) && Array.isArray(item.missingVolumes)
+          ? item.missingVolumes
+          : [],
       allowPickup: Boolean(item.allowPickup),
       pickupLocationName: item.pickupLocationName ?? null,
       allowDelivery: Boolean(item.allowDelivery),

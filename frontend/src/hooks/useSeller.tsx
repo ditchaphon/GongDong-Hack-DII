@@ -73,6 +73,8 @@ export interface SellerContextValue {
   shop: ShopSettings | null;
   isShopSetup: boolean;
   loading: boolean;
+  hasResolved: boolean;
+  loadError: string | null;
   refreshSellerData: () => Promise<void>;
   saveShop: (
     settings: Omit<ShopSettings, 'setupComplete' | 'payeeVerified' | 'kyc'>
@@ -94,12 +96,50 @@ export interface SellerContextValue {
   publishListing: (draft: ListingDraft) => Promise<SellerListing>;
   updateListing: (id: string, patch: Partial<SellerListing>) => Promise<void>;
   setListingStatus: (id: string, status: ListingStatus) => Promise<void>;
+  deleteListing: (id: string) => Promise<void>;
 }
 
 const SellerContext = createContext<SellerContextValue | null>(null);
 
 const FALLBACK_COVER =
   'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=600';
+
+const SELLER_CACHE_PREFIX = 'gongdong.sellerCache.v1.';
+
+interface SellerCachePayload {
+  shop: ShopSettings | null;
+  listings: SellerListing[];
+  ledger: CreditEntry[];
+}
+
+function readSellerCache(userKey: string): SellerCachePayload | null {
+  if (!userKey || typeof window === 'undefined') return null;
+  try {
+    const raw = window.localStorage.getItem(`${SELLER_CACHE_PREFIX}${userKey}`);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as SellerCachePayload;
+    if (!parsed || typeof parsed !== 'object') return null;
+    return {
+      shop: parsed.shop ?? null,
+      listings: Array.isArray(parsed.listings) ? parsed.listings : [],
+      ledger: Array.isArray(parsed.ledger) ? parsed.ledger : [],
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writeSellerCache(userKey: string, payload: SellerCachePayload): void {
+  if (!userKey || typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(
+      `${SELLER_CACHE_PREFIX}${userKey}`,
+      JSON.stringify(payload)
+    );
+  } catch {
+    // ignore storage quota errors
+  }
+}
 
 function isSellerContextRoute(pathname: string | null): boolean {
   if (!pathname) return false;
@@ -117,25 +157,58 @@ export const SellerProvider: React.FC<{ children: ReactNode }> = ({
   const { user, isReady, isLoggedIn, idToken, refreshUser, addCredits } =
     useLiff();
 
+  const userKey = user.id || user.lineUserId || '';
   const loadedTokenRef = useRef<string | null>(null);
+  const hydratedCacheKeyRef = useRef<string | null>(null);
   const [shop, setShop] = useState<ShopSettings | null>(null);
   const [listings, setListings] = useState<SellerListing[]>([]);
   const [ledger, setLedger] = useState<CreditEntry[]>([]);
   const [loading, setLoading] = useState(false);
+  const [hasResolved, setHasResolved] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [selectedPackageId, setSelectedPackageId] = useState('bookworm');
   const [lastTopUpReceipt, setLastTopUpReceipt] = useState<TopUpReceipt | null>(null);
 
   const isShopSetup = !!shop?.setupComplete;
 
+  // Hydrate per-user cached shop immediately while fresh data fetches in background
+  useEffect(() => {
+    if (!isReady) return;
+    if (!isLoggedIn || !idToken) {
+      hydratedCacheKeyRef.current = null;
+      loadedTokenRef.current = null;
+      setShop(null);
+      setListings([]);
+      setLedger([]);
+      setLoadError(
+        isLoggedIn && !idToken
+          ? 'เซสชัน LINE หมดอายุ กรุณากดลองใหม่หรือเปิดผ่านเมนูอีกครั้ง'
+          : null
+      );
+      setHasResolved(true);
+      return;
+    }
+    if (!userKey || hydratedCacheKeyRef.current === userKey) return;
+    hydratedCacheKeyRef.current = userKey;
+    const cached = readSellerCache(userKey);
+    if (cached) {
+      setShop(cached.shop);
+      setListings(cached.listings);
+      setLedger(cached.ledger);
+      if (cached.shop?.setupComplete) {
+        setHasResolved(true);
+      }
+    }
+  }, [isReady, isLoggedIn, idToken, userKey]);
+
   const refreshSellerData = useCallback(async () => {
     if (!idToken) return;
     loadedTokenRef.current = idToken;
     setLoading(true);
+    setLoadError(null);
     try {
       const [shopRes, booksRes, ledgerRes] = await Promise.all([
-        api
-          .get<BackendMyShopResponse>('/api/seller/shop', { token: idToken })
-          .catch(() => null),
+        api.get<BackendMyShopResponse>('/api/seller/shop', { token: idToken }),
         api
           .get<{ books: BackendUserBookItem[] }>('/api/users/me/books', {
             token: idToken,
@@ -149,17 +222,32 @@ export const SellerProvider: React.FC<{ children: ReactNode }> = ({
       ]);
 
       const nextShop = shopRes ? mapBackendShopToShopSettings(shopRes) : null;
-      setShop(nextShop);
-      setListings(
-        (booksRes.books ?? []).map((b) =>
-          mapBackendUserBookToSellerListing(b, nextShop, user)
-        )
+      const nextListings = (booksRes.books ?? []).map((b) =>
+        mapBackendUserBookToSellerListing(b, nextShop, user)
       );
-      setLedger((ledgerRes.items ?? []).map(mapBackendCreditLedgerRow));
+      const nextLedger = (ledgerRes.items ?? []).map(mapBackendCreditLedgerRow);
+
+      setShop(nextShop);
+      setListings(nextListings);
+      setLedger(nextLedger);
+      setLoadError(null);
+
+      if (userKey) {
+        writeSellerCache(userKey, {
+          shop: nextShop,
+          listings: nextListings,
+          ledger: nextLedger,
+        });
+      }
+    } catch (err) {
+      setLoadError(
+        err instanceof Error ? err.message : 'ไม่สามารถโหลดข้อมูลร้านได้'
+      );
     } finally {
       setLoading(false);
+      setHasResolved(true);
     }
-  }, [idToken, user.id, user.displayName, user.pictureUrl, user.isVerifiedSeller]);
+  }, [idToken, userKey, user.id, user.displayName, user.pictureUrl, user.isVerifiedSeller]);
 
   useEffect(() => {
     if (!isReady || !isLoggedIn || !idToken) {
@@ -170,6 +258,11 @@ export const SellerProvider: React.FC<{ children: ReactNode }> = ({
     if (loadedTokenRef.current === idToken) return;
     refreshSellerData();
   }, [isReady, isLoggedIn, idToken, pathname, refreshSellerData]);
+
+  const needsSellerContext = isSellerContextRoute(pathname);
+  const isHydrating =
+    !isReady ||
+    (isLoggedIn && Boolean(idToken) && needsSellerContext && !hasResolved && !shop);
 
   const saveShop = async (
     settings: Omit<ShopSettings, 'setupComplete' | 'payeeVerified' | 'kyc'>
@@ -475,6 +568,20 @@ export const SellerProvider: React.FC<{ children: ReactNode }> = ({
     await updateListing(id, { status });
   };
 
+  const deleteListing = async (id: string) => {
+    if (!idToken) {
+      throw new Error('ยังไม่ได้เข้าสู่ระบบ กรุณารอสักครู่');
+    }
+    await api.delete(`/api/books/${encodeURIComponent(id)}`, { token: idToken });
+    setListings((prev) => {
+      const next = prev.filter((listing) => listing.id !== id);
+      if (userKey) {
+        writeSellerCache(userKey, { shop, listings: next, ledger });
+      }
+      return next;
+    });
+  };
+
   const submitTopUpSlip = async (input: {
     packId: string;
     credits: number;
@@ -524,7 +631,9 @@ export const SellerProvider: React.FC<{ children: ReactNode }> = ({
       value={{
         shop,
         isShopSetup,
-        loading,
+        loading: loading || isHydrating,
+        hasResolved,
+        loadError,
         refreshSellerData,
         saveShop,
         submitKyc,
@@ -539,6 +648,7 @@ export const SellerProvider: React.FC<{ children: ReactNode }> = ({
         publishListing,
         updateListing,
         setListingStatus,
+        deleteListing,
       }}
     >
       {children}

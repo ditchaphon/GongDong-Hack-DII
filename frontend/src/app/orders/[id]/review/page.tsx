@@ -4,6 +4,7 @@ import React, { useEffect, useState, use } from 'react';
 import { useRouter } from 'next/navigation';
 import { TopBar } from '@/components/layout/TopBar';
 import { Button, Toast } from '@/components/ui';
+import { AdminOrderDryRunBar } from '@/components/v4';
 import { useV4Orders } from '@/hooks/useV4Orders';
 import { Star, CheckCircle2, ShieldCheck } from 'lucide-react';
 
@@ -86,6 +87,7 @@ export default function OrderReviewPage({
       <TopBar title="ให้คะแนนร้าน" onBack={() => router.push(`/orders/${order.id}`)} />
 
       <div className="p-5 space-y-5">
+        <AdminOrderDryRunBar orderId={order.id} delivery={order.delivery} status={order.status} />
         <div className="text-center space-y-2 pt-1">
           <div className="w-14 h-14 rounded-full bg-emerald-100 text-[var(--color-primary)] flex items-center justify-center mx-auto">
             <CheckCircle2 className="w-8 h-8" />

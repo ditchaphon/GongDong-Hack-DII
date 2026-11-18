@@ -5,10 +5,7 @@ import { AppError } from '../types';
  * ดึง userId ของผู้ใช้ที่ผ่านการยืนยันตัวตนจาก Request
  */
 export function getUserIdFromRequest(req: Request): string {
-  const userId =
-    req.userId ||
-    ((req as any).user?.id as string) ||
-    (req.headers['x-user-id'] as string);
+  const userId = req.userId || ((req as any).user?.id as string | undefined);
 
   if (!userId) {
     throw new AppError(

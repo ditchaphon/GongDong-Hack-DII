@@ -22,6 +22,7 @@ export interface Book {
   categories?: string[];
   isSet: boolean;
   totalVolumes?: number;
+  missingVolumes?: number[];
   price: number;
   originalPrice?: number;
   grade: BookGrade;
@@ -115,6 +116,7 @@ export interface BookedPickupSlot {
 export interface ShopProfile {
   id: string;
   shopName: string;
+  description?: string;
   avatar?: string;
   rating: number;
   completedSales: number;
@@ -136,6 +138,7 @@ export interface ShopProfile {
 
 export interface SellerListing extends Book {
   status: ListingStatus;
+  hasOrders?: boolean;
   views: number;
   savedCount: number;
 }
@@ -210,6 +213,9 @@ export interface ListingDraft {
   deliveryMethods: DeliveryMethod[];
   parcelShippingFee: number;
   codEnabled: boolean;
+  /** Admin Dry-run Demo mode (prefilled from an existing listing or fallback). */
+  isDemoDryRun?: boolean;
+  demoSourceBookId?: string;
 }
 
 export interface SellerReport {

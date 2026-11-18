@@ -1,6 +1,6 @@
 // =============================================================================
 // Shipping Fee Service (Synced with Frontend v4 lib/delivery.ts)
-// Formula: Flat base ฿50 first book + ฿10 per extra book (no cross-region fee)
+// Formula: Flat base ฿50 first book + ฿10 per extra book, capped at ฿150
 // =============================================================================
 
 const PROVINCE_REGION: Record<string, string> = {};
@@ -36,10 +36,30 @@ export function regionOfProvince(province?: string | null): string {
   return PROVINCE_REGION[province.trim()] ?? 'C';
 }
 
+export const MAX_PARCEL_FEE = 150;
+
+/**
+ * นับจำนวนเล่มจริงของรายการหนังสือในออเดอร์ (ขายยกชุดนับจำนวนเล่มจริงในชุด)
+ */
+export function countOrderBookUnits(
+  books: Array<{
+    isSet?: boolean | null;
+    totalVolumes?: number | null;
+    missingVolumes?: number[] | null;
+  }>
+): number {
+  return books.reduce((sum, book) => {
+    if (!book?.isSet) return sum + 1;
+    const total = Number(book.totalVolumes) || 2;
+    const missingCount = Array.isArray(book.missingVolumes) ? book.missingVolumes.length : 0;
+    return sum + Math.max(1, total - missingCount);
+  }, 0);
+}
+
 /**
  * คำนวณค่าจัดส่งพัสดุตามสูตรมาตรฐานของกองดอง v4 (รองรับ COD):
  * - เล่มแรก ฿50 (ทั่วประเทศ ไม่คิดค่าข้ามภาคเพิ่ม)
- * - เล่มถัดไป +฿10/เล่ม
+ * - เล่มถัดไป +฿10/เล่ม (เพดานสูงสุด ฿150 ต่อออเดอร์)
  */
 export function calcParcelFee(
   bookCount: number,
@@ -47,5 +67,5 @@ export function calcParcelFee(
   _toProvince?: string | null
 ): number {
   if (bookCount <= 0) return 0;
-  return 50 + (bookCount - 1) * 10;
+  return Math.min(MAX_PARCEL_FEE, 50 + (bookCount - 1) * 10);
 }

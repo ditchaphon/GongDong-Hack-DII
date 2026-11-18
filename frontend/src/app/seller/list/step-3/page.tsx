@@ -5,7 +5,8 @@ import { useRouter } from 'next/navigation';
 import clsx from 'clsx';
 import { TopBar } from '@/components/layout/TopBar';
 import { Button, BottomSheet, GradeBadge, Stepper } from '@/components/ui';
-import { CameraCapture, PhotoGallery } from '@/components/v4';
+import { AdminDemoBanner, CameraCapture, PhotoGallery } from '@/components/v4';
+import { useLiff } from '@/hooks/useLiff';
 import { useListing } from '@/hooks/useListing';
 import { safeDeleteUploadedImage } from '@/lib/api';
 import { GRADE_CRITERIA } from '@/lib/catalog';
@@ -100,7 +101,10 @@ function buildDefectNote(item: ConditionItemSpec, customNote: string): string {
 /** Step 3: Check 5 book condition criteria and require a photo for any defective item. */
 export default function SellerListStep3Page() {
   const router = useRouter();
+  const { user } = useLiff();
   const { draft, grade, update, setChecklist } = useListing();
+  const isAdminDemoMode = Boolean(user.isAdmin && draft.isDemoDryRun);
+  const isSet = draft.mode === 'SET';
   const [isGradeSheetOpen, setIsGradeSheetOpen] = useState(false);
   const [activeCameraItem, setActiveCameraItem] = useState<ConditionItemSpec | null>(null);
   const [galleryIndex, setGalleryIndex] = useState<number | null>(null);
@@ -141,7 +145,7 @@ export default function SellerListStep3Page() {
     if (isIntact) {
       // Remove defect record for this criterion when switched back to สมบูรณ์
       const existing = getDefectForItem(item.key);
-      if (existing?.photo) {
+      if (!isAdminDemoMode && existing?.photo) {
         void safeDeleteUploadedImage(existing.photo);
       }
       const remaining = draft.defects.filter((d) => d.id !== item.key);
@@ -165,7 +169,7 @@ export default function SellerListStep3Page() {
 
   const handleDefectPhotoCaptured = (item: ConditionItemSpec, photoUrl: string) => {
     const existing = getDefectForItem(item.key);
-    if (existing?.photo && existing.photo !== photoUrl) {
+    if (!isAdminDemoMode && existing?.photo && existing.photo !== photoUrl) {
       void safeDeleteUploadedImage(existing.photo);
     }
     const customNote = extractCustomNote(existing, item);
@@ -216,6 +220,15 @@ export default function SellerListStep3Page() {
       <TopBar title="เช็กจุดตำหนิ 5 ข้อ" onBack={() => router.push('/seller/list/step-2')} />
       <Stepper currentStep={4} />
 
+      {isAdminDemoMode && (
+        <div className="px-4 pt-3">
+          <AdminDemoBanner
+            title="Admin Relist Demo · Dry-run"
+            description="ผลเช็กสภาพ 5 จุดและรูปตำหนิถูกเติมให้แล้ว กดปรับให้เกรดเปลี่ยนโชว์ได้โดยไม่กระทบประกาศจริง"
+          />
+        </div>
+      )}
+
       <div className="p-4 space-y-4">
         {/* 4 Angle Photos Preview Strip */}
         {anglePhotos.length > 0 && (
@@ -250,13 +263,18 @@ export default function SellerListStep3Page() {
           </section>
         )}
 
-        <div className="px-1">
+        <div className="px-1 space-y-2">
           <p className="text-xs font-bold text-slate-800">
             ตรวจสอบคุณภาพหนังสือทั้ง 5 จุด
           </p>
           <p className="text-[11px] text-slate-500 leading-relaxed mt-0.5">
             หากจุดใดเลือก <strong className="text-amber-700">มีตำหนิ</strong> ระบบจะให้ถ่ายรูปจุดที่มีตำหนินั้นเพื่อให้ผู้ซื้อซูมดูคุณภาพจริงได้อย่างโปร่งใส
           </p>
+          {isSet && (
+            <div className="p-2.5 rounded-xl bg-purple-50 border border-purple-200 text-[11px] text-purple-900 leading-relaxed">
+              <strong>เกณฑ์สำหรับขายชุด:</strong> ให้คะแนนตามเล่มที่มีสภาพต่ำสุดในชุด และระบุเลขเล่มที่พบตำหนิในช่องอธิบายเพิ่มเติม
+            </div>
+          )}
         </div>
 
         {/* 5 Condition Check Items */}
@@ -401,7 +419,11 @@ export default function SellerListStep3Page() {
                         maxLength={120}
                         value={customNote}
                         onChange={(e) => handleDefectNoteChange(item, e.target.value)}
-                        placeholder={item.notePlaceholder}
+                        placeholder={
+                          isSet
+                            ? 'เช่น เล่ม 3 มุมปกพับ, เล่ม 5 มีรอยไฮไลต์ 2 หน้า (ไม่บังคับ)'
+                            : item.notePlaceholder
+                        }
                         className="w-full text-xs px-3 py-2 rounded-xl border border-slate-200 bg-white focus:outline-none focus:border-[#8B5E3C]"
                       />
                     </div>

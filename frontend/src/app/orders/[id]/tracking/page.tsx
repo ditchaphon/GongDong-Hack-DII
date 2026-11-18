@@ -4,8 +4,9 @@ import React, { useEffect, useState, use } from 'react';
 import { useRouter } from 'next/navigation';
 import { TopBar } from '@/components/layout/TopBar';
 import { Button, Toast } from '@/components/ui';
-import { TrackingForm, TrackingValue } from '@/components/v4';
+import { AdminOrderDryRunBar, TrackingForm, TrackingValue } from '@/components/v4';
 import { useV4Orders } from '@/hooks/useV4Orders';
+import { DRY_RUN_PARCEL_BOX_PHOTO } from '@/lib/adminOrderDryRun';
 import { ViewRole } from '@/types/v4';
 import { Truck, Info, PackageCheck } from 'lucide-react';
 
@@ -16,9 +17,10 @@ export default function OrderTrackingPage({
 }) {
   const resolvedParams = use(params);
   const router = useRouter();
-  const { getOrder, fetchOrder, loading, markShipped, isMineAsBuyer } = useV4Orders();
+  const { getOrder, fetchOrder, loading, markShipped, isMineAsBuyer, isDryRunOrder } = useV4Orders();
 
   const order = getOrder(resolvedParams.id);
+  const isDryRun = isDryRunOrder(resolvedParams.id);
 
   useEffect(() => {
     if (!order) fetchOrder(resolvedParams.id);
@@ -95,6 +97,7 @@ export default function OrderTrackingPage({
       />
 
       <div className="p-4 space-y-4">
+        <AdminOrderDryRunBar orderId={order.id} delivery={order.delivery} status={order.status} />
         {!isParcel ? (
           <div className="rounded-2xl border border-teal-200 bg-teal-50 p-4 text-[11px] text-teal-900 leading-relaxed">
             ออเดอร์นี้เป็นนัดรับ · ใช้หน้าจอนัดรับและยืนยันส่งมอบแทนการจัดส่ง
@@ -121,9 +124,28 @@ export default function OrderTrackingPage({
                 </p>
               </div>
             ) : (
-              <div className="bg-white rounded-2xl border border-slate-200 p-4">
+              <div className="bg-white rounded-2xl border border-slate-200 p-4 space-y-3">
+                {isDryRun && (
+                  <div className="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-[11px] text-amber-900">
+                    <span>เติมเลขพัสดุและรูปกล่องตัวอย่าง (ไม่ส่งขึ้น Storage)</span>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setValue({
+                          carrier: value.carrier || 'Flash Express',
+                          trackingNumber: value.trackingNumber || 'TH0123456789CM',
+                          boxPhoto: DRY_RUN_PARCEL_BOX_PHOTO,
+                        })
+                      }
+                      className="px-2.5 py-1 rounded-lg bg-white border border-amber-300 font-bold text-amber-900 hover:bg-amber-100 shrink-0"
+                    >
+                      เติมตัวอย่าง
+                    </button>
+                  </div>
+                )}
                 <TrackingForm
                   value={value}
+                  deferUpload={isDryRun}
                   onChange={(patch) => {
                     setValue((prev) => ({ ...prev, ...patch }));
                     setError(null);

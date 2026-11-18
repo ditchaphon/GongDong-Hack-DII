@@ -16,6 +16,8 @@ export interface LineOrderNotificationParams {
   linkPath?: string;
   /** Set false for in-app-only events (e.g. order chat, reviews, completion/expiry). */
   pushLine?: boolean;
+  /** Force LINE Push even when the recipient was active in LIFF within the last 2 minutes. */
+  forcePushLine?: boolean;
 }
 
 function getLineMessagingClient(): messagingApi.MessagingApiClient | null {
@@ -27,6 +29,104 @@ function getLineMessagingClient(): messagingApi.MessagingApiClient | null {
   });
 }
 
+interface OrderFlexTheme {
+  headerBg: string;
+  softBg: string;
+  accentColor: string;
+  buttonBg: string;
+  statusLabel: string;
+  ctaLabel: string;
+}
+
+function resolveOrderFlexTheme(badgeText?: string): OrderFlexTheme {
+  const normalized = (badgeText || '').toUpperCase();
+
+  if (normalized.includes('NEW ORDER')) {
+    return {
+      headerBg: '#8B5E3C',
+      softBg: '#FDF8F3',
+      accentColor: '#6B4628',
+      buttonBg: '#8B5E3C',
+      statusLabel: '📚 คำขอสั่งซื้อใหม่',
+      ctaLabel: 'ดูคำขอและตอบรับ',
+    };
+  }
+
+  if (normalized.includes('SHIPPED')) {
+    return {
+      headerBg: '#0369A1',
+      softBg: '#F0F9FF',
+      accentColor: '#0369A1',
+      buttonBg: '#0284C7',
+      statusLabel: '📦 จัดส่งพัสดุแล้ว',
+      ctaLabel: 'ดูเลขพัสดุและติดตาม',
+    };
+  }
+
+  if (normalized.includes('MEETUP COMPLETED')) {
+    return {
+      headerBg: '#15803D',
+      softBg: '#F0FDF4',
+      accentColor: '#15803D',
+      buttonBg: '#16A34A',
+      statusLabel: '⭐ นัดรับสำเร็จ · อย่าลืมรีวิว',
+      ctaLabel: 'ให้คะแนนและรีวิวร้าน',
+    };
+  }
+
+  if (
+    normalized.includes('DISPUTE RESOLVED') ||
+    normalized.includes('COMPLETED')
+  ) {
+    return {
+      headerBg: '#15803D',
+      softBg: '#F0FDF4',
+      accentColor: '#15803D',
+      buttonBg: '#16A34A',
+      statusLabel: '✅ ดำเนินการเรียบร้อย',
+      ctaLabel: 'ดูรายละเอียดคำสั่งซื้อ',
+    };
+  }
+
+  if (
+    normalized.includes('DISPUTE') ||
+    normalized.includes('MISSED')
+  ) {
+    return {
+      headerBg: '#B91C1C',
+      softBg: '#FEF2F2',
+      accentColor: '#B91C1C',
+      buttonBg: '#DC2626',
+      statusLabel: '⚠️ แจ้งเตือนข้อพิพาท / นัดหมาย',
+      ctaLabel: 'ตรวจสอบรายละเอียด',
+    };
+  }
+
+  if (
+    normalized.includes('REJECTED') ||
+    normalized.includes('CANCELLED') ||
+    normalized.includes('EXPIRED')
+  ) {
+    return {
+      headerBg: '#475569',
+      softBg: '#F8FAFC',
+      accentColor: '#475569',
+      buttonBg: '#334155',
+      statusLabel: 'ℹ️ อัปเดตสถานะคำสั่งซื้อ',
+      ctaLabel: 'ดูรายละเอียดคำสั่งซื้อ',
+    };
+  }
+
+  return {
+    headerBg: '#0F766E',
+    softBg: '#F0FDFA',
+    accentColor: '#0F766E',
+    buttonBg: '#0D9488',
+    statusLabel: '🤝 ผู้ขายรับออเดอร์แล้ว',
+    ctaLabel: 'เปิดแชทและดูออเดอร์',
+  };
+}
+
 /**
  * สร้าง LINE Flex Message Card สำหรับแจ้งเตือนสถานะคำสั่งซื้อ
  */
@@ -35,61 +135,162 @@ export function buildOrderFlexMessage(params: {
   message: string;
   orderId: string;
   badgeText?: string;
+  role?: NotificationRole;
   linkUrl: string;
 }): messagingApi.FlexMessage {
+  const theme = resolveOrderFlexTheme(params.badgeText);
+  const roleLabel =
+    params.role === 'SELLER'
+      ? 'สำหรับผู้ขาย'
+      : params.role === 'BUYER'
+      ? 'สำหรับผู้ซื้อ'
+      : null;
+
+  const headerTopContents: messagingApi.FlexComponent[] = [
+    {
+      type: 'text',
+      text: 'GONGDONG · กองดอง',
+      size: 'xs',
+      weight: 'bold',
+      color: '#FFFFFFE6',
+      flex: 1,
+    },
+  ];
+
+  if (roleLabel) {
+    headerTopContents.push({
+      type: 'box',
+      layout: 'vertical',
+      backgroundColor: '#FFFFFF29',
+      cornerRadius: '99px',
+      paddingStart: '10px',
+      paddingEnd: '10px',
+      paddingTop: '3px',
+      paddingBottom: '3px',
+      flex: 0,
+      contents: [
+        {
+          type: 'text',
+          text: roleLabel,
+          size: 'xxs',
+          weight: 'bold',
+          color: '#FFFFFF',
+        },
+      ],
+    });
+  }
+
   return {
     type: 'flex',
     altText: `${params.title}: ${params.message}`,
     contents: {
       type: 'bubble',
+      size: 'mega',
+      header: {
+        type: 'box',
+        layout: 'vertical',
+        backgroundColor: theme.headerBg,
+        paddingAll: '16px',
+        spacing: 'xs',
+        contents: [
+          {
+            type: 'box',
+            layout: 'horizontal',
+            alignItems: 'center',
+            contents: headerTopContents,
+          },
+          {
+            type: 'text',
+            text: theme.statusLabel,
+            size: 'sm',
+            weight: 'bold',
+            color: '#FFFFFF',
+            margin: 'xs',
+            wrap: true,
+          },
+        ],
+      },
       body: {
         type: 'box',
         layout: 'vertical',
-        spacing: 'sm',
+        backgroundColor: '#FFFFFF',
+        paddingAll: '18px',
+        spacing: 'md',
         contents: [
-          {
-            type: 'text',
-            text: params.badgeText || 'GONGDONG ORDER',
-            weight: 'bold',
-            color: '#16A34A',
-            size: 'xs',
-          },
           {
             type: 'text',
             text: params.title,
             weight: 'bold',
-            size: 'md',
+            size: 'lg',
+            color: '#0F172A',
             wrap: true,
           },
           {
             type: 'text',
             text: params.message,
             size: 'sm',
-            color: '#4B5563',
+            color: '#475569',
             wrap: true,
           },
           {
-            type: 'text',
-            text: `Order #${params.orderId.slice(0, 8)}`,
-            size: 'xs',
-            color: '#9CA3AF',
+            type: 'separator',
+            color: '#E2E8F0',
             margin: 'md',
+          },
+          {
+            type: 'box',
+            layout: 'horizontal',
+            backgroundColor: theme.softBg,
+            cornerRadius: '10px',
+            paddingAll: '12px',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            contents: [
+              {
+                type: 'text',
+                text: 'หมายเลขคำสั่งซื้อ',
+                size: 'xs',
+                color: '#64748B',
+                flex: 0,
+              },
+              {
+                type: 'text',
+                text: `#${params.orderId.slice(0, 8).toUpperCase()}`,
+                size: 'xs',
+                weight: 'bold',
+                color: theme.accentColor,
+                align: 'end',
+              },
+            ],
           },
         ],
       },
       footer: {
         type: 'box',
         layout: 'vertical',
+        backgroundColor: '#FFFFFF',
+        paddingAll: '16px',
+        paddingTop: '4px',
+        spacing: 'xs',
         contents: [
           {
             type: 'button',
             style: 'primary',
-            color: '#111827',
+            height: 'sm',
+            color: theme.buttonBg,
             action: {
               type: 'uri',
-              label: 'ดูรายละเอียดคำสั่งซื้อ',
+              label: theme.ctaLabel,
               uri: params.linkUrl,
             },
+          },
+          {
+            type: 'text',
+            text: 'แตะเพื่อเปิดจัดการต่อในแอป GongDong',
+            size: 'xxs',
+            color: '#94A3B8',
+            align: 'center',
+            margin: 'sm',
           },
         ],
       },
@@ -216,7 +417,7 @@ export async function notifyOrderEvent(
       prismaClient
     );
 
-  if (isRecentlyActiveInLiff) {
+  if (isRecentlyActiveInLiff && !params.forcePushLine) {
     return { pushed: false, reason: 'USER_ACTIVE_IN_LIFF' };
   }
 
@@ -225,6 +426,7 @@ export async function notifyOrderEvent(
     message: params.message,
     orderId: params.orderId,
     badgeText: params.badgeText,
+    role: params.role,
     linkUrl: fullUrl,
   });
 

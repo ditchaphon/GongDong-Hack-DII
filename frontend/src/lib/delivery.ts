@@ -52,13 +52,38 @@ export function provinceCentre(province: string): { lat: number; lng: number } {
   return { lat, lng };
 }
 
+export const MAX_PARCEL_FEE = 150;
+
+/** Actual physical volume count for a single listing or SET listing. */
+export function countSetActualVolumes(book: {
+  isSet?: boolean;
+  totalVolumes?: number | null;
+  missingVolumes?: number[] | null;
+}): number {
+  if (!book?.isSet) return 1;
+  const total = Number(book.totalVolumes) || 2;
+  const missingCount = Array.isArray(book.missingVolumes) ? book.missingVolumes.length : 0;
+  return Math.max(1, total - missingCount);
+}
+
+/** Total physical book units across items in an order (counting actual volumes for SETs). */
+export function countOrderBookUnits(
+  books: Array<{
+    isSet?: boolean;
+    totalVolumes?: number | null;
+    missingVolumes?: number[] | null;
+  }>
+): number {
+  return books.reduce((sum, book) => sum + countSetActualVolumes(book), 0);
+}
+
 /**
  * GongDong-calculated parcel fee (COD-ready flat base rates):
- * ฿50 first book nationwide, +฿10 per extra book.
+ * ฿50 first book nationwide, +฿10 per extra book, capped at ฿150.
  */
 export function calcParcelFee(bookCount: number, _fromProvince?: string, _toProvince?: string): number {
   if (bookCount <= 0) return 0;
-  return 50 + (bookCount - 1) * 10;
+  return Math.min(MAX_PARCEL_FEE, 50 + (bookCount - 1) * 10);
 }
 
 export function shipModeLabel(mode: ShipMode, withinDays: number): string {

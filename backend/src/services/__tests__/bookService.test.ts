@@ -290,6 +290,7 @@ describe('BookService - Marketplace & Listings Management', () => {
         categories: ['จิตวิทยา / พัฒนาตนเอง'],
         isSet: false,
         totalVolumes: null,
+        missingVolumes: [],
         coverImageUrl: 'https://storage.com/front.webp',
         price: 220,
         originalPrice: 295,
@@ -517,6 +518,44 @@ describe('BookService - Marketplace & Listings Management', () => {
       await expect(
         deleteBookListing('bok_1', 'usr_seller_1', mockDb)
       ).rejects.toThrow('ไม่สามารถลบหนังสือที่ติดจองหรือขายสำเร็จแล้วได้');
+    });
+
+    it('ต้องปฏิเสธหากหนังสือมีคำสั่งซื้อ REQUESTED ค้างอยู่แม้สถานะหนังสือยังเป็น AVAILABLE', async () => {
+      mockDb.bookListing.findUnique.mockResolvedValue({
+        id: 'bok_req_1',
+        sellerId: 'usr_seller_1',
+        status: 'AVAILABLE',
+      });
+      mockDb.orderItem = {
+        findMany: vi.fn().mockResolvedValue([{ order: { status: 'REQUESTED' } }]),
+      };
+
+      await expect(
+        deleteBookListing('bok_req_1', 'usr_seller_1', mockDb)
+      ).rejects.toMatchObject({
+        statusCode: 400,
+        code: 'CANNOT_DELETE_ORDERED_BOOK',
+      });
+      expect(mockDb.bookListing.delete).not.toHaveBeenCalled();
+    });
+
+    it('ต้องปฏิเสธหากหนังสือเคยมีประวัติคำสั่งซื้อที่ถูกยกเลิก/ปฏิเสธไปแล้ว (แนะนำให้ซ่อนแทน)', async () => {
+      mockDb.bookListing.findUnique.mockResolvedValue({
+        id: 'bok_hist_1',
+        sellerId: 'usr_seller_1',
+        status: 'AVAILABLE',
+      });
+      mockDb.orderItem = {
+        findMany: vi.fn().mockResolvedValue([{ order: { status: 'CANCELLED' } }]),
+      };
+
+      await expect(
+        deleteBookListing('bok_hist_1', 'usr_seller_1', mockDb)
+      ).rejects.toMatchObject({
+        statusCode: 400,
+        code: 'CANNOT_DELETE_BOOK_WITH_ORDER_HISTORY',
+      });
+      expect(mockDb.bookListing.delete).not.toHaveBeenCalled();
     });
   });
 
@@ -781,6 +820,15 @@ describe('BookService - Marketplace & Listings Management', () => {
 
       const res = await getBookIsbnComparison('bok_curr', mockDb);
 
+      expect(mockDb.bookListing.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            isbn: '9786161845678',
+            isSet: false,
+            status: 'AVAILABLE',
+          }),
+        })
+      );
       expect(res.isSyntheticIsbn).toBe(false);
       expect(res.totalOffers).toBe(2);
       expect(res.isCurrentCheapest).toBe(false);
@@ -824,6 +872,87 @@ describe('BookService - Marketplace & Listings Management', () => {
       expect(res.isSyntheticIsbn).toBe(true);
       expect(res.offers).toEqual([]);
       expect(mockDb.bookListing.findMany).not.toHaveBeenCalled();
+    });
+
+    it('ส่งคำสั่งซื้อขายยกชุด: createBookListing ปฏิเสธ 400 INVALID_SET_VOLUMES หากหักเล่มที่ขาดแล้วเหลือน้อยกว่า 2 เล่ม', async () => {
+      await expect(
+        createBookListing(
+          'usr_seller_1',
+          {
+            isbn: '9786161845678',
+            title: 'ชุดทดสอบ',
+            price: 300,
+            isSet: true,
+            totalVolumes: 3,
+            missingVolumes: [1, 3],
+            conditionAnswers: { spine: false, stains: false, markings: false, covers: false, pages: false },
+            images: [
+              { imageUrl: 'https://img/1.webp', imageType: 'FRONT_COVER', displayOrder: 1, isCover: true },
+              { imageUrl: 'https://img/2.webp', imageType: 'BACK_COVER', displayOrder: 2 },
+              { imageUrl: 'https://img/3.webp', imageType: 'SPINE', displayOrder: 3 },
+              { imageUrl: 'https://img/4.webp', imageType: 'INNER', displayOrder: 4 },
+            ],
+          },
+          mockDb
+        )
+      ).rejects.toMatchObject({
+        statusCode: 400,
+        code: 'INVALID_SET_VOLUMES',
+      });
+    });
+
+    it('HIGH-2 & HIGH-4: createBookListing และ updateBookListing ปฏิเสธบัญชีติด Blacklist และปฏิเสธข้อมูลติดต่อใน description/pickupLocationName', async () => {
+      const validImages: CreateBookListingInput['images'] = [
+        { imageUrl: 'https://img/1.webp', imageType: 'FRONT_COVER', displayOrder: 1, isCover: true },
+        { imageUrl: 'https://img/2.webp', imageType: 'BACK_COVER', displayOrder: 2 },
+        { imageUrl: 'https://img/3.webp', imageType: 'SPINE', displayOrder: 3 },
+        { imageUrl: 'https://img/4.webp', imageType: 'INNER', displayOrder: 4 },
+      ];
+
+      await expect(
+        createBookListing(
+          'usr_seller_1',
+          {
+            isbn: '9786161845678',
+            title: 'หนังสือทดสอบ',
+            description: 'สนใจทักไลน์ @bookshop99 หรือโทร 0812345678',
+            price: 150,
+            conditionAnswers: { spine: false, stains: false, markings: false, covers: false, pages: false },
+            images: validImages,
+          },
+          mockDb
+        )
+      ).rejects.toMatchObject({ statusCode: 400, code: 'CONTACT_INFO_NOT_ALLOWED' });
+
+      mockDb.user.findUnique.mockResolvedValue({
+        id: 'usr_seller_1',
+        isVerifiedSeller: false,
+        isBlacklisted: true,
+        shopProfile: null,
+      });
+
+      await expect(
+        createBookListing(
+          'usr_seller_1',
+          {
+            isbn: '9786161845678',
+            title: 'หนังสือทดสอบ',
+            price: 150,
+            conditionAnswers: { spine: false, stains: false, markings: false, covers: false, pages: false },
+            images: validImages,
+          },
+          mockDb
+        )
+      ).rejects.toMatchObject({ statusCode: 403, code: 'ACCOUNT_BLACKLISTED' });
+
+      mockDb.bookListing.findUnique.mockResolvedValue({
+        id: 'bok_1',
+        sellerId: 'usr_seller_1',
+        status: 'AVAILABLE',
+      });
+      await expect(
+        updateBookListing('bok_1', 'usr_seller_1', { description: 'ปกติ' }, mockDb)
+      ).rejects.toMatchObject({ statusCode: 403, code: 'ACCOUNT_BLACKLISTED' });
     });
   });
 });

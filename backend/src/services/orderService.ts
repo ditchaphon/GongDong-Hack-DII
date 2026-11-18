@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import { prisma as defaultPrisma } from '../config/prisma';
 import { env } from '../config/env';
-import { calcParcelFee } from './shippingService';
+import { calcParcelFee, countOrderBookUnits } from './shippingService';
 import { createSystemOrderMessage } from './messageService';
 import { maskAccountHolderName, maskSensitiveData } from './dataMaskingService';
 import { notifyOrderEvent } from './lineNotifyService';
@@ -33,7 +33,6 @@ import {
 const MAX_PENDING_REQUESTS = 10;
 const REQUEST_EXPIRE_MS = 24 * 60 * 60 * 1000;
 const SHIPPED_AUTO_COMPLETE_MS = 7 * 24 * 60 * 60 * 1000;
-const SCHEDULE_PAST_GRACE_MS = 5 * 60 * 1000;
 const HANDOVER_MAX_ATTEMPTS = 5;
 const HANDOVER_LOCKOUT_MS = 15 * 60 * 1000;
 const IDEMPOTENCY_TTL_MS = 5 * 60 * 1000;
@@ -90,7 +89,7 @@ function validateScheduledAtFuture(scheduledAt: Date): void {
   if (isNaN(scheduledAt.getTime())) {
     throw new AppError('วันเวลานัดหมาย (scheduledAt) ไม่ถูกต้อง', 400, 'INVALID_DATE');
   }
-  if (scheduledAt.getTime() < Date.now() - SCHEDULE_PAST_GRACE_MS) {
+  if (scheduledAt.getTime() < Date.now()) {
     throw new AppError(
       'ไม่สามารถกำหนดวันเวลานัดหมายย้อนหลังได้ กรุณาเลือกเวลาในอนาคต',
       400,
@@ -694,9 +693,10 @@ async function createOrderInTx(
   }
 
   const booksPrice = books.reduce((sum: number, b: any) => sum + Number(b.price), 0);
+  const billableBookUnits = countOrderBookUnits(books);
   const shippingFee =
     input.shippingMethod === 'DELIVERY'
-      ? calcParcelFee(books.length, sellerProvince, input.buyerProvince)
+      ? calcParcelFee(billableBookUnits, sellerProvince, input.buyerProvince)
       : 0;
   const totalPrice = booksPrice + shippingFee;
 
@@ -938,6 +938,7 @@ async function executeBatchOrders(
         message: `มีผู้สนใจสั่งซื้อหนังสือจำนวน ${created.bookCount} เล่ม (฿${created.result.totalPrice})`,
         badgeText: 'NEW ORDER REQUEST',
         linkPath: `/orders/${created.result.orderId}`,
+        forcePushLine: true,
       },
       db
     );
@@ -1340,6 +1341,7 @@ export async function acceptOrder(
           select: {
             id: true,
             isVerifiedSeller: true,
+            isBlacklisted: true,
             credits: true,
           },
         },
@@ -1363,6 +1365,14 @@ export async function acceptOrder(
         expired: true as const,
         buyerId: order.buyerId,
       };
+    }
+
+    if (order.seller.isBlacklisted) {
+      throw new AppError(
+        'บัญชีของคุณถูกระงับสิทธิ์การขายชั่วคราวเนื่องจากพบประวัติในฐานข้อมูล Blacklistseller',
+        403,
+        'ACCOUNT_BLACKLISTED'
+      );
     }
 
     // Selective KYC: บังคับยืนยันตัวตนเฉพาะออเดอร์ส่งพัสดุ (DELIVERY)
@@ -1688,6 +1698,7 @@ export async function cancelOrder(
   if (!trimmedReason) {
     throw new AppError('กรุณาระบุเหตุผลการยกเลิกคำสั่งซื้อ', 400, 'CANCEL_REASON_REQUIRED');
   }
+  const safeReason = maskSensitiveData(trimmedReason).maskedText;
 
   const outcome = await withTransaction(db, async (tx: any) => {
     const order = await loadAndAuthorizeOrder(tx, orderId, userId, {
@@ -1704,7 +1715,7 @@ export async function cancelOrder(
 
     await updateOrderStatusAtomic(tx, orderId, order.status, {
       status: 'CANCELLED',
-      cancelReason: trimmedReason,
+      cancelReason: safeReason,
       cancelledBy,
     });
 
@@ -1737,7 +1748,7 @@ export async function cancelOrder(
 
       await createSystemOrderMessage(
         orderId,
-        `คำสั่งซื้อถูกยกเลิกโดย${cancelledBy === 'BUYER' ? 'ผู้ซื้อ' : 'ผู้ขาย'}: ${trimmedReason}`,
+        `คำสั่งซื้อถูกยกเลิกโดย${cancelledBy === 'BUYER' ? 'ผู้ซื้อ' : 'ผู้ขาย'}: ${safeReason}`,
         'SYSTEM',
         tx
       );
@@ -1758,7 +1769,7 @@ export async function cancelOrder(
       role: outcome.notifyRole,
       orderId,
       title: 'คำสั่งซื้อถูกยกเลิก',
-      message: `เหตุผล: ${trimmedReason}`,
+      message: `เหตุผล: ${safeReason}`,
       badgeText: 'ORDER CANCELLED',
     },
     db
@@ -1923,6 +1934,26 @@ export async function verifyOrderPaymentSlip(
     const slipAmount = input.amount !== undefined ? Number(input.amount) : Number(order.totalPrice);
     if (!Number.isFinite(slipAmount) || Math.abs(slipAmount - Number(order.totalPrice)) > 0.01) {
       throw new AppError('ยอดเงินในสลิปไม่ตรงกับยอดรวมของคำสั่งซื้อ', 400, 'SLIP_AMOUNT_MISMATCH');
+    }
+
+    const isProd = process.env.NODE_ENV === 'production' || env.NODE_ENV === 'production';
+    const mustVerifyReceiver = Boolean(slipVerifier) || isProd;
+
+    if (mustVerifyReceiver) {
+      if (!order.seller?.verifiedName) {
+        throw new AppError(
+          'ร้านค้ายังไม่ได้ยืนยันตัวตนชื่อบัญชีรับเงิน ไม่สามารถตรวจสลิปโอนเงินได้',
+          400,
+          'SELLER_NOT_VERIFIED'
+        );
+      }
+      if (!input.receiverName?.trim()) {
+        throw new AppError(
+          'ไม่สามารถอ่านชื่อผู้รับเงินจากสลิปได้ กรุณาใช้สลิปที่ชัดเจน',
+          400,
+          'SLIP_RECEIVER_MISMATCH'
+        );
+      }
     }
 
     if (input.receiverName && order.seller.verifiedName) {
@@ -2256,7 +2287,9 @@ export async function reportMissedMeeting(
   const reason = typeof reasonOrDb === 'string' ? reasonOrDb.trim() : '';
   const db =
     (typeof reasonOrDb === 'string' ? prismaClient : reasonOrDb) || defaultPrisma;
-  const disputeReason = reason || 'ผู้ขายรายงานว่าผู้ซื้อไม่มาตามนัด';
+  const disputeReason = maskSensitiveData(
+    reason || 'ผู้ขายรายงานว่าผู้ซื้อไม่มาตามนัด'
+  ).maskedText;
 
   const outcome = await withTransaction(db, async (tx: any) => {
     const readClient = tx?.order?.findUnique ? tx : db;
@@ -2346,6 +2379,7 @@ export async function openDispute(
   if (!trimmedReason) {
     throw new AppError('กรุณาระบุเหตุผลการเปิดข้อพิพาท', 400, 'DISPUTE_REASON_REQUIRED');
   }
+  const safeReason = maskSensitiveData(trimmedReason).maskedText;
 
   const outcome = await withTransaction(db, async (tx: any) => {
     const readClient = tx?.order?.findUnique ? tx : db;
@@ -2363,14 +2397,14 @@ export async function openDispute(
       status: 'DISPUTED',
       disputedBy: userId,
       disputeOpenedBy: isBuyer ? 'BUYER' : 'SELLER',
-      disputeReason: trimmedReason,
+      disputeReason: safeReason,
       disputedAt: new Date(),
     });
 
     if (tx?.orderMessage?.create || db?.orderMessage?.create) {
       await createSystemOrderMessage(
         orderId,
-        `เปิดข้อพิพาทโดย${isBuyer ? 'ผู้ซื้อ' : 'ผู้ขาย'}: ${trimmedReason}`,
+        `เปิดข้อพิพาทโดย${isBuyer ? 'ผู้ซื้อ' : 'ผู้ขาย'}: ${safeReason}`,
         'SYSTEM',
         tx?.orderMessage?.create ? tx : db
       );
@@ -2388,13 +2422,13 @@ export async function openDispute(
       role: outcome.isBuyer ? 'SELLER' : 'BUYER',
       orderId,
       title: 'คำสั่งซื้อถูกเปิดข้อพิพาท',
-      message: `เหตุผล: ${trimmedReason}`,
+      message: `เหตุผล: ${safeReason}`,
       badgeText: 'DISPUTED',
     },
     db
   );
 
-  return { orderId, status: 'DISPUTED', disputeReason: trimmedReason };
+  return { orderId, status: 'DISPUTED', disputeReason: safeReason };
 }
 
 /**
@@ -2423,7 +2457,9 @@ export async function disputeMissedMeeting(
     );
   }
 
-  const rebuttalReason = (reason || '').trim() || 'โต้แย้งการรายงานไม่มาตามนัดหมาย';
+  const rebuttalReason = maskSensitiveData(
+    (reason || '').trim() || 'โต้แย้งการรายงานไม่มาตามนัดหมาย'
+  ).maskedText;
 
   if (order.status === 'SCHEDULED') {
     return openDispute(orderId, buyerId, rebuttalReason, prismaClient);
@@ -2494,7 +2530,6 @@ export async function schedulePickupOrder(
 
     validatePickupCoordinates(input.pickupLat, input.pickupLng);
 
-    const handoverCode = order.handoverCode || generateHandoverCode();
     const scheduledAt = new Date(input.scheduledAt);
     validateScheduledAtFuture(scheduledAt);
 
@@ -2509,10 +2544,15 @@ export async function schedulePickupOrder(
     }
 
     const actorRole = order.buyerId === userId ? 'BUYER' : 'SELLER';
+    const isBuyerActor = actorRole === 'BUYER';
+    // Only the buyer can lock SCHEDULED + confirm attendance + generate handoverCode.
+    // A seller-initiated schedule stays ACCEPTED with scheduleConfirmedByBuyer=false until buyer confirms.
+    const nextStatus: 'ACCEPTED' | 'SCHEDULED' = isBuyerActor ? 'SCHEDULED' : 'ACCEPTED';
+    const handoverCode = isBuyerActor ? order.handoverCode || generateHandoverCode() : null;
     const writeClient = tx?.order?.findUnique ? tx : db;
 
     await updateOrderStatusAtomic(writeClient, orderId, order.status, {
-      status: 'SCHEDULED',
+      status: nextStatus,
       scheduledAt,
       pickupLat: input.pickupLat,
       pickupLng: input.pickupLng,
@@ -2525,24 +2565,29 @@ export async function schedulePickupOrder(
         ? { scheduleTimeLabel: input.scheduleTimeLabel }
         : {}),
       scheduleProposedBy: actorRole,
-      scheduleConfirmedByBuyer: true,
+      scheduleConfirmedByBuyer: isBuyerActor,
     });
+
+    const summaryDetail = `${input.pickupLocationName || 'จุดนัดรับ'} (${
+      input.scheduleTimeLabel || scheduledAt.toISOString()
+    })`;
 
     await createSystemOrderMessage(
       orderId,
-      `อัปเดตเวลานัดรับ: ${input.pickupLocationName || 'จุดนัดรับ'} (${
-        input.scheduleTimeLabel || scheduledAt.toISOString()
-      })`,
+      isBuyerActor
+        ? `ยืนยันเวลานัดรับแล้ว: ${summaryDetail}`
+        : `ผู้ขายเสนอเวลานัดรับ: ${summaryDetail} (รอผู้ซื้อกดยืนยัน)`,
       'SCHEDULE_CARD',
       tx?.orderMessage?.create ? tx : db
     );
 
     return {
+      nextStatus,
       scheduledAt,
       handoverCode,
       actorRole,
-      recipientUserId: actorRole === 'BUYER' ? order.sellerId : order.buyerId,
-      recipientRole: (actorRole === 'BUYER' ? 'SELLER' : 'BUYER') as 'BUYER' | 'SELLER',
+      recipientUserId: isBuyerActor ? order.sellerId : order.buyerId,
+      recipientRole: (isBuyerActor ? 'SELLER' : 'BUYER') as 'BUYER' | 'SELLER',
     };
   });
 
@@ -2555,9 +2600,15 @@ export async function schedulePickupOrder(
       recipientUserId: outcome.recipientUserId,
       role: outcome.recipientRole,
       orderId,
-      title: 'นัดรับหนังสือถูกบันทึกแล้ว',
-      message: `จุดนัดรับ: ${scheduleSummary}`,
-      badgeText: 'SCHEDULE CONFIRMED',
+      title:
+        outcome.nextStatus === 'SCHEDULED'
+          ? 'นัดรับหนังสือถูกยืนยันแล้ว'
+          : 'ผู้ขายเสนอเวลานัดรับหนังสือ',
+      message:
+        outcome.nextStatus === 'SCHEDULED'
+          ? `จุดนัดรับ: ${scheduleSummary}`
+          : `จุดนัดรับ: ${scheduleSummary} · กรุณาเปิดดูและกดยืนยันเวลานัด`,
+      badgeText: outcome.nextStatus === 'SCHEDULED' ? 'SCHEDULE CONFIRMED' : 'SCHEDULE PROPOSED',
       pushLine: false,
     },
     db
@@ -2565,7 +2616,7 @@ export async function schedulePickupOrder(
 
   return {
     orderId,
-    status: 'SCHEDULED',
+    status: outcome.nextStatus,
     scheduledAt: outcome.scheduledAt,
     handoverCode: outcome.handoverCode,
   };
@@ -2658,7 +2709,8 @@ export async function verifyHandoverCode(
       title: 'นัดรับหนังสือสำเร็จ!',
       message: 'ผู้ขายยืนยันรหัสส่งมอบ 6 หลักเรียบร้อยแล้ว อย่าลืมให้คะแนนร้านค้านะครับ',
       badgeText: 'MEETUP COMPLETED',
-      pushLine: false,
+      linkPath: `/orders/${orderId}/review`,
+      forcePushLine: true,
     },
     db
   );

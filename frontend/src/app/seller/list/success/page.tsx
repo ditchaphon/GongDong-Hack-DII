@@ -1,10 +1,15 @@
 'use client';
 
-import React, { Suspense, useState } from 'react';
+import React, { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Button, Toast, GradeBadge } from '@/components/ui';
+import { AdminDemoBanner } from '@/components/v4';
 import { useListing } from '@/hooks/useListing';
 import { useLiff } from '@/hooks/useLiff';
+import { useSeller } from '@/hooks/useSeller';
+import { api } from '@/lib/api';
+import { BackendBookDetail, mapBackendBookDetailToBook } from '@/lib/mappers';
+import { BookGrade } from '@/types';
 import {
   CheckCircle2,
   Share2,
@@ -14,13 +19,76 @@ import {
   MessageCircle,
 } from 'lucide-react';
 
+interface PublishedBookSummary {
+  title: string;
+  author: string;
+  cover: string;
+  grade: BookGrade;
+  price: number;
+}
+
 function SellerListSuccessContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const createdId = searchParams.get('id');
+  const demoParam = searchParams.get('demo') === '1';
   const { draft, grade, resetDraft } = useListing();
-  const { shareTargetPicker } = useLiff();
+  const { listings } = useSeller();
+  const { user, shareTargetPicker } = useLiff();
+  const isAdminDemoMode = Boolean(demoParam && user.isAdmin);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [fetchedSummary, setFetchedSummary] = useState<PublishedBookSummary | null>(null);
+
+  const matchedListing = createdId
+    ? listings.find((item) => item.id === createdId)
+    : undefined;
+
+  useEffect(() => {
+    if (!createdId || matchedListing) return;
+    let active = true;
+    api
+      .get<BackendBookDetail>(`/api/books/${encodeURIComponent(createdId)}`)
+      .then((detail) => {
+        if (!active) return;
+        const mapped = mapBackendBookDetailToBook(detail);
+        setFetchedSummary({
+          title: mapped.title,
+          author: mapped.author,
+          cover: mapped.photos.cover,
+          grade: mapped.grade,
+          price: mapped.price,
+        });
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [createdId, matchedListing]);
+
+  const summary: PublishedBookSummary =
+    isAdminDemoMode && draft.title
+      ? {
+          title: draft.title,
+          author: draft.author,
+          cover: draft.photos.cover,
+          grade,
+          price: draft.price,
+        }
+      : matchedListing
+      ? {
+          title: matchedListing.title,
+          author: matchedListing.author,
+          cover: matchedListing.photos.cover,
+          grade: matchedListing.grade,
+          price: matchedListing.price,
+        }
+      : fetchedSummary ?? {
+          title: draft.title || 'หนังสือที่ลงขาย',
+          author: draft.author,
+          cover: draft.photos.cover,
+          grade,
+          price: draft.price,
+        };
 
   const liffId = process.env.NEXT_PUBLIC_LIFF_ID;
   const bookPath = createdId ? `/book/${createdId}` : '/search';
@@ -35,7 +103,7 @@ function SellerListSuccessContent() {
     const shared = await shareTargetPicker([
       {
         type: 'text',
-        text: `หนังสือคุณภาพดีจากกองดอง: ${draft.title} ราคา ฿${draft.price.toLocaleString()}\n${shareUrl}`,
+        text: `หนังสือคุณภาพดีจากกองดอง: ${summary.title} ราคา ฿${summary.price.toLocaleString()}\n${shareUrl}`,
       },
     ]);
     if (!shared) {
@@ -56,21 +124,30 @@ function SellerListSuccessContent() {
         <div className="w-16 h-16 rounded-full bg-emerald-50 border border-emerald-200 flex items-center justify-center mx-auto">
           <CheckCircle2 className="w-8 h-8 text-[#8B5E3C]" />
         </div>
-        <h1 className="text-xl font-black text-slate-900">ลงประกาศขายสำเร็จ!</h1>
+        <h1 className="text-xl font-black text-slate-900">
+          {isAdminDemoMode ? 'จำลองลงประกาศสำเร็จ (Dry-run)!' : 'ลงประกาศขายสำเร็จ!'}
+        </h1>
         <p className="text-xs text-slate-500 leading-relaxed max-w-xs mx-auto">
-          ประกาศของคุณแสดงบนหน้าแรกแล้ว · ลงขายฟรี
-          จะใช้เครดิตเมื่อคุณกดรับออเดอร์เท่านั้น
+          {isAdminDemoMode
+            ? 'โหมดนำเสนอ Admin Demo · ไม่ได้บันทึกประกาศซ้ำลง Database'
+            : 'ประกาศของคุณแสดงบนหน้าแรกแล้ว · ลงขายฟรี จะใช้เครดิตเมื่อคุณกดรับออเดอร์เท่านั้น'}
         </p>
       </div>
 
       <div className="p-4 space-y-4">
+        {isAdminDemoMode && (
+          <AdminDemoBanner
+            title="Admin Relist Demo · Dry-run เสร็จสมบูรณ์"
+            description="สามารถกลับหน้าร้านหรือเปิดดูรายการต้นแบบเพื่อสาธิต ISBN Smart Compare และ Flow สั่งซื้อต่อได้ทันที"
+          />
+        )}
         <div className="bg-white rounded-2xl border border-slate-200 p-4 space-y-3">
           <div className="flex gap-3">
             <div className="w-16 h-22 rounded-xl bg-slate-100 overflow-hidden shrink-0">
-              {draft.photos.cover ? (
+              {summary.cover ? (
                 <img
-                  src={draft.photos.cover}
-                  alt={draft.title}
+                  src={summary.cover}
+                  alt={summary.title}
                   className="w-full h-full object-cover"
                 />
               ) : (
@@ -81,14 +158,14 @@ function SellerListSuccessContent() {
             </div>
             <div className="min-w-0 flex-1">
               <h2 className="text-sm font-bold text-slate-900 leading-snug line-clamp-2">
-                {draft.title}
+                {summary.title}
               </h2>
-              <p className="text-[11px] text-slate-500 mt-0.5">{draft.author}</p>
+              <p className="text-[11px] text-slate-500 mt-0.5">{summary.author}</p>
               <div className="mt-1.5">
-                <GradeBadge grade={grade} size="sm" />
+                <GradeBadge grade={summary.grade} size="sm" />
               </div>
               <p className="text-lg font-black text-[#8B5E3C] mt-1">
-                ฿{draft.price.toLocaleString()}
+                ฿{summary.price.toLocaleString()}
               </p>
             </div>
           </div>
@@ -127,6 +204,20 @@ function SellerListSuccessContent() {
 
       <div className="fixed bottom-0 left-0 right-0 z-30 flex justify-center pointer-events-none">
         <div className="w-full max-w-[430px] bg-white border-t border-slate-200 p-3 pointer-events-auto safe-area-bottom shadow-lg space-y-2">
+          {isAdminDemoMode && createdId && (
+            <Button
+              variant="outline"
+              fullWidth
+              size="lg"
+              leftIcon={<Eye className="w-4 h-4" />}
+              onClick={() => {
+                resetDraft('SINGLE');
+                router.push(`/book/${encodeURIComponent(createdId)}`);
+              }}
+            >
+              เปิดดูรายการหนังสือต้นแบบ
+            </Button>
+          )}
           <Button
             fullWidth
             size="lg"

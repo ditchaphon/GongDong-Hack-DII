@@ -231,6 +231,13 @@ export async function upsertMyShop(
   if (!user) {
     throw new AppError('ไม่พบข้อมูลผู้ใช้ในระบบ', 404, 'USER_NOT_FOUND');
   }
+  if (user.isBlacklisted) {
+    throw new AppError(
+      'บัญชีของคุณถูกระงับสิทธิ์การขายชั่วคราวเนื่องจากพบประวัติในฐานข้อมูล Blacklistseller',
+      403,
+      'ACCOUNT_BLACKLISTED'
+    );
+  }
 
   const shopData = {
     shopName,
@@ -320,6 +327,20 @@ export async function addMeetupPoint(
     );
   }
 
+  if (typeof db.user?.findUnique === 'function') {
+    const owner = await db.user.findUnique({
+      where: { id: userId },
+      select: { id: true, isBlacklisted: true },
+    });
+    if (owner?.isBlacklisted) {
+      throw new AppError(
+        'บัญชีของคุณถูกระงับสิทธิ์การขายชั่วคราวเนื่องจากพบประวัติในฐานข้อมูล Blacklistseller',
+        403,
+        'ACCOUNT_BLACKLISTED'
+      );
+    }
+  }
+
   let shop = await db.shopProfile.findUnique({ where: { userId } });
   if (!shop) {
     const user = await db.user.findUnique({ where: { id: userId } });
@@ -406,6 +427,20 @@ export async function submitSellerKyc(
   options: SubmitSellerKycOptions = {}
 ) {
   const db = prismaClient || defaultPrisma;
+
+  if (typeof db.user?.findUnique === 'function') {
+    const existingAccount = await db.user.findUnique({
+      where: { id: userId },
+      select: { id: true, isBlacklisted: true },
+    });
+    if (existingAccount?.isBlacklisted) {
+      throw new AppError(
+        'บัญชีของคุณถูกระงับสิทธิ์การขายชั่วคราวเนื่องจากพบประวัติในฐานข้อมูล Blacklistseller',
+        403,
+        'ACCOUNT_BLACKLISTED'
+      );
+    }
+  }
 
   const firstName = normalizeWhitespace(input.firstName);
   const lastName = normalizeWhitespace(input.lastName);

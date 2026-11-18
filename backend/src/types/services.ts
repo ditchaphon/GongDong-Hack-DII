@@ -145,7 +145,7 @@ export interface SchedulePickupInput {
  */
 export interface SchedulePickupResult {
   orderId: string;
-  status: 'SCHEDULED';
+  status: 'ACCEPTED' | 'SCHEDULED';
   scheduledAt: Date;
   handoverCode: string | null;
 }
@@ -254,6 +254,7 @@ export interface BookListingItem {
   categories: string[];
   isSet: boolean;
   totalVolumes: number | null;
+  missingVolumes: number[];
   coverImageUrl: string;
   price: number;
   originalPrice: number | null;
@@ -326,6 +327,7 @@ export interface UserBookListingItem {
   categories: string[];
   isSet: boolean;
   totalVolumes: number | null;
+  missingVolumes: number[];
   price: number;
   grade: BookGrade;
   coverImageUrl: string;
@@ -333,6 +335,7 @@ export interface UserBookListingItem {
   allowDelivery: boolean;
   codEnabled: boolean;
   status: string;
+  hasOrders?: boolean;
   createdAt: Date;
 }
 

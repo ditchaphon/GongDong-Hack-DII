@@ -14,8 +14,12 @@ import {
 } from '@/components/ui';
 import { useSeller } from '@/hooks/useSeller';
 import { useAppMode } from '@/hooks/useAppMode';
+import { useLiff } from '@/hooks/useLiff';
+import { useListing } from '@/hooks/useListing';
 import { useV4Orders } from '@/hooks/useV4Orders';
-import { StatusBadgeV4, LineOaBanner } from '@/components/v4';
+import { loadAdminRelistDraft } from '@/lib/adminDemo';
+import { StatusBadgeV4, LineOaBanner, ConfirmSheet } from '@/components/v4';
+import type { SellerListing } from '@/types';
 import {
   Plus,
   BookOpen,
@@ -31,6 +35,9 @@ import {
   Pencil,
   EyeOff,
   Settings,
+  RotateCcw,
+  Loader2,
+  Trash2,
 } from 'lucide-react';
 
 type Tab = 'LISTINGS' | 'WAITING' | 'CLOSED';
@@ -40,14 +47,20 @@ export default function SellerShopPage() {
   const {
     shop,
     isShopSetup,
+    loading: sellerLoading,
+    loadError: sellerLoadError,
+    refreshSellerData,
     credits,
     listings,
     setListingStatus,
+    deleteListing,
   } = useSeller();
 
   const { mode, setMode } = useAppMode();
-  const { orders: allOrders, isMineAsBuyer } = useV4Orders();
-  const sales = allOrders.filter((order) => !isMineAsBuyer(order));
+  const { user, isReady } = useLiff();
+  const { loadDemoDraft } = useListing();
+  const { orders: allOrders, isMineAsBuyer, isDryRunOrder } = useV4Orders();
+  const sales = allOrders.filter((order) => !isDryRunOrder(order.id) && !isMineAsBuyer(order));
 
   // Landing on the dashboard with a ready shop means the seller hat is on.
   useEffect(() => {
@@ -56,6 +69,17 @@ export default function SellerShopPage() {
 
   const [tab, setTab] = useState<Tab>('LISTINGS');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [loadingRelistId, setLoadingRelistId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<SellerListing | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  const hasOrderHistory = (listing: SellerListing) =>
+    Boolean(
+      listing.hasOrders ||
+        listing.status === 'WAITING_PAYMENT' ||
+        listing.status === 'CLOSED' ||
+        sales.some((order) => order.books.some((book) => book.id === listing.id))
+    );
 
   const pendingRequestBookIds = new Set(
     sales
@@ -79,6 +103,55 @@ export default function SellerShopPage() {
     ['REQUESTED', 'ACCEPTED', 'PAID', 'SHIPPED', 'SCHEDULED'].includes(o.status)
   );
   const newOrderCount = sales.filter((o) => o.status === 'REQUESTED').length;
+
+  if (!isReady || (sellerLoading && !shop)) {
+    return (
+      <div className="flex flex-col min-h-screen bg-slate-50 select-none pb-24">
+        <TopBar title="ร้านของฉัน" showBack={false} />
+        <div className="p-4 space-y-4">
+          <div className="bg-white rounded-2xl border border-slate-200 p-4 space-y-3 animate-pulse">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-full bg-slate-200 shrink-0" />
+              <div className="flex-1 space-y-2">
+                <div className="h-4 w-36 bg-slate-200 rounded" />
+                <div className="h-3 w-24 bg-slate-100 rounded" />
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              <div className="h-14 rounded-xl bg-slate-100" />
+              <div className="h-14 rounded-xl bg-slate-100" />
+              <div className="h-14 rounded-xl bg-slate-100" />
+            </div>
+            <div className="h-9 rounded-xl bg-slate-100" />
+          </div>
+          <div className="h-28 rounded-2xl bg-slate-200/70 animate-pulse" />
+        </div>
+        <BottomTab />
+      </div>
+    );
+  }
+
+  if (sellerLoadError && !shop) {
+    return (
+      <div className="flex flex-col min-h-screen bg-slate-50 select-none pb-24">
+        <TopBar title="ร้านของฉัน" showBack={false} />
+        <div className="p-4">
+          <div className="bg-white rounded-2xl border border-slate-200 mt-4">
+            <EmptyState
+              icon={<ShieldAlert className="w-8 h-8 text-amber-500" />}
+              title="โหลดข้อมูลร้านไม่สำเร็จ"
+              description={sellerLoadError}
+              actionText="ลองใหม่"
+              onAction={() => {
+                void refreshSellerData();
+              }}
+            />
+          </div>
+        </div>
+        <BottomTab />
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col min-h-screen bg-slate-50 select-none pb-24">
@@ -287,7 +360,34 @@ export default function SellerShopPage() {
                         มีคนขอซื้อ · ล็อกการแก้ไข
                       </div>
                     )}
-                    <div className="flex items-center gap-2 pt-1">
+                    <div className="flex flex-wrap items-center gap-2 pt-1">
+                      {user.isAdmin && (
+                        <button
+                          type="button"
+                          disabled={loadingRelistId === listing.id}
+                          onClick={async () => {
+                            setLoadingRelistId(listing.id);
+                            try {
+                              const demoDraft = await loadAdminRelistDraft(
+                                listing.id,
+                                listing
+                              );
+                              loadDemoDraft(demoDraft);
+                              router.push('/seller/list');
+                            } finally {
+                              setLoadingRelistId(null);
+                            }
+                          }}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-amber-300 bg-amber-50 text-[11px] font-semibold text-amber-900 hover:bg-amber-100/80 disabled:opacity-50"
+                        >
+                          {loadingRelistId === listing.id ? (
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                          ) : (
+                            <RotateCcw className="w-3 h-3" />
+                          )}
+                          Admin Relist Demo
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={() => router.push(`/seller/listings/${listing.id}/edit`)}
@@ -316,6 +416,20 @@ export default function SellerShopPage() {
                       >
                         <EyeOff className="w-3 h-3" />
                         ซ่อน
+                      </button>
+                      <button
+                        type="button"
+                        disabled={hasOrderHistory(listing)}
+                        onClick={() => setDeleteTarget(listing)}
+                        title={
+                          hasOrderHistory(listing)
+                            ? 'ไม่สามารถลบได้ เนื่องจากมีคำสั่งซื้อแล้ว'
+                            : 'ลบประกาศถาวร'
+                        }
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-rose-200 text-[11px] font-semibold text-rose-600 hover:bg-rose-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                        ลบ
                       </button>
                     </div>
                   </div>
@@ -385,20 +499,36 @@ export default function SellerShopPage() {
                         ไม่แสดงให้ผู้ซื้อเห็น
                       </p>
                     </div>
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        try {
-                          await setListingStatus(listing.id, 'ACTIVE');
-                          setToastMessage('แสดงประกาศอีกครั้งแล้ว');
-                        } catch (err) {
-                          setToastMessage(err instanceof Error ? err.message : 'อัปเดตไม่สำเร็จ');
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            await setListingStatus(listing.id, 'ACTIVE');
+                            setToastMessage('แสดงประกาศอีกครั้งแล้ว');
+                          } catch (err) {
+                            setToastMessage(err instanceof Error ? err.message : 'อัปเดตไม่สำเร็จ');
+                          }
+                        }}
+                        className="px-2.5 py-1 rounded-lg border border-emerald-200 bg-emerald-50 text-[11px] font-semibold text-emerald-700"
+                      >
+                        แสดงอีกครั้ง
+                      </button>
+                      <button
+                        type="button"
+                        disabled={hasOrderHistory(listing)}
+                        onClick={() => setDeleteTarget(listing)}
+                        title={
+                          hasOrderHistory(listing)
+                            ? 'ไม่สามารถลบได้ เนื่องจากเคยมีคำสั่งซื้อแล้ว'
+                            : 'ลบประกาศถาวร'
                         }
-                      }}
-                      className="px-2.5 py-1 rounded-lg border border-emerald-200 bg-emerald-50 text-[11px] font-semibold text-emerald-700"
-                    >
-                      แสดงอีกครั้ง
-                    </button>
+                        className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-rose-200 text-[11px] font-semibold text-rose-600 hover:bg-rose-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                        ลบ
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -516,6 +646,35 @@ export default function SellerShopPage() {
       </div>
 
       <BottomTab orderBadge={newOrderCount} />
+
+      <ConfirmSheet
+        isOpen={Boolean(deleteTarget)}
+        onClose={() => {
+          if (!deleting) setDeleteTarget(null);
+        }}
+        title="ลบประกาศขายหนังสือ?"
+        description={
+          deleteTarget
+            ? `ต้องการลบ “${deleteTarget.title}” ถาวรใช่ไหม (ข้อมูลและรูปที่ไม่ถูกใช้งานจะถูกลบออก ไม่สามารถกู้คืนได้)`
+            : ''
+        }
+        confirmLabel={deleting ? 'กำลังลบ...' : 'ยืนยันลบประกาศ'}
+        tone="danger"
+        onConfirm={async () => {
+          if (!deleteTarget || deleting) return;
+          setDeleting(true);
+          try {
+            await deleteListing(deleteTarget.id);
+            setToastMessage('ลบประกาศหนังสือเรียบร้อยแล้ว');
+            setDeleteTarget(null);
+          } catch (err) {
+            setToastMessage(err instanceof Error ? err.message : 'ลบประกาศไม่สำเร็จ');
+            setDeleteTarget(null);
+          } finally {
+            setDeleting(false);
+          }
+        }}
+      />
 
       <Toast
         isOpen={!!toastMessage}

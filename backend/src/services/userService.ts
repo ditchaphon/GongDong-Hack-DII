@@ -120,13 +120,17 @@ export async function getTopupPaymentQr(options: {
  */
 export async function getUserProfile(
   userId: string,
-  prismaClient?: any
+  prismaClient?: any,
+  preloadedUser?: any
 ): Promise<UserProfileResponse> {
   const db = prismaClient || defaultPrisma;
 
-  const user = await db.user.findUnique({
-    where: { id: userId },
-  });
+  const user =
+    preloadedUser && preloadedUser.id === userId
+      ? preloadedUser
+      : await db.user.findUnique({
+          where: { id: userId },
+        });
 
   if (!user) {
     throw new AppError('ไม่พบข้อมูลผู้ใช้ในระบบ', 404, 'USER_NOT_FOUND');
@@ -256,11 +260,12 @@ export async function updateUserProfile(
 
 export type TopupSlipVerifier = (
   slipImageUrl: string,
-  options?: { log?: boolean }
+  options?: { amount?: number; log?: boolean }
 ) => Promise<{
   transRef: string;
   amount: number;
   senderName: string;
+  receiverName?: string;
 }>;
 
 /**
@@ -301,15 +306,71 @@ export async function processTopupSlip(
   let transRef = input.transRef?.trim() || '';
   let amount = input.amount;
   let senderName = input.senderName?.trim() || undefined;
+  let receiverName: string | undefined;
 
-  // หากมี custom verifier ให้ทำการ verify
+  const requestedPackId = (input.pack_id || input.packId || '').trim().toLowerCase();
+  const matchedPack = requestedPackId
+    ? TOPUP_CREDIT_PACKAGES.find((pkg) => pkg.id === requestedPackId)
+    : undefined;
+  if (requestedPackId && !matchedPack) {
+    throw new AppError(
+      'แพ็กเกจเครดิตไม่ถูกต้อง (รองรับ starter, bookworm, merchant)',
+      400,
+      'INVALID_TOPUP_PACKAGE'
+    );
+  }
+
+  // หากมี custom verifier (SlipOK) ให้ทำการ verify
   if (slipVerifier) {
-    const verified = await slipVerifier(slipImageUrl, { log: true });
+    const expectedAmount =
+      matchedPack?.price ??
+      (amount !== undefined && Number.isFinite(Number(amount))
+        ? Math.round(Number(amount))
+        : undefined);
+    const verified = await slipVerifier(slipImageUrl, {
+      ...(expectedAmount !== undefined ? { amount: expectedAmount } : {}),
+      log: true,
+    });
     transRef = verified.transRef;
     amount = verified.amount;
     senderName = verified.senderName;
+    receiverName = verified.receiverName?.trim() || undefined;
+
+    if (matchedPack && Math.round(Number(amount)) !== matchedPack.price) {
+      throw new AppError('ยอดเงินในสลิปไม่ตรงกับแพ็กเกจที่เลือก', 400, 'SLIP_AMOUNT_MISMATCH');
+    }
+
+    const expectedReceiverName = (
+      process.env.PLATFORM_SLIP_RECEIVER_NAME ?? env.PLATFORM_SLIP_RECEIVER_NAME
+    )?.trim();
+    const isProd = process.env.NODE_ENV === 'production' || env.NODE_ENV === 'production';
+
+    if (expectedReceiverName) {
+      if (!receiverName) {
+        throw new AppError(
+          'ไม่สามารถอ่านชื่อบัญชีผู้รับเงินจากสลิปได้ กรุณาใช้สลิปที่ชัดเจน',
+          400,
+          'SLIP_RECEIVER_MISMATCH'
+        );
+      }
+      const cleanReceiver = receiverName.replace(/\s+/g, '').toLowerCase();
+      const cleanExpected = expectedReceiverName.replace(/\s+/g, '').toLowerCase();
+      if (!cleanReceiver.includes(cleanExpected) && !cleanExpected.includes(cleanReceiver)) {
+        throw new AppError(
+          'บัญชีผู้รับเงินในสลิปไม่ตรงกับบัญชีรับชำระของกองดอง',
+          400,
+          'SLIP_RECEIVER_MISMATCH'
+        );
+      }
+    } else if (isProd && !receiverName) {
+      throw new AppError(
+        'ไม่สามารถอ่านชื่อบัญชีผู้รับเงินจากสลิปได้ กรุณาใช้สลิปที่ชัดเจน',
+        400,
+        'SLIP_RECEIVER_MISMATCH'
+      );
+    }
   } else {
-    if (env.NODE_ENV === 'production') {
+    if (process.env.NODE_ENV === 'production' || env.NODE_ENV === 'production') {
       throw new AppError(
         'ระบบตรวจสลิปอัตโนมัติยังไม่ได้เปิดใช้งานใน Production (Missing SLIPOK_API_KEY / SLIPOK_BRANCH_ID)',
         503,
@@ -317,16 +378,7 @@ export async function processTopupSlip(
       );
     }
 
-    const requestedPackId = (input.pack_id || input.packId || '').trim().toLowerCase();
-    if (requestedPackId) {
-      const matchedPack = TOPUP_CREDIT_PACKAGES.find((pkg) => pkg.id === requestedPackId);
-      if (!matchedPack) {
-        throw new AppError(
-          'แพ็กเกจเครดิตไม่ถูกต้อง (รองรับ starter, bookworm, merchant)',
-          400,
-          'INVALID_TOPUP_PACKAGE'
-        );
-      }
+    if (matchedPack) {
       if (amount !== undefined && Math.round(Number(amount)) !== matchedPack.price) {
         throw new AppError('ยอดเงินในสลิปไม่ตรงกับแพ็กเกจที่เลือก', 400, 'SLIP_AMOUNT_MISMATCH');
       }
@@ -388,7 +440,7 @@ export async function processTopupSlip(
           ...(storagePath ? { storagePath } : {}),
           transRef,
           amount,
-          receiverName: 'กองดอง (GongDong)',
+          receiverName: receiverName || 'กองดอง (GongDong)',
           verificationStatus: 'AUTO_VERIFIED',
           verifiedAt: new Date(),
         },

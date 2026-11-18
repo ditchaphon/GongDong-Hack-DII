@@ -4,7 +4,8 @@ import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { TopBar } from '@/components/layout/TopBar';
 import { Button, Stepper } from '@/components/ui';
-import { CameraCapture } from '@/components/v4';
+import { AdminDemoBanner, CameraCapture } from '@/components/v4';
+import { useLiff } from '@/hooks/useLiff';
 import { useListing } from '@/hooks/useListing';
 import { safeDeleteUploadedImage } from '@/lib/api';
 import { Camera, Check, RefreshCcw, ChevronRight, ShieldCheck } from 'lucide-react';
@@ -21,15 +22,24 @@ const DEMO: Record<SlotKey, string> = {
 
 export default function SellerListStep2Page() {
   const router = useRouter();
+  const { user } = useLiff();
   const { draft, setPhoto } = useListing();
+  const isAdminDemoMode = Boolean(user.isAdmin && draft.isDemoDryRun);
   const isSet = draft.mode === 'SET';
 
-  const slots: { key: SlotKey; label: string; hint: string }[] = [
-    { key: 'cover', label: isSet ? 'ปกหน้าทั้งชุด' : 'ปกหน้า', hint: 'ถ่ายตรง เห็นขอบครบ 4 ด้าน' },
-    { key: 'back', label: 'ปกหลัง', hint: 'เห็นบาร์โค้ดและรอยถลอก' },
-    { key: 'spine', label: isSet ? 'สันทุกเล่ม' : 'สันหนังสือ', hint: 'เห็นความหนาและรอยย่น' },
-    { key: 'inner', label: 'หน้าด้านใน', hint: 'เปิดกลางเล่ม เห็นสีกระดาษ' },
-  ];
+  const slots: { key: SlotKey; label: string; hint: string }[] = isSet
+    ? [
+        { key: 'cover', label: 'ภาพรวมหน้าปกทั้งชุด', hint: 'วางเรียงให้เห็นปกครบทุกเล่มที่มีจริง' },
+        { key: 'back', label: 'ปกหลัง / ขอบกระดาษรวม', hint: 'วางเรียงให้เห็นขอบบน-ข้างของทั้งชุด' },
+        { key: 'spine', label: 'สันหนังสือเรียงทุกเล่ม', hint: 'เห็นเลขเล่ม ความหนา และรอยย่นครบ' },
+        { key: 'inner', label: 'ตัวอย่างหน้าด้านใน', hint: 'เปิดเล่มตัวอย่าง (แนะนำเล่มสีเข้มสุด)' },
+      ]
+    : [
+        { key: 'cover', label: 'ปกหน้า', hint: 'ถ่ายตรง เห็นขอบครบ 4 ด้าน' },
+        { key: 'back', label: 'ปกหลัง', hint: 'เห็นบาร์โค้ดและรอยถลอก' },
+        { key: 'spine', label: 'สันหนังสือ', hint: 'เห็นความหนาและรอยย่น' },
+        { key: 'inner', label: 'หน้าด้านใน', hint: 'เปิดกลางเล่ม เห็นสีกระดาษ' },
+      ];
 
   const [camera, setCamera] = useState<{ key: SlotKey; label: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -49,6 +59,15 @@ export default function SellerListStep2Page() {
     <div className="flex flex-col min-h-screen bg-slate-50 select-none pb-32">
       <TopBar title="ถ่ายรูปหนังสือ" onBack={() => router.push('/seller/list/details')} />
       <Stepper currentStep={3} />
+
+      {isAdminDemoMode && (
+        <div className="px-4 pt-3">
+          <AdminDemoBanner
+            title="Admin Relist Demo · Dry-run"
+            description="รูปถ่าย 4 มุมถูกเติมไว้แล้ว กดเปลี่ยนรูปเพื่อสาธิตได้โดยไม่ลบรูปของประกาศจริง"
+          />
+        </div>
+      )}
 
       <div className="p-4 space-y-4">
         <section className="bg-white rounded-2xl border border-slate-200 p-4 space-y-3">
@@ -137,7 +156,7 @@ export default function SellerListStep2Page() {
         onCapture={(url) => {
           if (!camera) return;
           const prevUrl = photoOf(camera.key);
-          if (prevUrl && prevUrl !== url) {
+          if (!isAdminDemoMode && prevUrl && prevUrl !== url) {
             void safeDeleteUploadedImage(prevUrl);
           }
           setPhoto(camera.key, url);

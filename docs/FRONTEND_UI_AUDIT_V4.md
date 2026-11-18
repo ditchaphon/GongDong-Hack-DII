@@ -4,10 +4,10 @@
 > **วันที่จัดทำ:** 12 พฤศจิกายน 2569  
 > **เอกสารอ้างอิงหลัก:** `Backend-doc/กองดอง · User Flow v4 (ผู้ขาย + ผู้ซื้อ).md`  
 > **โค้ดเป้าหมายการตรวจสอบ:** โฟลเดอร์ `frontend/src/` (Next.js 16 App Router, TypeScript, Tailwind CSS v4, `@line/liff`)  
-> **ผู้ตรวจสอบ:** Antigravity AI ร่วมกับ Biw (Backend) & Frame (Frontend)
-
+> **ผู้ตรวจสอบ:** Antigravity AI ร่วมกับ Biw (Backend) & Frame (Frontend)   
+   
 ---    
-       
+             
 ## 1. บทสรุปผู้บริหาร (Executive Summary)
 
 จากการตรวจสอบโครงสร้างหน้าจอ คอมโพเนนต์ และการจัดการสถานะ (State Machine) ฝั่ง Frontend ที่ถูกพัฒนาใน Branch `Frame-dev` และผสานรวมเข้ามา พบว่า:

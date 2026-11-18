@@ -203,10 +203,12 @@ export function createAuthMiddleware(options: AuthMiddlewareOptions = {}) {
       const authHeader = req.headers.authorization;
       const xUserId = req.headers['x-user-id'] as string | undefined;
 
-      // 1. ตรวจสอบโหมด Dev / Mock Bypass
-      const isTestOrDev = process.env.NODE_ENV !== 'production';
+      // 1. ตรวจสอบโหมด Dev / Mock Bypass (ต้องเป็น test หรือเปิด ENABLE_MOCK_AUTH=true เท่านั้น)
+      const isMockAuthEnabled =
+        process.env.NODE_ENV === 'test' ||
+        (process.env.NODE_ENV !== 'production' && process.env.ENABLE_MOCK_AUTH === 'true');
 
-      if (isTestOrDev && xUserId) {
+      if (isMockAuthEnabled && xUserId) {
         const user = await findUserByMockIdentifier(xUserId);
         if (user) {
           touchUserLastActive(user);
@@ -225,8 +227,8 @@ export function createAuthMiddleware(options: AuthMiddlewareOptions = {}) {
         throw new AppError('กรุณาแนบ Token สำหรับยืนยันตัวตน', 401, 'UNAUTHORIZED');
       }
 
-      // ตรวจสอบ Mock Token ใน dev/test: เช่น Bearer mock_<uuid> หรือ mock_user_1
-      if (isTestOrDev && token.startsWith('mock_')) {
+      // ตรวจสอบ Mock Token ใน test หรือ dev ที่เปิด ENABLE_MOCK_AUTH=true
+      if (isMockAuthEnabled && token.startsWith('mock_')) {
         const mockTargetId = token.substring(5);
         const user = await findUserByMockIdentifier(mockTargetId);
         if (user) {

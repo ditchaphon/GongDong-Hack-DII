@@ -6,6 +6,7 @@ import clsx from 'clsx';
 import { TopBar } from '@/components/layout/TopBar';
 import { Button, Toast } from '@/components/ui';
 import {
+  AdminOrderDryRunBar,
   StatusBadgeV4,
   ChatRoom,
   ConfirmSheet,
@@ -69,6 +70,7 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
   const {
     getOrder,
     loading,
+    hasResolved,
     fetchOrder,
     fetchMessages,
     messagesFor,
@@ -76,21 +78,24 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
     acceptOrder,
     rejectOrder,
     cancelOrder,
+    confirmSchedule,
     verifyHandover,
     openDispute,
     isMineAsBuyer,
+    isDryRunOrder,
   } = useV4Orders();
   const { credits } = useSeller();
   const { isReady, idToken } = useLiff();
   const [fetchingDetail, setFetchingDetail] = useState(true);
 
   const order = getOrder(id);
+  const isDryRun = isDryRunOrder(id);
   const orderStatus = order?.status;
   const chatOpen = !!orderStatus && !['REQUESTED', 'REJECTED', 'EXPIRED'].includes(orderStatus);
 
   useEffect(() => {
     if (!isReady) return;
-    if (!idToken) {
+    if (isDryRun || !idToken) {
       setFetchingDetail(false);
       return;
     }
@@ -102,18 +107,18 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
     return () => {
       active = false;
     };
-  }, [id, isReady, idToken, fetchOrder]);
+  }, [id, isReady, idToken, isDryRun, fetchOrder]);
 
   useEffect(() => {
     if (!orderStatus || !chatOpen) return;
     fetchMessages(id);
-    if (isTerminal(orderStatus)) return;
+    if (isDryRun || isTerminal(orderStatus)) return;
     const timer = setInterval(() => {
       fetchMessages(id);
       fetchOrder(id);
     }, 8000);
     return () => clearInterval(timer);
-  }, [id, orderStatus, chatOpen, fetchMessages, fetchOrder]);
+  }, [id, orderStatus, chatOpen, isDryRun, fetchMessages, fetchOrder]);
 
   const [toast, setToast] = useState<string | null>(null);
   const [acceptOpen, setAcceptOpen] = useState(false);
@@ -126,17 +131,52 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
   const [handoverCodeInput, setHandoverCodeInput] = useState('');
   const [verifyingHandover, setVerifyingHandover] = useState(false);
   const [handoverError, setHandoverError] = useState<string | null>(null);
+  const [confirmingSchedule, setConfirmingSchedule] = useState(false);
+
+  const isInitialLoading =
+    !isReady || (!order && (!hasResolved || loading || fetchingDetail));
+
+  if (isInitialLoading) {
+    return (
+      <div className="flex flex-col min-h-screen bg-slate-50 select-none cursor-wait">
+        <TopBar title="ออเดอร์" showBack={false} />
+        <div className="p-4 space-y-3 flex-1 pointer-events-none" aria-busy="true">
+          <div className="bg-white rounded-2xl border border-slate-200 p-4 space-y-3 animate-pulse">
+            <div className="flex items-center justify-between">
+              <div className="h-5 w-28 rounded-full bg-slate-200" />
+              <div className="h-4 w-20 rounded bg-slate-100" />
+            </div>
+            <div className="h-4 w-48 rounded bg-slate-200" />
+            <div className="h-12 rounded-xl bg-slate-100" />
+          </div>
+          <div className="bg-white rounded-2xl border border-slate-200 p-4 space-y-3 animate-pulse">
+            <div className="flex gap-3">
+              <div className="w-16 h-22 rounded-xl bg-slate-200 shrink-0" />
+              <div className="flex-1 space-y-2">
+                <div className="h-4 w-3/4 rounded bg-slate-200" />
+                <div className="h-3 w-1/2 rounded bg-slate-100" />
+                <div className="h-4 w-24 rounded bg-slate-200" />
+              </div>
+            </div>
+          </div>
+          <div className="h-32 rounded-2xl bg-slate-200/70 animate-pulse" />
+        </div>
+      </div>
+    );
+  }
 
   if (!order) {
-    const isInitialLoading = !isReady || loading || fetchingDetail;
     return (
       <div className="flex flex-col min-h-screen bg-slate-50">
         <TopBar title="ออเดอร์" onBack={() => router.push('/orders')} />
-        <p className="p-6 text-center text-xs text-slate-500">
-          {isInitialLoading
-            ? 'กำลังโหลดข้อมูลออเดอร์...'
-            : 'ไม่พบออเดอร์นี้ · อาจถูกลบหรือลิงก์ไม่ถูกต้อง'}
-        </p>
+        <div className="p-6 text-center space-y-3">
+          <p className="text-xs text-slate-500">
+            ไม่พบออเดอร์นี้ · อาจถูกลบหรือลิงก์ไม่ถูกต้อง
+          </p>
+          <Button variant="secondary" size="sm" onClick={() => router.push('/orders')}>
+            กลับไปหน้ารายการออเดอร์
+          </Button>
+        </div>
       </div>
     );
   }
@@ -250,6 +290,12 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
       <TopBar title={`ออเดอร์ #${order.id}`} subtitle={isBuyer ? 'ฝั่งผู้ซื้อ' : 'ฝั่งร้านค้า'} onBack={() => router.push('/orders')} />
 
       <div className="p-4 space-y-4">
+        <AdminOrderDryRunBar
+          orderId={order.id}
+          delivery={order.delivery}
+          status={order.status}
+          handoverCode={order.handoverCode}
+        />
         <LineOaBanner />
         {/* Header + steps */}
         <section className="bg-white rounded-2xl border border-slate-200 p-4 space-y-4">
@@ -326,13 +372,49 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 
         {isBuyer && order.status === 'ACCEPTED' && order.delivery === 'MEETUP' && (
           <Panel icon={<CalendarDays className="w-4 h-4 text-teal-600" />} title="ยืนยันวันและจุดนัดรับ">
-            <p className="text-[11px] text-slate-500 leading-relaxed">
-              ผู้ขายรับออเดอร์แล้ว · ยืนยันหรือปรับเปลี่ยนวันเวลาและจุดนัดรับ เพื่อให้ระบบสร้างรหัสยืนยันส่งมอบ
-            </p>
-            {meetupCard}
-            <Button fullWidth onClick={() => router.push(`/orders/${order.id}/schedule`)}>
-              จัดการเวลานัดรับ / ยืนยันนัดหมาย
-            </Button>
+            {order.schedule && order.schedule.proposedBy === 'SELLER' && !order.schedule.confirmedByBuyer ? (
+              <>
+                <p className="text-[11px] text-slate-500 leading-relaxed">
+                  ผู้ขายเสนอเวลานัดรับมาให้แล้ว · กดยืนยันเพื่อล็อกนัดหมายและรับรหัสส่งมอบ 6 หลัก หรือเลือกเปลี่ยนวันเวลาใหม่
+                </p>
+                {meetupCard}
+                <div className="space-y-2">
+                  <Button
+                    fullWidth
+                    isLoading={confirmingSchedule}
+                    onClick={async () => {
+                      setConfirmingSchedule(true);
+                      const res = await confirmSchedule(order.id);
+                      setConfirmingSchedule(false);
+                      if (res.ok) {
+                        setToast('ยืนยันนัดรับและสร้างรหัสส่งมอบ 6 หลักแล้ว');
+                      } else {
+                        setToast(res.error || 'ยืนยันนัดรับไม่สำเร็จ');
+                      }
+                    }}
+                  >
+                    ยืนยันเวลานัดรับที่ร้านเสนอ
+                  </Button>
+                  <Button
+                    fullWidth
+                    variant="secondary"
+                    onClick={() => router.push(`/orders/${order.id}/schedule`)}
+                  >
+                    ขอเปลี่ยนวัน / เวลานัดรับ
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <>
+                <p className="text-[11px] text-slate-500 leading-relaxed">
+                  ผู้ขายรับออเดอร์แล้ว · ยืนยันหรือปรับเปลี่ยนวันเวลาและจุดนัดรับ เพื่อให้ระบบสร้างรหัสยืนยันส่งมอบ
+                </p>
+                {meetupCard}
+                <Button fullWidth onClick={() => router.push(`/orders/${order.id}/schedule`)}>
+                  จัดการเวลานัดรับ / ยืนยันนัดหมาย
+                </Button>
+              </>
+            )}
           </Panel>
         )}
 
@@ -417,8 +499,8 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
             </div>
             <div className="grid grid-cols-2 gap-2">
               <Button variant="outline" onClick={() => setRejectOpen(true)}>ปฏิเสธ</Button>
-              <Button onClick={() => (credits < 1 ? router.push('/seller/credits') : setAcceptOpen(true))}>
-                {credits < 1 ? 'เติมเครดิต' : 'รับออเดอร์'}
+              <Button onClick={() => (!isDryRun && credits < 1 ? router.push('/seller/credits') : setAcceptOpen(true))}>
+                {!isDryRun && credits < 1 ? 'เติมเครดิต' : 'รับออเดอร์'}
               </Button>
             </div>
           </Panel>
@@ -459,12 +541,20 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 
         {!isBuyer && order.status === 'ACCEPTED' && order.delivery === 'MEETUP' && (
           <Panel icon={<CalendarDays className="w-4 h-4 text-teal-600" />} title="กำหนด / ยืนยันเวลานัดรับ">
-            <p className="text-[11px] text-slate-500 leading-relaxed">
-              ออเดอร์นี้เป็นแบบนัดรับ · กดยืนยันหรือเสนอเวลานัดหมายใหม่กับผู้ซื้อก่อนเจอกัน (จ่ายเงินสดหน้างาน)
-            </p>
+            {order.schedule && order.schedule.proposedBy === 'SELLER' && !order.schedule.confirmedByBuyer ? (
+              <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-xl p-2.5 leading-relaxed">
+                ส่งข้อเสนอเวลานัดรับแล้ว · รอผู้ซื้อกดยืนยันเพื่อให้ระบบออกรหัสส่งมอบ 6 หลัก (สามารถแก้ไขข้อเสนอได้จนกว่าผู้ซื้อจะยืนยัน)
+              </p>
+            ) : (
+              <p className="text-[11px] text-slate-500 leading-relaxed">
+                ออเดอร์นี้เป็นแบบนัดรับ · เสนอเวลานัดหมายให้ผู้ซื้อกดยืนยันก่อนเจอกัน (จ่ายเงินสดหน้างาน)
+              </p>
+            )}
             {meetupCard}
             <Button fullWidth onClick={() => router.push(`/orders/${order.id}/schedule`)}>
-              กำหนด / ยืนยันนัดหมาย
+              {order.schedule && order.schedule.proposedBy === 'SELLER' && !order.schedule.confirmedByBuyer
+                ? 'แก้ไขข้อเสนอเวลานัดรับ'
+                : 'เสนอเวลานัดหมายให้ผู้ซื้อ'}
             </Button>
           </Panel>
         )}
@@ -574,8 +664,12 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
         isOpen={acceptOpen}
         onClose={() => setAcceptOpen(false)}
         title="รับออเดอร์นี้?"
-        description={`ใช้ 1 เครดิต (เหลือ ${Math.max(0, credits - 1)}) · หนังสือจะถูกล็อก คำขออื่นของเล่มนี้ถูกปฏิเสธอัตโนมัติ`}
-        confirmLabel="ใช้ 1 เครดิตและรับออเดอร์"
+        description={
+          isDryRun
+            ? 'โหมด Dry-run · จำลองการรับออเดอร์โดยไม่หักเครดิตและไม่ล็อกหนังสือจริง'
+            : `ใช้ 1 เครดิต (เหลือ ${Math.max(0, credits - 1)}) · หนังสือจะถูกล็อก คำขออื่นของเล่มนี้ถูกปฏิเสธอัตโนมัติ`
+        }
+        confirmLabel={isDryRun ? 'ยืนยันรับออเดอร์ (Dry-run)' : 'ใช้ 1 เครดิตและรับออเดอร์'}
         onConfirm={handleAccept}
       />
       <ConfirmSheet
