@@ -16,7 +16,7 @@ export const AppShell: React.FC<AppShellProps> = ({ children }) => {
   const oaHandle = oaId.startsWith('@') ? oaId : `@${oaId}`;
 
   return (
-    <div className="w-full max-w-[430px] min-h-screen bg-white shadow-sm flex flex-col relative mx-auto">
+    <div className="w-full max-w-[430px] min-h-screen bg-white shadow-sm flex flex-col relative mx-auto overflow-x-hidden">
       {/* External Browser Banner (Show only when in real mode outside LINE) */}
       {!isMock && !isInClient && isReady && (
         <div className="bg-amber-500 text-white px-3 py-2 text-xs flex items-center justify-between shadow-xs sticky top-0 z-40">
