@@ -11,6 +11,8 @@ LINE OA + LIFF · C2C Book Marketplace · Design Pitching & Hackathon 2569
 
 | | |
 |---|---|
+| 🌐 เว็บที่ deploy | https://gongdong-books.vercel.app/ |
+| 🎨 Figma | [กองดอง design](https://www.figma.com/design/tPARViRjMjfbZLmofgP7m1/%E0%B8%81%E0%B8%AD%E0%B8%87%E0%B8%94%E0%B8%AD%E0%B8%87?node-id=0-1) |
 | 💬 LINE Official Account | [@848xkfsj](https://line.me/R/ti/p/@848xkfsj) (เพิ่มเพื่อนแล้วเปิดเมนูเพื่อเข้าแอป) |
 | 🎤 Pitch deck (Canva) | https://www.canva.com/d/52rBVBDVWY1TEjV |
 | 📄 API contract | [docs/API.md](docs/API.md) |
