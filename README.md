@@ -1,133 +1,135 @@
 # กองดอง (GongDong)
 
 ตลาดหนังสือมือสองบน LINE · **ลงขายฟรี จ่ายเมื่อขายได้**
-LINE OA + LIFF · C2C Book Marketplace · Design Pitching & Hackathon 2569 (พิตช์ 18 พ.ย. 2569)
+LINE OA + LIFF · C2C Book Marketplace · Design Pitching & Hackathon 2569
+
+> ✅ **สถานะ: เสร็จสมบูรณ์** — พิตช์แล้ว 18 พ.ย. 2569 · ใช้งานได้จริงบนมือถือผ่าน LINE
 
 ---
 
-## 🎯 เป้าหมายศุกร์ 13 พ.ย. 2569
+## 🔗 ลิงก์
 
-> **ผู้ซื้อกับผู้ขายติดต่อกันได้** — บนมือถือจริงใน LINE
+| | |
+|---|---|
+| 💬 LINE Official Account | [@848xkfsj](https://line.me/R/ti/p/@848xkfsj) (เพิ่มเพื่อนแล้วเปิดเมนูเพื่อเข้าแอป) |
+| 🎤 Pitch deck (Canva) | https://www.canva.com/d/52rBVBDVWY1TEjV |
+| 📄 API contract | [docs/API.md](docs/API.md) |
+| 🗄 Database ERD | [docs/DATABASE_ERD.md](docs/DATABASE_ERD.md) |
+| 🔁 Flow ผู้ซื้อ–ผู้ขาย | [Biwdocs/BUYER_SELLER_ORDER_FLOW.md](Biwdocs/BUYER_SELLER_ORDER_FLOW.md) |
 
-รอบนี้ต้องผ่านครบ 1 รอบ (Definition of Done):
+## 💡 ปัญหาและแนวคิด
 
-1. ผู้ขายลงหนังสือ 1 เล่ม (ISBN → รูป → เช็กสภาพ → ราคา)
-2. ผู้ซื้อค้นเจอ → ใส่ตะกร้า → ส่งคำขอซื้อ (เลือกนัดรับ)
-3. ผู้ขายได้แจ้งเตือนใน LINE → กด **ใช้ 1 เครดิต รับออเดอร์**
-4. ทั้งคู่เห็น **เบอร์โทร + จุดนัด** ของกันและกัน
+นักศึกษามีหนังสือเก่าเหลือเยอะแต่ขายยาก: โพสต์ในกลุ่ม Facebook แล้วจมหาย ไม่รู้จะตั้งราคาเท่าไร และผู้ซื้อไม่มั่นใจในสภาพหนังสือ
+กองดองทำให้การซื้อขายจบใน LINE ที่ทุกคนมีอยู่แล้ว:
+
+- **ลงขายฟรี** — ผู้ขายจ่าย 1 เครดิตเฉพาะตอนรับออเดอร์ (ขายได้จริงถึงเสีย)
+- **เกรดสภาพอัตโนมัติ** จากเช็กลิสต์ 5 จุด + รูปจริง 4 ด้าน → ผู้ซื้อเชื่อใจได้
+- **ราคาแนะนำ** คิดจาก % ของราคาปกตามเกรด
+- **ปกป้องข้อมูลส่วนตัว (PDPA)** — เบอร์โทร/ที่อยู่เปิดเผยเมื่อถึงขั้นที่จำเป็นเท่านั้น
+
+## ✨ ฟีเจอร์
+
+**ผู้ขาย**
+- ลงขาย 4 ขั้น: สแกนบาร์โค้ด/พิมพ์ ISBN → ดึงชื่อ/ปกจาก Google Books → ถ่ายรูป 4 ด้าน → เช็กสภาพ 5 จุด → เกรด + ราคาแนะนำ
+- ลงขายแบบยกชุด (set listing)
+- ร้านของฉัน: จัดการ/แก้ไข/ลบประกาศ · คำอธิบายร้าน
+- รับ/ปฏิเสธออเดอร์ (ใช้ 1 เครดิตตอนรับ) · บันทึกเลขพัสดุ
+- เติมเครดิตด้วย PromptPay QR + ตรวจสลิปอัตโนมัติ (SlipOK)
+- ยืนยันตัวตนผู้ขาย + ตรวจ Blacklist
+
+**ผู้ซื้อ**
+- หน้าแรก / ค้นหา / กรองตามหมวด เกรด วิธีรับ
+- ดูรายละเอียด แกลเลอรีรูป และโปรไฟล์ร้าน + รีวิว
+- ตะกร้า → ส่งคำขอซื้อ (นัดรับใน มช. หรือส่งพัสดุ)
+- จัดการที่อยู่จัดส่ง · ติดตามพัสดุ · ยืนยันรับของ
+
+**ระหว่างกัน**
+- นัดรับ + รหัสส่งมอบ 6 หลัก · แจ้งไม่มาตามนัด
+- รีวิว 1–5 ดาว + "สภาพตรงเกรดไหม" → Trust score
+- แจ้งเตือนผ่าน LINE Flex Message ทุกขั้นสำคัญ + หน้าแจ้งเตือนในแอป
+- กรองเบอร์/เลขบัญชี/LINE ID ออกจากข้อความอัตโนมัติ
+
+**แอดมิน**
+- หน้าแอดมิน · รายงานผู้ใช้ · dry-run flow ซื้อขายครบวงจรสำหรับเดโม
+
+## 📐 กติกาธุรกิจ
+
+**เครดิต**
+- ผู้ใช้ใหม่ได้ฟรี 1 เครดิต · ใช้ **1 เครดิต ต่อ 1 ออเดอร์** ตอนกดรับ · ปฏิเสธไม่เสียเครดิต
+- แพ็กเกจ: ฿20 = 3 · ฿50 = 10 · ฿100 = 25
+
+**เกรดอัตโนมัติ** (คำนวณฝั่ง server จากคำตอบ 5 จุด: สันหนังสือ · รอยเปื้อน · รอยขีดเขียน · ปก · หน้ากระดาษ)
+
+| เกรด | เงื่อนไข | ราคาแนะนำ |
+|---|---|---|
+| `LIKE_NEW` เหมือนใหม่ | ไม่มีตำหนิ | 75% ของราคาปก |
+| `GENTLY_READ` สภาพดีมาก | ตำหนิ 1 จุด (สันหรือปกเล็กน้อย) | 60% |
+| `WELL_LOVED` อ่านทั่วไป | รอยเปื้อน/ขีดเขียน 1 จุด หรือตำหนิ 2 จุด | 45% |
+| `WORN_BUT_READABLE` เน้นอ่าน | ตำหนิ 3 จุดขึ้นไป หรือหน้าหลุด/ซ่อมเทป | 30% |
+
+**วิธีรับหนังสือ**
+- นัดรับใน มช. · ฟรี · จ่ายหน้างาน
+- ส่งพัสดุ · ฿50 เล่มแรก + ฿10 ต่อเล่มถัดไป (สูงสุด ฿150 ต่อออเดอร์) · โอนพร้อมเพย์ + แนบสลิป
+
+## 🛠 Tech stack
+
+| ส่วน | เทคโนโลยี |
+|---|---|
+| Frontend (LIFF) | Next.js 16 (App Router) · React 19 · TypeScript · Tailwind CSS 4 · Leaflet · ZXing (สแกนบาร์โค้ด) |
+| Backend / API | Node.js · Express · TypeScript · Prisma · Zod · Vitest |
+| Database / Storage | PostgreSQL + Storage บน Supabase |
+| LINE | LIFF (`@line/liff`) · Messaging API (`@line/bot-sdk`) · Flex Message · Rich Menu |
+| บริการภายนอก | Google Books API · SlipOK · PromptPay QR |
+| Deploy | Vercel (frontend + backend) |
+
+รายละเอียดเพิ่มเติม: [Backend-doc/TECH_STACK.md](Backend-doc/TECH_STACK.md)
+
+## 📁 โครงสร้าง repo
+
+```
+├── frontend/      Next.js LIFF app (src/app = ทุกหน้าจอ)
+├── backend/       Express API + LINE webhook + Prisma schema/seed
+├── docs/          API contract · ERD · UI audit
+├── Biwdocs/       เอกสาร flow, audit, แผน deploy และคู่มือทดสอบ
+├── Backend-doc/   Tech stack
+├── design/        ไฟล์ออกแบบ
+└── line-assets/   รูป Rich Menu / Flex
+```
+
+## 🚀 รันบนเครื่อง
+
+ต้องมี Node.js 20+ และโปรเจกต์ Supabase + LINE channel ของตัวเอง
+
+```bash
+# Backend
+cd backend
+cp .env.example .env        # ใส่ค่าจริง
+npm install
+npm run prisma:push         # สร้างตาราง
+npm run prisma:seed         # ข้อมูลตัวอย่าง (ไม่บังคับ)
+npm run dev
+```
+
+```bash
+# Frontend
+cd frontend
+cp .env.example .env.local  # ใส่ LIFF ID, API URL
+npm install
+npm run dev
+```
+
+ทดสอบโดยไม่ต้องล็อกอิน LINE: ตั้ง `NEXT_PUBLIC_LIFF_MOCK=true` (frontend) และ `ENABLE_MOCK_AUTH=true` (backend) · ห้ามเปิดใน production
+
+```bash
+cd backend && npm test      # Vitest unit tests
+```
+
+> ห้าม commit ไฟล์ `.env` / `.env.local` · LIFF ต้องเปิดผ่าน HTTPS
 
 ## 👥 ทีม
 
 | คน | บทบาท | รับผิดชอบ |
 |---|---|---|
-| Ditchaphon | PM | LINE OA / LIFF / Messaging API channel · การ์ด Flex · Rich Menu · test case · UAT · คุมขอบเขต |
-| Biw | Backend | ฐานข้อมูล · API · ยืนยันตัวตนด้วย LINE · ส่งแจ้งเตือน LINE (Push) · deploy |
-| Frame | Frontend | หน้าจอทั้งหมดใน LIFF ตาม Figma · เชื่อม API · ทดสอบบนมือถือ |
-
-**Biw + Frame ออกแบบโครงสร้างโค้ดและ API contract กันเอง** แล้วเขียนลงใน repo นี้ (เช่น `docs/API.md`) ก่อนเริ่มเขียนฟีเจอร์
-
-## 📁 โครงสร้าง repo
-
-```
-gongdong/
-├── frontend/   ← Frame · หน้าจอ LIFF (ดู frontend/README.md)
-├── backend/    ← Biw  · API + ฐานข้อมูล + บอท (ดู backend/README.md)
-├── docs/       ← API contract ที่ตกลงร่วมกัน (สร้างเมื่อเขียน)
-└── README.md   ← ไฟล์นี้
-```
-
-ข้างใน `frontend/` และ `backend/` แต่ละคนจัดโครงสร้างเอง · แก้ไฟล์นอกโฟลเดอร์ตัวเองให้เปิด PR และบอกอีกฝ่าย
-
-## 📦 ขอบเขตถึงศุกร์
-
-**ทำ**
-- ล็อกอินด้วย LINE (LIFF) + กรอกเบอร์โทร
-- ลงขาย: ISBN ดึงชื่อ/ปกอัตโนมัติ · รูปจริง 4 ด้าน · เช็กสภาพ 5 จุด → เกรดอัตโนมัติ · ราคาแนะนำ
-- ค้นหา / ดูรายละเอียด
-- ตะกร้า 1 ร้าน + ส่งคำขอซื้อ (นัดรับ / ส่งพัสดุ)
-- บอทแจ้งผู้ขาย → รับ/ปฏิเสธออเดอร์ → แจ้งผู้ซื้อ
-- เครดิตฟรี 1 เครดิตสำหรับผู้ใช้ใหม่
-
-**ยังไม่ทำ (หลังศุกร์)**
-ซื้อเครดิต + ตรวจสลิป · ส่งพัสดุ + เลขพัสดุ + แจ้งสถานะ · แอดมิน / Blacklist · ฝากตามหา · ขายยกชุด · ตะกร้าหลายร้าน · สแกนบาร์โค้ดด้วยกล้อง · Microsoft Clarity
-
-## 📐 กติกาธุรกิจ (ใช้ตรงกันทั้ง FE / BE)
-
-**เครดิต**
-- ลงขายฟรีเสมอ · ผู้ขายใช้ **1 เครดิต ต่อ 1 ออเดอร์** ตอนกดรับ (ไม่ว่ากี่เล่ม)
-- ผู้ใช้ใหม่ได้ฟรี 1 เครดิต · แพ็กเกจ (ยังไม่ทำในรอบนี้): ฿20 = 3 · ฿50 = 10 · ฿100 = 25
-- ปฏิเสธออเดอร์ไม่เสียเครดิต
-- เบอร์โทรของอีกฝ่าย **เห็นได้หลังผู้ขายรับออเดอร์เท่านั้น**
-
-**เช็กสภาพ 5 จุด** (ผู้ขายตอบ มี / ไม่มี)
-1. สันหนังสือ — รอยพับ รอยย่น งอ
-2. รอยเปื้อน — คราบน้ำ จุดเหลือง
-3. รอยขีดเขียน — ดินสอ ปากกา ไฮไลต์
-4. ปกหน้า-ปกหลัง — ยับ ฉีกขาด ถลอก
-5. หน้ากระดาษ — หลุด ขาด แปะเทปซ่อม
-
-**เกรดอัตโนมัติ + ราคาแนะนำ (% ของราคาปก)**
-
-| เกรด | เงื่อนไข | % |
-|---|---|---|
-| `LIKE_NEW` เหมือนใหม่ | ไม่มีตำหนิเลย | 70% |
-| `GENTLY_READ` สภาพดีมาก | ตำหนิ 1 จุด และเป็นแค่สันย่น หรือปกมีรอยใช้งานเล็กน้อย | 60% |
-| `WELL_LOVED` อ่านทั่วไป | รอยเปื้อน/รอยเขียน 1 จุด หรือตำหนิ 2 จุด | 45% |
-| `WORN_BUT_READABLE` เน้นอ่าน | ตำหนิ 3 จุดขึ้นไป หรือหน้าหลุด/ซ่อมเทป | 30% |
-
-> ⚠️ % ของ 4 เกรดยังรอทีมยืนยัน · server ต้องคำนวณเกรดเองจากคำตอบ 5 จุด ห้ามเชื่อค่าจาก client
-
-**รูปบังคับ:** ปกหน้า (วางคู่ป้ายชื่อ: ชื่อ LINE + วันที่) · ปกหลัง · สันปก · สันกระดาษ · + รูปทุกจุดที่มีตำหนิ
-
-**วิธีรับหนังสือ**
-- นัดรับใน มช. · ฿0 · โซน: หน้าหอสมุดกลาง / ประตูหน้า มช. / หอพักนักศึกษา
-- ส่งพัสดุ · ฿40 เล่มแรก + ฿10 ต่อเล่มถัดไป (ร้านเดียวกัน)
-- ไม่มีระบบพักเงิน: นัดรับจ่ายหน้างาน · ส่งพัสดุโอนพร้อมเพย์ผู้ขาย + แนบสลิป
-
-**ข้อความ LINE:** Push หักโควตารายเดือนของ OA → ใช้เฉพาะแจ้งเตือนสำคัญ · ถ้าตอบข้อความที่ผู้ใช้ส่งมา ใช้ Reply (ไม่หักโควตา)
-
-## 🛠 Stack ที่ตกลงในทีม
-
-> ดูรายละเอียดเชิงลึกและเครื่องมือทั้งหมดได้ที่ [Backend-doc/TECH_STACK.md](Backend-doc/TECH_STACK.md)  
-> *หมายเหตุ: LIFF ต้องเปิดผ่าน **HTTPS** จึงต้องมี URL deploy ตั้งแต่วันแรก*
-
-- Frontend: Next.js (App Router) + TypeScript + Tailwind CSS + Leaflet (OpenStreetMap) (Frame)
-- Backend / API: Node.js + TypeScript (Express.js) + Prisma ORM (Biw)
-- Database / Storage: PostgreSQL (Supabase) + pg_cron + Supabase Storage (Private Slips / Public Images)
-- Deploy: Vercel (Frontend) + Render / Railway (Backend)
-- LINE: LINE OA + Messaging API (`@line/bot-sdk`) + LINE Login (`@line/liff`)
-
-## 🔑 ค่าที่ต้องตั้ง (ห้าม commit ค่าจริง)
-
-| ค่า | ได้จาก |
-|---|---|
-| LIFF ID | LINE Developers → LINE Login channel → LIFF |
-| LINE Login Channel ID | LINE Login channel (ใช้ verify ID token) |
-| Channel access token / Channel secret | Messaging API channel |
-| Database URL / keys | ผู้ให้บริการฐานข้อมูลที่เลือก |
-
-เก็บใน `.env.local` (อยู่ใน `.gitignore`) และตั้งบนระบบ deploy · แชร์ค่ากันในแชทส่วนตัว ไม่ใช่ใน repo
-
-## 🗓 แผน 3 วัน
-
-| วัน | PM | Backend (Biw) | Frontend (Frame) |
-|---|---|---|---|
-| **พุธ 11** | สร้าง LINE OA / channel / LIFF · เพิ่มทีมเป็น admin | ตั้งโปรเจกต์ + ฐานข้อมูล + deploy ให้ได้ URL | ตั้งโปรเจกต์ + LIFF init + หน้าแรก/รายละเอียด (ข้อมูลจำลอง) |
-| | **คืนนี้: Biw + Frame ตกลง API contract ให้เสร็จ** | | |
-| **พฤหัส 12** | การ์ด Flex (Flex Simulator) · Rich Menu · test case · ลองบน iOS + Android | API ลงขาย / ค้นหา / ISBN / อัปรูป / ขอซื้อ / รับ-ปฏิเสธ · Push LINE | ลงขาย 4 ขั้น · ตะกร้า + ขอซื้อ · ร้านของฉัน + รับออเดอร์ |
-| **ศุกร์ 13** | UAT เพื่อน 3–5 คน · คัดบั๊ก · อัดวิดีโอเดโมสำรอง | SIT · แก้บั๊ก · เช็กว่าเบอร์โทรไม่หลุด | SIT · หน้าสถานะออเดอร์ · ปรับบนมือถือ |
-| | **เย็น: deploy production** | | |
-
-## 🌿 Git workflow
-
-- `main` = เวอร์ชันที่เดโมได้เสมอ · ห้าม push ตรง
-- แตก branch: `feat/<ชื่องาน>` · `fix/<ชื่อบั๊ก>`
-- เปิด PR → อีกคนรีวิว → merge
-- commit message สั้น บอกว่าทำอะไร เช่น `feat: seller accepts order with 1 credit`
-- ตั้งชื่อหน้า/คอมโพเนนต์ให้ตรงรหัสหน้าใน Figma (`B1` หน้าแรก, `S3` ลงขาย ฯลฯ) เพื่อหาง่าย
-
-## 🔗 ลิงก์
-
-- Figma prototype: `…`
-- Pitch deck (Canva): `…`
-- บอร์ดงาน: `…`
+| Ditchaphon | PM | LINE OA / LIFF / Messaging API · Flex · Rich Menu · test case · UAT |
+| Biw | Backend | ฐานข้อมูล · API · LINE auth · แจ้งเตือน · deploy |
+| Frame | Frontend | หน้าจอ LIFF ทั้งหมดตาม Figma · เชื่อม API · ทดสอบบนมือถือ |
